@@ -43,6 +43,8 @@
         <activity
             android:name=".OnboardingActivity"
             android:exported="false"
+            android:launchMode="singleTask"
+            android:taskAffinity="com.plainphone.app.onboarding"
             android:theme="@style/Theme.PlainPhone" />
 
         <activity

@@ -66,10 +66,13 @@ public class SettingsActivity extends Activity {
     private void toggleGrayscale() {
         boolean newValue = !Config.isGrayscaleEnabled(this);
         Config.setGrayscaleEnabled(this, newValue);
-        if (newValue) {
-            GrayscaleController.enable(this);
-        } else {
-            GrayscaleController.disable(this);
+        boolean applied = newValue ? GrayscaleController.enable(this) : GrayscaleController.disable(this);
+        if (!applied) {
+            android.widget.Toast.makeText(this,
+                    "Couldn't change grayscale — the permission may have been lost. "
+                            + "Run: adb shell pm grant com.plainphone.app "
+                            + "android.permission.WRITE_SECURE_SETTINGS",
+                    android.widget.Toast.LENGTH_LONG).show();
         }
         render();
     }

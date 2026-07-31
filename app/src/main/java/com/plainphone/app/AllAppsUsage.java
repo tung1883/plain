@@ -14,14 +14,13 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/** This-week-vs-last-week foreground time for every app, via the system's own usage stats. */
+/** This week's foreground time for every app, via the system's own usage stats. */
 class AllAppsUsage {
 
     static class Entry {
         String packageName;
         String label;
         long thisWeekMillis;
-        long lastWeekMillis;
     }
 
     static boolean hasUsageAccess(Context context) {
@@ -40,41 +39,27 @@ class AllAppsUsage {
         long now = cal.getTimeInMillis();
         cal.add(Calendar.DAY_OF_YEAR, -7);
         long weekAgo = cal.getTimeInMillis();
-        cal.add(Calendar.DAY_OF_YEAR, -7);
-        long twoWeeksAgo = cal.getTimeInMillis();
 
         Map<String, Long> thisWeek = aggregate(usm, weekAgo, now);
-        Map<String, Long> lastWeek = aggregate(usm, twoWeeksAgo, weekAgo);
 
-        Map<String, Entry> merged = new HashMap<>();
+        List<Entry> list = new ArrayList<>();
         for (Map.Entry<String, Long> e : thisWeek.entrySet()) {
-            entryFor(merged, pm, e.getKey()).thisWeekMillis = e.getValue();
-        }
-        for (Map.Entry<String, Long> e : lastWeek.entrySet()) {
-            entryFor(merged, pm, e.getKey()).lastWeekMillis = e.getValue();
+            Entry entry = new Entry();
+            entry.packageName = e.getKey();
+            entry.thisWeekMillis = e.getValue();
+            try {
+                entry.label = pm.getApplicationInfo(entry.packageName, 0).loadLabel(pm).toString();
+            } catch (PackageManager.NameNotFoundException ex) {
+                entry.label = entry.packageName;
+            }
+            list.add(entry);
         }
 
-        List<Entry> list = new ArrayList<>(merged.values());
         Collections.sort(list, (a, b) -> Long.compare(b.thisWeekMillis, a.thisWeekMillis));
         if (list.size() > topN) {
             list = list.subList(0, topN);
         }
         return list;
-    }
-
-    private static Entry entryFor(Map<String, Entry> map, PackageManager pm, String pkg) {
-        Entry entry = map.get(pkg);
-        if (entry == null) {
-            entry = new Entry();
-            entry.packageName = pkg;
-            try {
-                entry.label = pm.getApplicationInfo(pkg, 0).loadLabel(pm).toString();
-            } catch (PackageManager.NameNotFoundException e) {
-                entry.label = pkg;
-            }
-            map.put(pkg, entry);
-        }
-        return entry;
     }
 
     private static Map<String, Long> aggregate(UsageStatsManager usm, long start, long end) {

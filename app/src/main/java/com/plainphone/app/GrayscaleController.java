@@ -16,13 +16,28 @@ class GrayscaleController {
     private static final String DALTONIZER_MODE = "accessibility_display_daltonizer";
     private static final int MODE_GRAYSCALE = 0; // simulate monochromacy
 
-    static void enable(Context context) {
-        ContentResolver resolver = context.getContentResolver();
-        Settings.Secure.putInt(resolver, DALTONIZER_MODE, MODE_GRAYSCALE);
-        Settings.Secure.putInt(resolver, DALTONIZER_ENABLED, 1);
+    /** Returns whether the write actually succeeded, so callers can surface a failure. */
+    static boolean enable(Context context) {
+        try {
+            ContentResolver resolver = context.getContentResolver();
+            Settings.Secure.putInt(resolver, DALTONIZER_MODE, MODE_GRAYSCALE);
+            Settings.Secure.putInt(resolver, DALTONIZER_ENABLED, 1);
+            return true;
+        } catch (SecurityException e) {
+            // WRITE_SECURE_SETTINGS is granted via adb, not a normal runtime prompt, so it
+            // can be missing (e.g. lost across a reinstall) or never granted at all. Onboarding
+            // already tells the user this step is optional — the app must not crash over it.
+            return false;
+        }
     }
 
-    static void disable(Context context) {
-        Settings.Secure.putInt(context.getContentResolver(), DALTONIZER_ENABLED, 0);
+    static boolean disable(Context context) {
+        try {
+            Settings.Secure.putInt(context.getContentResolver(), DALTONIZER_ENABLED, 0);
+            return true;
+        } catch (SecurityException e) {
+            // See enable() — missing permission should never crash the service.
+            return false;
+        }
     }
 }

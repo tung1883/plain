@@ -9,6 +9,7 @@ import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.graphics.Bitmap;
 import android.graphics.Color;
+import android.graphics.PorterDuff;
 import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
@@ -22,9 +23,11 @@ import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
+import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ListView;
+import android.widget.ProgressBar;
 import android.widget.TextView;
 
 import java.util.ArrayList;
@@ -41,6 +44,7 @@ public class MainActivity extends Activity {
     private List<ResolveInfo> allApps;
     private List<ResolveInfo> apps;
     private ArrayAdapter<ResolveInfo> adapter;
+    private boolean showingHomeReminder = false;
 
     @Override
     protected void onNewIntent(Intent intent) {
@@ -55,17 +59,119 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        pm = getPackageManager();
 
         SharedPreferences onboardingPrefs = getSharedPreferences("plain", Context.MODE_PRIVATE);
         if (!onboardingPrefs.getBoolean("onboarding_complete", false)) {
-            startActivity(new Intent(this, OnboardingActivity.class));
+            // OnboardingActivity has its own taskAffinity + singleTask, and this flag puts
+            // it in its own separate task. Without this, it shares MainActivity's task —
+            // and since MainActivity is itself singleTask, every time Home is pressed,
+            // Android destroys everything stacked above MainActivity in that task
+            // (per singleTask semantics), wiping out onboarding's progress each time.
+            Intent intent = new Intent(this, OnboardingActivity.class);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(intent);
             return;
         }
 
-        pm = getPackageManager();
+        if (!isDefaultHomeApp()) {
+            // Plain was opened via its own launcher icon (not by pressing Home), and it's
+            // not currently set as the Home app — e.g. the user picked a different launcher
+            // via Settings > Apps > Default apps. Ask them to fix it instead of silently
+            // showing a home screen that Home won't actually route to.
+            showSetHomeReminder();
+            return;
+        }
+
+        startLoadingHomeUi();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (showingHomeReminder && isDefaultHomeApp()) {
+            showingHomeReminder = false;
+            startLoadingHomeUi();
+        }
+    }
+
+    private boolean isDefaultHomeApp() {
+        Intent homeIntent = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
+        ResolveInfo resolveInfo = pm.resolveActivity(homeIntent, PackageManager.MATCH_DEFAULT_ONLY);
+        return resolveInfo != null && getPackageName().equals(resolveInfo.activityInfo.packageName);
+    }
+
+    private void showSetHomeReminder() {
+        showingHomeReminder = true;
+        Typeface georgia = Fonts.georgia(this);
+
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setGravity(Gravity.CENTER);
+        root.setBackgroundColor(Color.BLACK);
+        root.setPadding(48, 48, 48, 48);
+
+        TextView message = new TextView(this);
+        message.setTextColor(Color.WHITE);
+        message.setTextSize(18);
+        message.setTypeface(georgia);
+        message.setGravity(Gravity.CENTER);
+        message.setText("Plain isn't set as your Home app right now.");
+        root.addView(message);
+
+        Button openHomeSettings = new Button(this);
+        openHomeSettings.setText("Open Home app settings");
+        UiKit.style(this, openHomeSettings);
+        openHomeSettings.setOnClickListener(v ->
+                startActivity(new Intent(android.provider.Settings.ACTION_HOME_SETTINGS)));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.topMargin = 32;
+        root.addView(openHomeSettings, params);
+
+        setContentView(root, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+    }
+
+    private void startLoadingHomeUi() {
         setBlackWallpaperOnce();
 
-        allApps = loadLaunchableApps();
+        // Querying every launchable app (loadLaunchableApps) can take a noticeable moment,
+        // during which the screen would otherwise just look frozen/blank. Show a spinner
+        // immediately and do the query off the main thread so it actually gets to render.
+        showLoadingSpinner();
+        new Thread(() -> {
+            List<ResolveInfo> loaded = loadLaunchableApps();
+            runOnUiThread(() -> buildHomeUi(loaded));
+        }).start();
+    }
+
+    private void showLoadingSpinner() {
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setGravity(Gravity.CENTER);
+        root.setBackgroundColor(Color.BLACK);
+
+        ProgressBar spinner = new ProgressBar(this);
+        spinner.getIndeterminateDrawable().setColorFilter(Color.WHITE, PorterDuff.Mode.SRC_IN);
+        root.addView(spinner);
+
+        TextView label = new TextView(this);
+        label.setText("Loading...");
+        label.setTextColor(Color.WHITE);
+        label.setTypeface(Fonts.georgia(this));
+        label.setTextSize(16);
+        label.setGravity(Gravity.CENTER);
+        label.setPadding(0, 32, 0, 0);
+        root.addView(label, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        setContentView(root, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+    }
+
+    private void buildHomeUi(List<ResolveInfo> loaded) {
+        allApps = loaded;
         apps = new ArrayList<>(allApps);
 
         Typeface georgia = Fonts.georgia(this);

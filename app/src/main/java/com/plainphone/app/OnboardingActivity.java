@@ -17,12 +17,17 @@ import android.widget.TextView;
 public class OnboardingActivity extends Activity {
 
     private static final int STEP_COUNT = 4;
+    private static final String STEP_KEY = "step";
+
     private int step = 0;
     private LinearLayout content;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        if (savedInstanceState != null) {
+            step = savedInstanceState.getInt(STEP_KEY, 0);
+        }
 
         ScrollView scroll = new ScrollView(this);
         scroll.setBackgroundColor(Color.BLACK);
@@ -34,6 +39,14 @@ public class OnboardingActivity extends Activity {
 
         setContentView(scroll);
         renderStep();
+    }
+
+    @Override
+    protected void onSaveInstanceState(Bundle outState) {
+        super.onSaveInstanceState(outState);
+        // Without this, leaving to Settings (Home app / Accessibility / App info) and coming
+        // back destroys and recreates this Activity, silently resetting to step 0.
+        outState.putInt(STEP_KEY, step);
     }
 
     private void renderStep() {
@@ -57,32 +70,35 @@ public class OnboardingActivity extends Activity {
         switch (step) {
             case 0:
                 title.setText("Welcome to Plain");
-                body.setText("Plain turns your phone into a simple, distraction-reduced device: "
-                        + "a plain black-and-white home screen, a wait before opening flagged apps, "
-                        + "and usage stats.\n\nSetup takes three steps.");
+                body.setText("Plain turns your phone into a dumb-ass brick"
+                        + "\n\nSetup takes a few steps");
                 addButton("Next", v -> nextStep());
                 break;
             case 1:
                 title.setText("1. Set as your Home app");
-                body.setText("Tap below, choose Plain, and select 'Always' or 'Set as default'.");
+                body.setText("Tap below, choose Plain");
                 addButton("Open Home app settings",
                         v -> startActivity(new Intent(Settings.ACTION_HOME_SETTINGS)));
                 addButton("Next", v -> nextStep());
                 break;
             case 2:
                 title.setText("2. Enable the Accessibility Service");
-                body.setText("This lets Plain add a wait screen before flagged apps, apply grayscale, "
-                        + "and lock the screen. Tap below, find 'Plain' in the list, and turn it on.");
+                body.setText("This lets Plain add a wait screen before addictive apps, apply grayscale, "
+                        + "and lock the screen. Tap below, go to Installed Apps\n\n"
+                        + "If it won't turn on: go to Settings → Apps → Plain, tap the ⋮ menu in the "
+                        + "top-right corner, then tap \"Allow restricted settings\" — then come back "
+                        + "here and try the toggle again.");
                 addButton("Open Accessibility settings",
                         v -> startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
                 addButton("Next", v -> nextStep());
                 break;
             case 3:
                 title.setText("3. Enable grayscale (optional, needs a computer)");
-                body.setText("Grayscale uses a permission Android won't grant through a button. "
-                        + "Connect your phone to a computer with adb and run:\n\n"
+                body.setText("Connect your phone to a computer with adb and run:\n\n"
                         + "adb shell pm grant com.plainphone.app android.permission.WRITE_SECURE_SETTINGS\n\n"
-                        + "Everything else works fine without this — you can do it later.");
+                        + "Everything else works fine without this — you can do it later\n\n"
+                        + "Reminder: If you ever uninstall Plain, turn grayscale off first from Settings "
+                        + "here in the app — otherwise it can stay stuck after that");
                 addButton("Done", v -> finishOnboarding());
                 break;
             default:

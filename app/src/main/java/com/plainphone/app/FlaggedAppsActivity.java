@@ -5,13 +5,18 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.graphics.Color;
+import android.graphics.Paint;
 import android.graphics.Typeface;
+import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.Drawable;
+import android.graphics.drawable.StateListDrawable;
 import android.os.Bundle;
+import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ArrayAdapter;
-import android.widget.CheckedTextView;
 import android.widget.ListView;
+import android.widget.TextView;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -26,6 +31,7 @@ public class FlaggedAppsActivity extends Activity {
     private List<ResolveInfo> apps;
     private List<String> labels;
     private ListView listView;
+    private ArrayAdapter<String> adapter;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -37,7 +43,8 @@ public class FlaggedAppsActivity extends Activity {
 
         listView = new ListView(this);
         listView.setBackgroundColor(Color.BLACK);
-        listView.setChoiceMode(ListView.CHOICE_MODE_MULTIPLE);
+        listView.setDivider(null);
+        listView.setDividerHeight(0);
         setContentView(listView);
 
         labels = new ArrayList<>();
@@ -45,15 +52,24 @@ public class FlaggedAppsActivity extends Activity {
             labels.add(info.activityInfo.applicationInfo.loadLabel(pm).toString());
         }
 
-        ArrayAdapter<String> adapter = new ArrayAdapter<String>(
-                this, android.R.layout.simple_list_item_multiple_choice, labels) {
+        adapter = new ArrayAdapter<String>(this, android.R.layout.simple_list_item_1, labels) {
             @Override
             public View getView(int position, View convertView, ViewGroup parent) {
-                CheckedTextView view = (CheckedTextView) super.getView(position, convertView, parent);
-                view.setBackgroundColor(Color.BLACK);
+                TextView view = (TextView) super.getView(position, convertView, parent);
+                view.setText(labels.get(position));
+                view.setBackground(rowBackground());
                 view.setTextColor(Color.WHITE);
-                view.setTypeface(georgia);
+                view.setTextSize(20);
                 view.setPadding(48, 32, 48, 32);
+                view.setGravity(Gravity.START);
+                view.setTypeface(georgia);
+
+                // Flagged apps read as crossed out instead of using a separate checkbox.
+                boolean flagged = Config.getFlaggedPackages(FlaggedAppsActivity.this)
+                        .contains(apps.get(position).activityInfo.packageName);
+                int flags = view.getPaintFlags();
+                view.setPaintFlags(flagged ? (flags | Paint.STRIKE_THRU_TEXT_FLAG)
+                        : (flags & ~Paint.STRIKE_THRU_TEXT_FLAG));
                 return view;
             }
         };
@@ -64,10 +80,8 @@ public class FlaggedAppsActivity extends Activity {
             boolean currentlyFlagged = Config.getFlaggedPackages(this).contains(pkg);
 
             if (currentlyFlagged) {
-                // Removing loosens the restriction, so it goes through the friction
-                // gate. Revert ListView's auto-toggle; the real change only applies
-                // if the gate is completed.
-                listView.setItemChecked(position, true);
+                // Removing loosens the restriction, so it goes through the friction gate.
+                // The crossed-out look only clears once the gate is actually completed.
                 Intent intent = new Intent(this, FlaggedAppChangeActivity.class);
                 intent.putExtra("package", pkg);
                 intent.putExtra("label", labels.get(position));
@@ -77,7 +91,7 @@ public class FlaggedAppsActivity extends Activity {
                 Set<String> flagged = Config.getFlaggedPackages(this);
                 flagged.add(pkg);
                 Config.setFlaggedPackages(this, flagged);
-                listView.setItemChecked(position, true);
+                adapter.notifyDataSetChanged();
             }
         });
     }
@@ -85,14 +99,14 @@ public class FlaggedAppsActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        syncChecksToConfig(); // reflect a change confirmed while we were away
+        adapter.notifyDataSetChanged(); // reflect a change confirmed while we were away
     }
 
-    private void syncChecksToConfig() {
-        Set<String> flagged = Config.getFlaggedPackages(this);
-        for (int i = 0; i < apps.size(); i++) {
-            listView.setItemChecked(i, flagged.contains(apps.get(i).activityInfo.packageName));
-        }
+    private Drawable rowBackground() {
+        StateListDrawable drawable = new StateListDrawable();
+        drawable.addState(new int[]{android.R.attr.state_pressed}, new ColorDrawable(Color.DKGRAY));
+        drawable.addState(new int[]{}, new ColorDrawable(Color.BLACK));
+        return drawable;
     }
 
     private List<ResolveInfo> loadLaunchableApps() {

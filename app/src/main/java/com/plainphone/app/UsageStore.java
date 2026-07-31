@@ -34,6 +34,7 @@ class UsageStore {
     static String buildReport(Context context, Set<String> packages) {
         SharedPreferences prefs = prefs(context);
         StringBuilder sb = new StringBuilder();
+        sb.append("Flagged apps\n\n");
         sb.append("Today\n");
         appendRange(sb, prefs, packages, 0, 0);
         sb.append("\nLast 7 days\n");
@@ -65,13 +66,16 @@ class UsageStore {
             return;
         }
 
+        long totalMillis = 0;
         for (String pkg : involved) {
             long millis = millisTotals.getOrDefault(pkg, 0L);
             int opens = openTotals.getOrDefault(pkg, 0);
+            totalMillis += millis;
             sb.append("  ").append(friendlyName(pkg)).append(": ")
                     .append(formatDuration(millis)).append(", ")
                     .append(opens).append(opens == 1 ? " open\n" : " opens\n");
         }
+        sb.append("  Total: ").append(formatDuration(totalMillis)).append('\n');
     }
 
     private static String friendlyName(String pkg) {

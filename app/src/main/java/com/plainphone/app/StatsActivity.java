@@ -6,7 +6,6 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.os.Bundle;
 import android.provider.Settings;
-import android.view.Gravity;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -18,10 +17,23 @@ public class StatsActivity extends Activity {
 
     private static final int BAR_MAX_CHARS = 20;
 
+    private ScrollView scroll;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        scroll = new ScrollView(this);
+        scroll.setBackgroundColor(Color.BLACK);
+        setContentView(scroll);
+    }
 
+    @Override
+    protected void onResume() {
+        super.onResume();
+        render(); // reflect usage access granted (or revoked) while we were away
+    }
+
+    private void render() {
         Typeface georgia = Fonts.georgia(this);
 
         LinearLayout content = new LinearLayout(this);
@@ -40,7 +52,7 @@ public class StatsActivity extends Activity {
         allAppsTitle.setTextSize(18);
         allAppsTitle.setTypeface(georgia);
         allAppsTitle.setPadding(0, 48, 0, 0);
-        allAppsTitle.setText("All apps: this week vs last week");
+        allAppsTitle.setText("All apps: this week");
         content.addView(allAppsTitle);
 
         if (!AllAppsUsage.hasUsageAccess(this)) {
@@ -68,10 +80,8 @@ public class StatsActivity extends Activity {
             content.addView(allAppsReport);
         }
 
-        ScrollView scroll = new ScrollView(this);
-        scroll.setBackgroundColor(Color.BLACK);
+        scroll.removeAllViews();
         scroll.addView(content);
-        setContentView(scroll);
     }
 
     private String buildAllAppsReport() {
@@ -81,8 +91,10 @@ public class StatsActivity extends Activity {
         }
 
         long max = 1;
+        long totalMillis = 0;
         for (AllAppsUsage.Entry e : entries) {
             max = Math.max(max, e.thisWeekMillis);
+            totalMillis += e.thisWeekMillis;
         }
 
         StringBuilder sb = new StringBuilder();
@@ -91,8 +103,9 @@ public class StatsActivity extends Activity {
             String bar = repeat('█', barLength);
             sb.append(e.label).append('\n')
                     .append("  ").append(bar).append(' ').append(formatDuration(e.thisWeekMillis))
-                    .append(" (last week: ").append(formatDuration(e.lastWeekMillis)).append(")\n");
+                    .append('\n');
         }
+        sb.append("\nTotal: ").append(formatDuration(totalMillis));
         return sb.toString();
     }
 
