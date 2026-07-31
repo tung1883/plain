@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Plain</string>
+    <string name="accessibility_service_description">Watches for flagged apps, adds a wait before opening them, and closes them after a time budget.</string>
+</resources>
