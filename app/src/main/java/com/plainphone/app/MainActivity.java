@@ -256,6 +256,11 @@ public class MainActivity extends Activity {
             }
         });
 
+        listView.setOnItemLongClickListener((parent, view, position, id) -> {
+            showAppOptions(apps.get(position));
+            return true;
+        });
+
         search.addTextChangedListener(new TextWatcher() {
             @Override
             public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
@@ -319,6 +324,31 @@ public class MainActivity extends Activity {
         if (launchIntent != null) {
             startActivity(launchIntent);
         }
+    }
+
+    private void showAppOptions(ResolveInfo info) {
+        String pkg = info.activityInfo.packageName;
+        CharSequence label = labelFor(info);
+
+        // Intentionally offers only forward actions (uninstall, flag) — no way to
+        // un-flag or unhide from here; loosening a restriction goes through Settings
+        // and its friction gate instead, so it can't be undone on impulse.
+        new android.app.AlertDialog.Builder(this)
+                .setTitle(label)
+                .setItems(new CharSequence[]{"Uninstall", "Flag app"}, (dialog, which) -> {
+                    if (which == 0) {
+                        Intent uninstall = new Intent(Intent.ACTION_DELETE,
+                                android.net.Uri.parse("package:" + pkg));
+                        startActivity(uninstall);
+                    } else {
+                        Set<String> flagged = Config.getFlaggedPackages(this);
+                        flagged.add(pkg);
+                        Config.setFlaggedPackages(this, flagged);
+                        android.widget.Toast.makeText(this, label + " flagged",
+                                android.widget.Toast.LENGTH_SHORT).show();
+                    }
+                })
+                .show();
     }
 
     private void setBlackWallpaperOnce() {
