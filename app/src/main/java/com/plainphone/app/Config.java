@@ -6,7 +6,7 @@ import android.content.SharedPreferences;
 import java.util.HashSet;
 import java.util.Set;
 
-/** Persisted, user-editable settings: wait time, auto-close budget, grayscale, flagged apps. */
+/** Persisted, user-editable settings: wait time, auto-close budget, grayscale, flagged/hidden apps. */
 class Config {
 
     private static final String PREFS = "config";
@@ -51,6 +51,15 @@ class Config {
 
     static void setFlaggedPackages(Context context, Set<String> packages) {
         prefs(context).edit().putStringSet("flagged_packages", packages).apply();
+    }
+
+    static Set<String> getHiddenPackages(Context context) {
+        Set<String> stored = prefs(context).getStringSet("hidden_packages", null);
+        return stored != null ? new HashSet<>(stored) : new HashSet<>();
+    }
+
+    static void setHiddenPackages(Context context, Set<String> packages) {
+        prefs(context).edit().putStringSet("hidden_packages", packages).apply();
     }
 
     private static SharedPreferences prefs(Context context) {

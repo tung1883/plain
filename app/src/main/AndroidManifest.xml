@@ -58,6 +58,16 @@
             android:theme="@style/Theme.PlainPhone" />
 
         <activity
+            android:name=".HiddenAppsActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
+            android:name=".HiddenAppChangeActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
             android:name=".WaitTimeActivity"
             android:exported="false"
             android:theme="@style/Theme.PlainPhone" />

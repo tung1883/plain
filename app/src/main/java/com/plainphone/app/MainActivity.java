@@ -44,7 +44,9 @@ public class MainActivity extends Activity {
     private List<ResolveInfo> allApps;
     private List<ResolveInfo> apps;
     private ArrayAdapter<ResolveInfo> adapter;
+    private EditText search;
     private boolean showingHomeReminder = false;
+    private boolean homeUiBuilt = false;
 
     @Override
     protected void onNewIntent(Intent intent) {
@@ -92,7 +94,21 @@ public class MainActivity extends Activity {
         if (showingHomeReminder && isDefaultHomeApp()) {
             showingHomeReminder = false;
             startLoadingHomeUi();
+        } else if (homeUiBuilt) {
+            // Apps may have been hidden/unhidden (or uninstalled) while we were away
+            // (e.g. via Settings or a long-press action); reflect that on return.
+            refreshApps();
         }
+    }
+
+    private void refreshApps() {
+        new Thread(() -> {
+            List<ResolveInfo> loaded = loadLaunchableApps();
+            runOnUiThread(() -> {
+                allApps = loaded;
+                filter(search.getText().toString());
+            });
+        }).start();
     }
 
     private boolean isDefaultHomeApp() {
@@ -173,6 +189,7 @@ public class MainActivity extends Activity {
     private void buildHomeUi(List<ResolveInfo> loaded) {
         allApps = loaded;
         apps = new ArrayList<>(allApps);
+        homeUiBuilt = true;
 
         Typeface georgia = Fonts.georgia(this);
 
@@ -180,7 +197,7 @@ public class MainActivity extends Activity {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(Color.BLACK);
 
-        EditText search = new EditText(this);
+        search = new EditText(this);
         search.setHint("Search");
         search.setHintTextColor(Color.GRAY);
         search.setTextColor(Color.WHITE);
@@ -323,10 +340,13 @@ public class MainActivity extends Activity {
         List<ResolveInfo> resolved = pm.queryIntentActivities(intent, 0);
 
         // Apps with multiple launcher aliases (icon-skin pickers, etc.) otherwise
-        // show up once per alias; keep only the first entry per package.
+        // show up once per alias; keep only the first entry per package. Hidden
+        // packages are excluded here too, so they're absent from search as well.
+        Set<String> hiddenPackages = Config.getHiddenPackages(this);
         List<ResolveInfo> deduped = new ArrayList<>();
         Set<String> seenPackages = new HashSet<>();
         for (ResolveInfo info : resolved) {
+            if (hiddenPackages.contains(info.activityInfo.packageName)) continue;
             if (seenPackages.add(info.activityInfo.packageName)) {
                 deduped.add(info);
             }
