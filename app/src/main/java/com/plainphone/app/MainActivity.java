@@ -330,13 +330,25 @@ public class MainActivity extends Activity {
         String pkg = info.activityInfo.packageName;
         CharSequence label = labelFor(info);
 
+        // Preinstalled system apps (e.g. Settings) can't be uninstalled — only ones the
+        // user installed, or a system app the user has since updated, actually support it.
+        // Offering "Uninstall" for the rest would just bounce off a system "can't do that"
+        // dialog, so leave it out entirely rather than show a dead-end action.
+        int flags = info.activityInfo.applicationInfo.flags;
+        boolean uninstallable = (flags & android.content.pm.ApplicationInfo.FLAG_SYSTEM) == 0
+                || (flags & android.content.pm.ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0;
+
+        List<CharSequence> items = new ArrayList<>();
+        if (uninstallable) items.add("Uninstall");
+        items.add("Flag app");
+
         // Intentionally offers only forward actions (uninstall, flag) — no way to
         // un-flag or unhide from here; loosening a restriction goes through Settings
         // and its friction gate instead, so it can't be undone on impulse.
         new android.app.AlertDialog.Builder(this)
                 .setTitle(label)
-                .setItems(new CharSequence[]{"Uninstall", "Flag app"}, (dialog, which) -> {
-                    if (which == 0) {
+                .setItems(items.toArray(new CharSequence[0]), (dialog, which) -> {
+                    if (uninstallable && which == 0) {
                         Intent uninstall = new Intent(Intent.ACTION_DELETE,
                                 android.net.Uri.parse("package:" + pkg));
                         startActivity(uninstall);
