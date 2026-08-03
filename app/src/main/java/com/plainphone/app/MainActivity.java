@@ -329,38 +329,87 @@ public class MainActivity extends Activity {
     private void showAppOptions(ResolveInfo info) {
         String pkg = info.activityInfo.packageName;
         CharSequence label = labelFor(info);
+        Typeface georgia = Fonts.georgia(this);
 
         // Preinstalled system apps (e.g. Settings) can't be uninstalled — only ones the
         // user installed, or a system app the user has since updated, actually support it.
         // Offering "Uninstall" for the rest would just bounce off a system "can't do that"
         // dialog, so leave it out entirely rather than show a dead-end action.
-        int flags = info.activityInfo.applicationInfo.flags;
-        boolean uninstallable = (flags & android.content.pm.ApplicationInfo.FLAG_SYSTEM) == 0
-                || (flags & android.content.pm.ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0;
+        int appFlags = info.activityInfo.applicationInfo.flags;
+        boolean uninstallable = (appFlags & android.content.pm.ApplicationInfo.FLAG_SYSTEM) == 0
+                || (appFlags & android.content.pm.ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0;
 
-        List<CharSequence> items = new ArrayList<>();
-        if (uninstallable) items.add("Uninstall");
-        items.add("Flag app");
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackground(popupBackground());
+        root.setPadding(0, 8, 0, 8);
 
-        // Intentionally offers only forward actions (uninstall, flag) — no way to
+        TextView title = new TextView(this);
+        title.setText(label);
+        title.setTextColor(Color.WHITE);
+        title.setTextSize(18);
+        title.setTypeface(georgia);
+        title.setPadding(48, 32, 48, 24);
+        root.addView(title);
+
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
+                .setView(root)
+                .create();
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        }
+
+        // Intentionally offers only forward actions (info, uninstall, flag) — no way to
         // un-flag or unhide from here; loosening a restriction goes through Settings
         // and its friction gate instead, so it can't be undone on impulse.
-        new android.app.AlertDialog.Builder(this)
-                .setTitle(label)
-                .setItems(items.toArray(new CharSequence[0]), (dialog, which) -> {
-                    if (uninstallable && which == 0) {
-                        Intent uninstall = new Intent(Intent.ACTION_DELETE,
-                                android.net.Uri.parse("package:" + pkg));
-                        startActivity(uninstall);
-                    } else {
-                        Set<String> flagged = Config.getFlaggedPackages(this);
-                        flagged.add(pkg);
-                        Config.setFlaggedPackages(this, flagged);
-                        android.widget.Toast.makeText(this, label + " flagged",
-                                android.widget.Toast.LENGTH_SHORT).show();
-                    }
-                })
-                .show();
+        root.addView(optionRow(georgia, "App info", v -> {
+            dialog.dismiss();
+            startActivity(new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    android.net.Uri.parse("package:" + pkg)));
+        }));
+
+        if (uninstallable) {
+            root.addView(optionRow(georgia, "Uninstall", v -> {
+                dialog.dismiss();
+                startActivity(new Intent(Intent.ACTION_DELETE,
+                        android.net.Uri.parse("package:" + pkg)));
+            }));
+        }
+
+        root.addView(optionRow(georgia, "Flag app", v -> {
+            dialog.dismiss();
+            Set<String> flagged = Config.getFlaggedPackages(this);
+            flagged.add(pkg);
+            Config.setFlaggedPackages(this, flagged);
+            android.widget.Toast.makeText(this, label + " flagged",
+                    android.widget.Toast.LENGTH_SHORT).show();
+        }));
+
+        dialog.show();
+        if (dialog.getWindow() != null) {
+            android.view.WindowManager.LayoutParams params = dialog.getWindow().getAttributes();
+            params.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.85);
+            dialog.getWindow().setAttributes(params);
+        }
+    }
+
+    private TextView optionRow(Typeface georgia, String label, View.OnClickListener listener) {
+        TextView row = new TextView(this);
+        row.setText(label);
+        row.setTextColor(Color.WHITE);
+        row.setTextSize(20);
+        row.setTypeface(georgia);
+        row.setPadding(48, 32, 48, 32);
+        row.setGravity(Gravity.START);
+        row.setBackground(rowBackground());
+        row.setOnClickListener(listener);
+        return row;
+    }
+
+    private Drawable popupBackground() {
+        android.graphics.drawable.GradientDrawable box = new android.graphics.drawable.GradientDrawable();
+        box.setColor(Color.BLACK);
+        return box;
     }
 
     private void setBlackWallpaperOnce() {
@@ -384,10 +433,12 @@ public class MainActivity extends Activity {
         // Apps with multiple launcher aliases (icon-skin pickers, etc.) otherwise
         // show up once per alias; keep only the first entry per package. Hidden
         // packages are excluded here too, so they're absent from search as well.
+        // Plain itself is never shown — there's no reason to launch it from within itself.
         Set<String> hiddenPackages = Config.getHiddenPackages(this);
         List<ResolveInfo> deduped = new ArrayList<>();
         Set<String> seenPackages = new HashSet<>();
         for (ResolveInfo info : resolved) {
+            if (info.activityInfo.packageName.equals(getPackageName())) continue;
             if (hiddenPackages.contains(info.activityInfo.packageName)) continue;
             if (seenPackages.add(info.activityInfo.packageName)) {
                 deduped.add(info);
