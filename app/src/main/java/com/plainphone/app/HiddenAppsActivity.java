@@ -117,6 +117,7 @@ public class HiddenAppsActivity extends Activity {
         List<ResolveInfo> deduped = new ArrayList<>();
         Set<String> seen = new HashSet<>();
         for (ResolveInfo info : resolved) {
+            if (info.activityInfo.packageName.equals(getPackageName())) continue;
             if (seen.add(info.activityInfo.packageName)) {
                 deduped.add(info);
             }
