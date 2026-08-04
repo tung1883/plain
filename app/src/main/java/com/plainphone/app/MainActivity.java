@@ -238,12 +238,12 @@ public class MainActivity extends Activity {
         LinearLayout menuColumn = new LinearLayout(this);
         menuColumn.setOrientation(LinearLayout.VERTICAL);
 
-        TextView screenOffRow = buildRow(georgia, "Turn off screen");
+        TextView screenOffRow = buildRow(georgia, "Screen off");
         screenOffRow.setOnClickListener(v -> AppMonitorService.lockScreen());
         menuColumn.addView(screenOffRow, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        TextView statsRow = buildRow(georgia, "Usage stats");
+        TextView statsRow = buildRow(georgia, "Usage");
         statsRow.setOnClickListener(v -> startActivity(new Intent(this, StatsActivity.class)));
         menuColumn.addView(statsRow, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
