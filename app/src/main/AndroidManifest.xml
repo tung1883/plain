@@ -77,6 +77,26 @@
             android:exported="false"
             android:theme="@style/Theme.PlainPhone" />
 
+        <activity
+            android:name=".LockedAppsActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
+            android:name=".LockedAppChangeActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
+            android:name=".PinGateActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
+            android:name=".SettingsPinGateActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
         <service
             android:name=".AppMonitorService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"

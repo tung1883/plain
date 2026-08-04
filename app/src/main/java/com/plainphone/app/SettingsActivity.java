@@ -62,6 +62,9 @@ public class SettingsActivity extends Activity {
         root.addView(row("Hide apps from app list",
                 v -> startActivity(new Intent(this, HiddenAppsActivity.class))));
 
+        root.addView(row("App lock",
+                v -> startActivity(new Intent(this, LockedAppsActivity.class))));
+
         root.addView(row("Grant usage access (for all-apps stats)",
                 v -> startActivity(new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))));
     }

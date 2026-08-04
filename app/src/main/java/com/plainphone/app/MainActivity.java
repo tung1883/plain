@@ -315,12 +315,25 @@ public class MainActivity extends Activity {
     }
 
     private void launchApp(ResolveInfo info) {
+        String pkg = info.activityInfo.packageName;
+
+        // Locked apps are gated before they're ever started, not after: PinGateActivity
+        // only launches the real app once the PIN is confirmed, so the app's own screen
+        // is never visible without it.
+        if (Config.getLockedPackages(this).contains(pkg)) {
+            Intent gate = new Intent(this, PinGateActivity.class);
+            gate.putExtra("package", pkg);
+            gate.putExtra("label", labelFor(info).toString());
+            startActivity(gate);
+            return;
+        }
+
         // Some apps (e.g. Messenger) declare several launcher activity aliases for
         // icon-skin picking, only one of which is enabled at a time. Reconstructing
         // an explicit Intent from a raw ResolveInfo can point at a disabled alias and
         // silently fail. getLaunchIntentForPackage() defers to Android's own logic
         // for resolving whichever one is actually active.
-        Intent launchIntent = pm.getLaunchIntentForPackage(info.activityInfo.packageName);
+        Intent launchIntent = pm.getLaunchIntentForPackage(pkg);
         if (launchIntent != null) {
             startActivity(launchIntent);
         }

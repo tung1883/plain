@@ -8,11 +8,19 @@ import android.graphics.PixelFormat;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.text.Editable;
+import android.text.InputFilter;
+import android.text.InputType;
+import android.text.TextWatcher;
 import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.View;
 import android.view.WindowManager;
 import android.view.accessibility.AccessibilityEvent;
+import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -22,8 +30,12 @@ import java.util.Set;
 /**
  * Watches foreground app changes. Flagged packages get a blocking countdown
  * overlay before they're usable, then get auto-closed after a time budget.
+ * Locked packages get a blocking PIN-entry overlay instead, and stay gated
+ * again every time the user leaves and comes back (no time budget applies).
  */
 public class AppMonitorService extends AccessibilityService {
+
+    private enum GateKind { COUNTDOWN, PIN }
 
     // Lets MainActivity (a plain Activity, which can't call performGlobalAction itself)
     // reach the running service directly to trigger the lock-screen action.
@@ -33,6 +45,24 @@ public class AppMonitorService extends AccessibilityService {
         AppMonitorService service = instance;
         if (service != null) {
             service.performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN);
+        }
+    }
+
+    // Lets PinGateActivity, which already verified the PIN before launching the real
+    // app, pre-arm the gate so the accessibility service's own reactive PIN overlay
+    // doesn't prompt a second time the instant it sees that package come to the
+    // foreground. Mirrors startGate()'s session bookkeeping, minus actually showing UI.
+    static void skipGateFor(String packageName) {
+        AppMonitorService service = instance;
+        if (service != null) {
+            service.cancelPendingTeardown();
+            service.endSession();
+            service.cancelCountdown();
+            service.currentGatedPackage = packageName;
+            service.currentGateKind = GateKind.PIN;
+            service.sessionPackage = packageName;
+            service.sessionStartMillis = SystemClock.elapsedRealtime();
+            UsageStore.recordOpen(service, packageName);
         }
     }
 
@@ -64,8 +94,10 @@ public class AppMonitorService extends AccessibilityService {
     private String lastForegroundPackage = null;
     private String lastEventKey = null;
     private String currentGatedPackage = null;
+    private GateKind currentGateKind = null;
     private View overlayRoot = null;
     private TextView countdownText = null;
+    private EditText pinInput = null;
     private Runnable budgetRunnable = null;
     private Runnable pendingTeardown = null;
     private Runnable countdownRunnable = null;
@@ -122,6 +154,27 @@ public class AppMonitorService extends AccessibilityService {
             return;
         }
 
+        if (className.equals("android.inputmethodservice.SoftInputWindow")) {
+            // The soft keyboard opening for the PIN overlay's EditText fires its own
+            // WINDOW_STATE_CHANGED event, attributed to the keyboard app's package. Left
+            // unhandled, that reads as "the user left the gated app," and the pending-teardown
+            // grace period below removes the PIN overlay mid-entry — flickering the locked app
+            // and killing the EditText's IME connection (dismissing the keyboard) with it.
+            return;
+        }
+
+        if (className.equals("com.android.settings.password.ConfirmDeviceCredentialActivity")) {
+            // The system-wide "confirm your device PIN/pattern/biometric" screen, hosted in
+            // com.android.settings but launched BY other apps (via
+            // KeyguardManager.createConfirmDeviceCredentialIntent()) to verify identity —
+            // e.g. an authenticator app falling back to device credentials for its own lock.
+            // It's not the user navigating into Settings. If Settings is also a locked
+            // package, treating this as "entering Settings" fires our gate mid-flow through
+            // the other app's own security check, which then knocks that app's gate loose
+            // too and the two ping-pong, forcing the PIN to be re-entered repeatedly.
+            return;
+        }
+
         lastForegroundPackage = packageName;
 
         if (packageName.equals(getPackageName())) {
@@ -143,6 +196,7 @@ public class AppMonitorService extends AccessibilityService {
                 cancelCountdown();
                 cancelBudgetTimer();
                 currentGatedPackage = null;
+                currentGateKind = null;
                 removeOverlay();
                 endSession();
                 if (wasGated) {
@@ -152,27 +206,43 @@ public class AppMonitorService extends AccessibilityService {
             return;
         }
 
-        if (Config.getFlaggedPackages(this).contains(packageName)) {
+        // Locked takes precedence over flagged when a package is both: it's the
+        // stronger gate, and there's no reason to make the user clear a countdown
+        // before even reaching the PIN prompt.
+        if (Config.getLockedPackages(this).contains(packageName)) {
             if (SystemClock.elapsedRealtime() - homeReachedAt < HOME_COOLDOWN_MILLIS) {
                 return;
             }
             cancelPendingTeardown();
             if (!packageName.equals(currentGatedPackage)) {
-                startGate(packageName);
+                startGate(packageName, GateKind.PIN);
+            }
+        } else if (Config.getFlaggedPackages(this).contains(packageName)) {
+            if (SystemClock.elapsedRealtime() - homeReachedAt < HOME_COOLDOWN_MILLIS) {
+                return;
+            }
+            cancelPendingTeardown();
+            if (!packageName.equals(currentGatedPackage)) {
+                startGate(packageName, GateKind.COUNTDOWN);
             }
         } else if (currentGatedPackage != null) {
             schedulePendingTeardown();
         }
     }
 
-    private void startGate(String packageName) {
+    private void startGate(String packageName, GateKind kind) {
         endSession();
         cancelCountdown();
         currentGatedPackage = packageName;
+        currentGateKind = kind;
         sessionPackage = packageName;
         sessionStartMillis = SystemClock.elapsedRealtime();
         UsageStore.recordOpen(this, packageName);
-        showCountdown(Config.getWaitSeconds(this), packageName);
+        if (kind == GateKind.PIN) {
+            showPinEntry(packageName);
+        } else {
+            showCountdown(Config.getWaitSeconds(this), packageName);
+        }
     }
 
     private void endSession() {
@@ -205,6 +275,138 @@ public class AppMonitorService extends AccessibilityService {
         if (countdownRunnable != null) {
             handler.removeCallbacks(countdownRunnable);
             countdownRunnable = null;
+        }
+    }
+
+    private void showPinEntry(String packageName) {
+        if (!packageName.equals(currentGatedPackage)) return;
+        if (overlayRoot == null) {
+            addPinOverlay(packageName);
+        }
+    }
+
+    private void addPinOverlay(String packageName) {
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setGravity(Gravity.CENTER);
+        root.setBackgroundColor(Color.BLACK);
+        root.setPadding(48, 48, 48, 48);
+
+        Typeface georgia = Fonts.georgia(this);
+
+        TextView title = new TextView(this);
+        title.setTextColor(Color.WHITE);
+        title.setTextSize(24);
+        title.setGravity(Gravity.CENTER);
+        title.setTypeface(georgia);
+        title.setText("Enter PIN");
+        root.addView(title);
+
+        LinearLayout inputRow = new LinearLayout(this);
+        inputRow.setOrientation(LinearLayout.HORIZONTAL);
+        inputRow.setGravity(Gravity.CENTER);
+
+        EditText input = new EditText(this);
+        input.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
+        input.setFilters(new InputFilter[]{new InputFilter.LengthFilter(6)});
+        input.setGravity(Gravity.CENTER);
+        input.setImeOptions(EditorInfo.IME_ACTION_DONE);
+        UiKit.style(this, input);
+        input.setOnEditorActionListener((v, actionId, event) -> {
+            if (actionId == EditorInfo.IME_ACTION_DONE) {
+                submitPin(packageName, input.getText().toString());
+                return true;
+            }
+            return false;
+        });
+        input.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {}
+
+            @Override
+            public void afterTextChanged(Editable s) {
+                // Submit the instant what's typed so far is a correct PIN, rather than
+                // waiting for a fixed length or a manual tap/Done press.
+                if (s.length() >= 4 && Config.checkLockPin(AppMonitorService.this, s.toString())) {
+                    submitPin(packageName, s.toString());
+                }
+            }
+        });
+        inputRow.addView(input, new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        Button unlockButton = new Button(this);
+        unlockButton.setText("Unlock");
+        UiKit.style(this, unlockButton);
+        unlockButton.setOnClickListener(v -> submitPin(packageName, input.getText().toString()));
+        LinearLayout.LayoutParams unlockParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        unlockParams.leftMargin = 24;
+        inputRow.addView(unlockButton, unlockParams);
+
+        LinearLayout.LayoutParams inputRowParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        inputRowParams.topMargin = 48;
+        root.addView(inputRow, inputRowParams);
+
+        Button closeButton = new Button(this);
+        closeButton.setText("Close");
+        UiKit.style(this, closeButton);
+        closeButton.setOnClickListener(v -> closeGatedApp());
+        LinearLayout.LayoutParams closeParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        closeParams.topMargin = 24;
+        root.addView(closeButton, closeParams);
+
+        // The overlay is focusable/touchable (flags=0 below), but Back doesn't
+        // route through an accessibility overlay's window the way it does an
+        // Activity's — wire it explicitly so it can't be used to peek at the
+        // locked app underneath instead of going Home like Close does.
+        root.setFocusableInTouchMode(true);
+        root.setOnKeyListener((v, keyCode, event) -> {
+            if (keyCode == KeyEvent.KEYCODE_BACK && event.getAction() == KeyEvent.ACTION_UP) {
+                closeGatedApp();
+                return true;
+            }
+            return false;
+        });
+
+        WindowManager.LayoutParams params = new WindowManager.LayoutParams(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                0, // focusable + touchable: blocks interaction with the app underneath
+                PixelFormat.OPAQUE);
+        // Keyboard should already be up when this overlay appears — the user shouldn't
+        // have to know to tap the input box first.
+        params.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE;
+
+        WindowManager wm = (WindowManager) getSystemService(WINDOW_SERVICE);
+        wm.addView(root, params);
+        overlayRoot = root;
+        pinInput = input;
+        root.requestFocus();
+        input.requestFocus();
+        input.post(() -> {
+            InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+            if (imm != null) {
+                imm.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT);
+            }
+        });
+    }
+
+    private void submitPin(String packageName, String pin) {
+        if (Config.checkLockPin(this, pin)) {
+            removeOverlay();
+            // currentGatedPackage/currentGateKind are left alone: the gate stays
+            // "armed" so leaving and coming back to this app re-shows the PIN
+            // prompt, matching the flagged-app gate's teardown-driven re-arming.
+        } else if (pinInput != null) {
+            pinInput.setText("");
+            pinInput.requestFocus();
         }
     }
 
@@ -251,6 +453,7 @@ public class AppMonitorService extends AccessibilityService {
             wm.removeView(overlayRoot);
             overlayRoot = null;
             countdownText = null;
+            pinInput = null;
         }
     }
 
@@ -294,6 +497,7 @@ public class AppMonitorService extends AccessibilityService {
             cancelCountdown();
             cancelBudgetTimer();
             currentGatedPackage = null;
+            currentGateKind = null;
             removeOverlay();
             endSession();
         };
