@@ -17,8 +17,8 @@ import android.view.View;
  */
 class PixelArtView extends View {
 
-    static final int COLS = 8;
-    static final int CONTENT_ROWS = 9;
+    static final int COLS = 16;
+    static final int CONTENT_ROWS = 18;
     private static final int ROWS = CONTENT_ROWS + 1; // + 1 shared ground row
     private static final int FRAME_MILLIS = 400;
 
