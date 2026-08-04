@@ -6,7 +6,7 @@ import android.content.SharedPreferences;
 import java.util.HashSet;
 import java.util.Set;
 
-/** Persisted, user-editable settings: wait time, auto-close budget, grayscale, flagged/hidden apps. */
+/** Persisted, user-editable settings: wait time, auto-close budget, grayscale, flagged/hidden/locked apps, lock PIN. */
 class Config {
 
     private static final String PREFS = "config";
@@ -60,6 +60,51 @@ class Config {
 
     static void setHiddenPackages(Context context, Set<String> packages) {
         prefs(context).edit().putStringSet("hidden_packages", packages).apply();
+    }
+
+    static Set<String> getLockedPackages(Context context) {
+        Set<String> stored = prefs(context).getStringSet("locked_packages", null);
+        return stored != null ? new HashSet<>(stored) : new HashSet<>();
+    }
+
+    static void setLockedPackages(Context context, Set<String> packages) {
+        prefs(context).edit().putStringSet("locked_packages", packages).apply();
+    }
+
+    static boolean isPinSet(Context context) {
+        return prefs(context).getString("lock_pin_hash", null) != null;
+    }
+
+    static void setLockPin(Context context, String pin) {
+        String salt = generateSalt();
+        prefs(context).edit()
+                .putString("lock_pin_salt", salt)
+                .putString("lock_pin_hash", hashPin(pin, salt))
+                .apply();
+    }
+
+    static boolean checkLockPin(Context context, String pin) {
+        String salt = prefs(context).getString("lock_pin_salt", null);
+        String storedHash = prefs(context).getString("lock_pin_hash", null);
+        if (salt == null || storedHash == null) return false;
+        return storedHash.equals(hashPin(pin, salt));
+    }
+
+    private static String generateSalt() {
+        byte[] saltBytes = new byte[16];
+        new java.security.SecureRandom().nextBytes(saltBytes);
+        return android.util.Base64.encodeToString(saltBytes, android.util.Base64.NO_WRAP);
+    }
+
+    private static String hashPin(String pin, String salt) {
+        try {
+            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+            digest.update(salt.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            byte[] hashed = digest.digest(pin.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return android.util.Base64.encodeToString(hashed, android.util.Base64.NO_WRAP);
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new RuntimeException(e); // SHA-256 is guaranteed present on Android
+        }
     }
 
     private static SharedPreferences prefs(Context context) {
