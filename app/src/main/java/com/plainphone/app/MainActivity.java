@@ -239,9 +239,7 @@ public class MainActivity extends Activity {
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
         TextView settingsRow = buildRow(georgia, "Settings");
-        // TESTING: bypassing SettingsGateActivity's friction gate (wait+math) and PIN gate
-        // for easier iteration — restore by pointing this back at SettingsGateActivity.class.
-        settingsRow.setOnClickListener(v -> startActivity(new Intent(this, SettingsActivity.class)));
+        settingsRow.setOnClickListener(v -> startActivity(new Intent(this, SettingsGateActivity.class)));
         menuColumn.addView(settingsRow, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
