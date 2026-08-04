@@ -32,6 +32,18 @@ class UiKit {
         return box;
     }
 
+    /**
+     * A border-only drawable (transparent center) — meant to sit as a View's foreground so
+     * it draws on top of full-bleed content instead of being painted over by it, unlike a
+     * background drawable which draws first and gets covered.
+     */
+    static GradientDrawable frameBorder() {
+        GradientDrawable frame = new GradientDrawable();
+        frame.setColor(Color.TRANSPARENT);
+        frame.setStroke(6, Color.WHITE);
+        return frame;
+    }
+
     private static StateListDrawable buttonBackground() {
         GradientDrawable normal = new GradientDrawable();
         normal.setColor(Color.BLACK);
