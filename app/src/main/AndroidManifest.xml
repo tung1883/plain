@@ -103,6 +103,11 @@
             android:exported="false"
             android:theme="@style/Theme.PlainPhone" />
 
+        <activity
+            android:name=".ArtViewerActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
         <service
             android:name=".AppMonitorService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
