@@ -292,7 +292,7 @@ public class AppMonitorService extends AccessibilityService {
         root.setBackgroundColor(Color.BLACK);
         root.setPadding(48, 48, 48, 48);
 
-        Typeface georgia = Fonts.georgia(this);
+        Typeface georgia = Fonts.current(this);
 
         TextView title = new TextView(this);
         title.setTextColor(Color.WHITE);
@@ -416,7 +416,7 @@ public class AppMonitorService extends AccessibilityService {
         root.setGravity(Gravity.CENTER);
         root.setBackgroundColor(Color.BLACK);
 
-        Typeface georgia = Fonts.georgia(this);
+        Typeface georgia = Fonts.current(this);
 
         TextView text = new TextView(this);
         text.setTextColor(Color.WHITE);

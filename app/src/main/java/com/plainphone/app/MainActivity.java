@@ -51,6 +51,7 @@ public class MainActivity extends Activity {
     private GifArtView gifArt;
     private boolean showingHomeReminder = false;
     private boolean homeUiBuilt = false;
+    private FontChoice builtWithFont;
 
     @Override
     protected void onNewIntent(Intent intent) {
@@ -99,6 +100,14 @@ public class MainActivity extends Activity {
             showingHomeReminder = false;
             startLoadingHomeUi();
         } else if (homeUiBuilt) {
+            if (Config.getFontChoice(this) != builtWithFont) {
+                // MainActivity is singleTask, so it's reused rather than rebuilt when
+                // returning from Settings — recreate() is the simplest way to pick up a
+                // font changed there, since every TextView was already built with the old
+                // Typeface and there's no cheap way to walk and restyle them all in place.
+                recreate();
+                return;
+            }
             // Apps may have been hidden/unhidden (or uninstalled) while we were away
             // (e.g. via Settings or a long-press action); reflect that on return.
             refreshApps();
@@ -135,7 +144,7 @@ public class MainActivity extends Activity {
 
     private void showSetHomeReminder() {
         showingHomeReminder = true;
-        Typeface georgia = Fonts.georgia(this);
+        Typeface georgia = Fonts.current(this);
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -191,7 +200,7 @@ public class MainActivity extends Activity {
         TextView label = new TextView(this);
         label.setText("Loading...");
         label.setTextColor(Color.WHITE);
-        label.setTypeface(Fonts.georgia(this));
+        label.setTypeface(Fonts.current(this));
         label.setTextSize(16);
         label.setGravity(Gravity.CENTER);
         label.setPadding(0, 32, 0, 0);
@@ -206,8 +215,9 @@ public class MainActivity extends Activity {
         allApps = loaded;
         apps = new ArrayList<>(allApps);
         homeUiBuilt = true;
+        builtWithFont = Config.getFontChoice(this);
 
-        Typeface georgia = Fonts.georgia(this);
+        Typeface georgia = Fonts.current(this);
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -401,7 +411,7 @@ public class MainActivity extends Activity {
     private void showAppOptions(ResolveInfo info) {
         String pkg = info.activityInfo.packageName;
         CharSequence label = labelFor(info);
-        Typeface georgia = Fonts.georgia(this);
+        Typeface georgia = Fonts.current(this);
 
         // Preinstalled system apps (e.g. Settings) can't be uninstalled — only ones the
         // user installed, or a system app the user has since updated, actually support it.

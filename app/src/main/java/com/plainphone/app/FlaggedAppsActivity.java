@@ -39,7 +39,7 @@ public class FlaggedAppsActivity extends Activity {
         pm = getPackageManager();
         apps = loadLaunchableApps();
 
-        Typeface georgia = Fonts.georgia(this);
+        Typeface georgia = Fonts.current(this);
 
         listView = new ListView(this);
         listView.setBackgroundColor(Color.BLACK);

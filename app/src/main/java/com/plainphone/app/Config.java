@@ -115,6 +115,19 @@ class Config {
         prefs(context).edit().putBoolean("pixel_art_enabled", enabled).apply();
     }
 
+    static FontChoice getFontChoice(Context context) {
+        String stored = prefs(context).getString("font_choice", FontChoice.GEORGIA.name());
+        try {
+            return FontChoice.valueOf(stored);
+        } catch (IllegalArgumentException e) {
+            return FontChoice.GEORGIA;
+        }
+    }
+
+    static void setFontChoice(Context context, FontChoice font) {
+        prefs(context).edit().putString("font_choice", font.name()).apply();
+    }
+
     static boolean isPinSet(Context context) {
         return prefs(context).getString("lock_pin_hash", null) != null;
     }
