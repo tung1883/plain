@@ -81,7 +81,30 @@ class Config {
     }
 
     static void setPixelScene(Context context, Scene scene) {
-        prefs(context).edit().putString("pixel_scene", scene.name()).apply();
+        prefs(context).edit()
+                .putString("pixel_scene", scene.name())
+                .putString("pixel_art_kind", "SCENE")
+                .apply();
+    }
+
+    static GifScene getGifScene(Context context) {
+        String stored = prefs(context).getString("pixel_gif_scene", GifScene.CITY.name());
+        try {
+            return GifScene.valueOf(stored);
+        } catch (IllegalArgumentException e) {
+            return GifScene.CITY;
+        }
+    }
+
+    static void setGifScene(Context context, GifScene scene) {
+        prefs(context).edit()
+                .putString("pixel_gif_scene", scene.name())
+                .putString("pixel_art_kind", "GIF")
+                .apply();
+    }
+
+    static boolean isGifSceneSelected(Context context) {
+        return "GIF".equals(prefs(context).getString("pixel_art_kind", "SCENE"));
     }
 
     static boolean isPixelArtEnabled(Context context) {

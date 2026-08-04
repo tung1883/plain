@@ -5,6 +5,7 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.os.Bundle;
 import android.view.Gravity;
+import android.view.View;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -12,14 +13,14 @@ import android.widget.TextView;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.BooleanSupplier;
 
 /** Lets the user preview and pick which pixel-art scene shows on the home screen, or turn it off. */
 public class PixelSceneActivity extends Activity {
 
     private final List<LinearLayout> rows = new ArrayList<>();
     private final List<TextView> labels = new ArrayList<>();
-    private LinearLayout offRow;
-    private TextView offLabel;
+    private final List<BooleanSupplier> selectedChecks = new ArrayList<>();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -30,57 +31,28 @@ public class PixelSceneActivity extends Activity {
         list.setOrientation(LinearLayout.VERTICAL);
         list.setBackgroundColor(Color.BLACK);
 
-        offRow = new LinearLayout(this);
-        offRow.setOrientation(LinearLayout.HORIZONTAL);
-        offRow.setGravity(Gravity.CENTER_VERTICAL);
-        offRow.setPadding(48, 24, 48, 24);
-
-        offLabel = new TextView(this);
-        offLabel.setText("Off");
-        offLabel.setTextSize(18);
-        offLabel.setTypeface(georgia);
-        offRow.addView(offLabel);
-
-        offRow.setOnClickListener(v -> {
-            Config.setPixelArtEnabled(this, false);
-            refreshSelection();
-        });
-
-        list.addView(offRow, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        addRow(list, georgia, "Off", null,
+                () -> !Config.isPixelArtEnabled(this),
+                v -> Config.setPixelArtEnabled(this, false));
 
         for (Scene scene : Scene.values()) {
-            LinearLayout row = new LinearLayout(this);
-            row.setOrientation(LinearLayout.HORIZONTAL);
-            row.setGravity(Gravity.CENTER_VERTICAL);
-            row.setPadding(48, 24, 48, 24);
+            addRow(list, georgia, scene.label, new PixelArtView(this, scene),
+                    () -> Config.isPixelArtEnabled(this) && !Config.isGifSceneSelected(this)
+                            && Config.getPixelScene(this) == scene,
+                    v -> {
+                        Config.setPixelScene(this, scene);
+                        Config.setPixelArtEnabled(this, true);
+                    });
+        }
 
-            PixelArtView preview = new PixelArtView(this, scene);
-            LinearLayout.LayoutParams previewParams = new LinearLayout.LayoutParams(80, 100);
-            previewParams.topMargin = 16;
-            previewParams.bottomMargin = 16;
-            previewParams.rightMargin = 16;
-            row.addView(preview, previewParams);
-
-            TextView label = new TextView(this);
-            label.setText(scene.label);
-            label.setTextSize(18);
-            label.setTypeface(georgia);
-            LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-            labelParams.leftMargin = 32;
-            row.addView(label, labelParams);
-
-            row.setOnClickListener(v -> {
-                Config.setPixelScene(this, scene);
-                Config.setPixelArtEnabled(this, true);
-                refreshSelection();
-            });
-
-            list.addView(row, new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-            rows.add(row);
-            labels.add(label);
+        for (GifScene gif : GifScene.values()) {
+            addRow(list, georgia, gif.label, new GifArtView(this, gif),
+                    () -> Config.isPixelArtEnabled(this) && Config.isGifSceneSelected(this)
+                            && Config.getGifScene(this) == gif,
+                    v -> {
+                        Config.setGifScene(this, gif);
+                        Config.setPixelArtEnabled(this, true);
+                    });
         }
 
         refreshSelection();
@@ -91,16 +63,47 @@ public class PixelSceneActivity extends Activity {
         setContentView(scrollView);
     }
 
+    private void addRow(LinearLayout list, Typeface georgia, String labelText, View preview,
+                         BooleanSupplier isSelected, View.OnClickListener onSelect) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(48, 24, 48, 24);
+
+        if (preview != null) {
+            LinearLayout.LayoutParams previewParams = new LinearLayout.LayoutParams(80, 100);
+            previewParams.topMargin = 16;
+            previewParams.bottomMargin = 16;
+            previewParams.rightMargin = 16;
+            row.addView(preview, previewParams);
+        }
+
+        TextView label = new TextView(this);
+        label.setText(labelText);
+        label.setTextSize(18);
+        label.setTypeface(georgia);
+        LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        if (preview != null) {
+            labelParams.leftMargin = 32;
+        }
+        row.addView(label, labelParams);
+
+        row.setOnClickListener(v -> {
+            onSelect.onClick(v);
+            refreshSelection();
+        });
+
+        list.addView(row, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        rows.add(row);
+        labels.add(label);
+        selectedChecks.add(isSelected);
+    }
+
     private void refreshSelection() {
-        boolean enabled = Config.isPixelArtEnabled(this);
-        Scene current = Config.getPixelScene(this);
-
-        offRow.setBackgroundColor(!enabled ? Color.WHITE : Color.BLACK);
-        offLabel.setTextColor(!enabled ? Color.BLACK : Color.WHITE);
-
-        Scene[] values = Scene.values();
-        for (int i = 0; i < values.length; i++) {
-            boolean selected = enabled && values[i] == current;
+        for (int i = 0; i < rows.size(); i++) {
+            boolean selected = selectedChecks.get(i).getAsBoolean();
             rows.get(i).setBackgroundColor(selected ? Color.WHITE : Color.BLACK);
             labels.get(i).setTextColor(selected ? Color.BLACK : Color.WHITE);
         }
