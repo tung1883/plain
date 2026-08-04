@@ -4,8 +4,11 @@ import android.content.Context;
 import android.content.SharedPreferences;
 
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.Collections;
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
@@ -17,6 +20,12 @@ class UsageStore {
 
     private static final String PREFS = "usage";
     private static final SimpleDateFormat DAY_FORMAT = new SimpleDateFormat("yyyyMMdd", Locale.US);
+
+    static class Entry {
+        String label;
+        long millis;
+        int opens;
+    }
 
     static void recordOpen(Context context, String packageName) {
         String key = "opens_" + today() + "_" + packageName;
@@ -31,19 +40,9 @@ class UsageStore {
         prefs.edit().putLong(key, prefs.getLong(key, 0L) + millis).apply();
     }
 
-    static String buildReport(Context context, Set<String> packages) {
+    /** Per-app totals for packages with any recorded usage in [startOffset, endOffset] days from today, sorted by time. */
+    static List<Entry> rangeUsage(Context context, Set<String> packages, int startOffset, int endOffset) {
         SharedPreferences prefs = prefs(context);
-        StringBuilder sb = new StringBuilder();
-        sb.append("Flagged apps\n\n");
-        sb.append("Today\n");
-        appendRange(sb, prefs, packages, 0, 0);
-        sb.append("\nLast 7 days\n");
-        appendRange(sb, prefs, packages, -6, 0);
-        return sb.toString();
-    }
-
-    private static void appendRange(StringBuilder sb, SharedPreferences prefs,
-            Set<String> packages, int startOffset, int endOffset) {
         Map<String, Long> millisTotals = new TreeMap<>();
         Map<String, Integer> openTotals = new TreeMap<>();
 
@@ -61,21 +60,16 @@ class UsageStore {
         involved.addAll(millisTotals.keySet());
         involved.addAll(openTotals.keySet());
 
-        if (involved.isEmpty()) {
-            sb.append("  (no usage)\n");
-            return;
-        }
-
-        long totalMillis = 0;
+        List<Entry> entries = new ArrayList<>();
         for (String pkg : involved) {
-            long millis = millisTotals.getOrDefault(pkg, 0L);
-            int opens = openTotals.getOrDefault(pkg, 0);
-            totalMillis += millis;
-            sb.append("  ").append(friendlyName(pkg)).append(": ")
-                    .append(formatDuration(millis)).append(", ")
-                    .append(opens).append(opens == 1 ? " open\n" : " opens\n");
+            Entry entry = new Entry();
+            entry.label = friendlyName(pkg);
+            entry.millis = millisTotals.getOrDefault(pkg, 0L);
+            entry.opens = openTotals.getOrDefault(pkg, 0);
+            entries.add(entry);
         }
-        sb.append("  Total: ").append(formatDuration(totalMillis)).append('\n');
+        Collections.sort(entries, (a, b) -> Long.compare(b.millis, a.millis));
+        return entries;
     }
 
     private static String friendlyName(String pkg) {
@@ -87,13 +81,6 @@ class UsageStore {
             case "com.whatsapp": return "WhatsApp";
             default: return pkg;
         }
-    }
-
-    private static String formatDuration(long millis) {
-        long totalMinutes = millis / 60000;
-        long hours = totalMinutes / 60;
-        long minutes = totalMinutes % 60;
-        return hours > 0 ? (hours + "h " + minutes + "m") : (minutes + "m");
     }
 
     private static SharedPreferences prefs(Context context) {

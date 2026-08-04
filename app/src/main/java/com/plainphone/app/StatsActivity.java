@@ -6,6 +6,7 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.view.View;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -15,7 +16,7 @@ import java.util.List;
 
 public class StatsActivity extends Activity {
 
-    private static final int BAR_MAX_CHARS = 20;
+    private static final int BAR_HEIGHT = 20;
 
     private ScrollView scroll;
 
@@ -40,20 +41,15 @@ public class StatsActivity extends Activity {
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(48, 48, 48, 48);
 
-        TextView flaggedReport = new TextView(this);
-        flaggedReport.setTextColor(Color.WHITE);
-        flaggedReport.setTextSize(18);
-        flaggedReport.setTypeface(georgia);
-        flaggedReport.setText(UsageStore.buildReport(this, Config.getFlaggedPackages(this)));
-        content.addView(flaggedReport);
+        addSectionTitle(content, georgia, "Flagged apps — Today", 0);
+        addUsageSection(content, georgia,
+                UsageStore.rangeUsage(this, Config.getFlaggedPackages(this), 0, 0));
 
-        TextView allAppsTitle = new TextView(this);
-        allAppsTitle.setTextColor(Color.WHITE);
-        allAppsTitle.setTextSize(18);
-        allAppsTitle.setTypeface(georgia);
-        allAppsTitle.setPadding(0, 48, 0, 0);
-        allAppsTitle.setText("All apps: this week");
-        content.addView(allAppsTitle);
+        addSectionTitle(content, georgia, "Flagged apps — Last 7 days", 48);
+        addUsageSection(content, georgia,
+                UsageStore.rangeUsage(this, Config.getFlaggedPackages(this), -6, 0));
+
+        addSectionTitle(content, georgia, "All apps — This week", 48);
 
         if (!AllAppsUsage.hasUsageAccess(this)) {
             TextView notice = new TextView(this);
@@ -71,23 +67,53 @@ public class StatsActivity extends Activity {
                     startActivity(new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)));
             content.addView(grant);
         } else {
-            TextView allAppsReport = new TextView(this);
-            allAppsReport.setTextColor(Color.WHITE);
-            allAppsReport.setTextSize(16);
-            allAppsReport.setTypeface(georgia);
-            allAppsReport.setPadding(0, 16, 0, 0);
-            allAppsReport.setText(buildAllAppsReport());
-            content.addView(allAppsReport);
+            List<AllAppsUsage.Entry> entries = AllAppsUsage.weeklyComparison(this, 12);
+            addAllAppsSection(content, georgia, entries);
         }
 
         scroll.removeAllViews();
         scroll.addView(content);
     }
 
-    private String buildAllAppsReport() {
-        List<AllAppsUsage.Entry> entries = AllAppsUsage.weeklyComparison(this, 12);
+    private void addSectionTitle(LinearLayout content, Typeface georgia, String text, int topMargin) {
+        TextView title = new TextView(this);
+        title.setTextColor(Color.WHITE);
+        title.setTextSize(18);
+        title.setTypeface(georgia);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.topMargin = topMargin;
+        params.bottomMargin = 16;
+        title.setLayoutParams(params);
+        title.setText(text);
+        content.addView(title);
+    }
+
+    private void addUsageSection(LinearLayout content, Typeface georgia, List<UsageStore.Entry> entries) {
         if (entries.isEmpty()) {
-            return "  (no usage data yet)";
+            content.addView(emptyText(georgia, "(no usage)"));
+            return;
+        }
+
+        long max = 1;
+        long totalMillis = 0;
+        for (UsageStore.Entry e : entries) {
+            max = Math.max(max, e.millis);
+            totalMillis += e.millis;
+        }
+
+        for (UsageStore.Entry e : entries) {
+            String caption = e.label + "  " + formatDuration(e.millis) + ", "
+                    + e.opens + (e.opens == 1 ? " open" : " opens");
+            content.addView(buildBarRow(georgia, caption, e.millis, max));
+        }
+        content.addView(totalText(georgia, totalMillis));
+    }
+
+    private void addAllAppsSection(LinearLayout content, Typeface georgia, List<AllAppsUsage.Entry> entries) {
+        if (entries.isEmpty()) {
+            content.addView(emptyText(georgia, "(no usage data yet)"));
+            return;
         }
 
         long max = 1;
@@ -97,22 +123,69 @@ public class StatsActivity extends Activity {
             totalMillis += e.thisWeekMillis;
         }
 
-        StringBuilder sb = new StringBuilder();
         for (AllAppsUsage.Entry e : entries) {
-            int barLength = (int) (e.thisWeekMillis * BAR_MAX_CHARS / max);
-            String bar = repeat('█', barLength);
-            sb.append(e.label).append('\n')
-                    .append("  ").append(bar).append(' ').append(formatDuration(e.thisWeekMillis))
-                    .append('\n');
+            String caption = e.label + "  " + formatDuration(e.thisWeekMillis);
+            content.addView(buildBarRow(georgia, caption, e.thisWeekMillis, max));
         }
-        sb.append("\nTotal: ").append(formatDuration(totalMillis));
-        return sb.toString();
+        content.addView(totalText(georgia, totalMillis));
     }
 
-    private static String repeat(char c, int count) {
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < count; i++) sb.append(c);
-        return sb.toString();
+    /** A label line over a flat black/white bar, its fill width proportional to millis/max. */
+    private View buildBarRow(Typeface georgia, String caption, long millis, long max) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        rowParams.bottomMargin = 20;
+        row.setLayoutParams(rowParams);
+
+        TextView label = new TextView(this);
+        label.setTextColor(Color.WHITE);
+        label.setTextSize(15);
+        label.setTypeface(georgia);
+        label.setText(caption);
+        row.addView(label);
+
+        LinearLayout track = new LinearLayout(this);
+        track.setOrientation(LinearLayout.HORIZONTAL);
+        track.setBackgroundColor(Color.DKGRAY);
+        LinearLayout.LayoutParams trackParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, BAR_HEIGHT);
+        trackParams.topMargin = 8;
+        row.addView(track, trackParams);
+
+        long clamped = Math.max(0, Math.min(millis, max));
+        View fill = new View(this);
+        fill.setBackgroundColor(Color.WHITE);
+        track.addView(fill, new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.MATCH_PARENT, clamped));
+
+        long remainder = max - clamped;
+        if (remainder > 0) {
+            View spacer = new View(this);
+            track.addView(spacer, new LinearLayout.LayoutParams(
+                    0, LinearLayout.LayoutParams.MATCH_PARENT, remainder));
+        }
+
+        return row;
+    }
+
+    private TextView emptyText(Typeface georgia, String text) {
+        TextView view = new TextView(this);
+        view.setTextColor(Color.WHITE);
+        view.setTextSize(15);
+        view.setTypeface(georgia);
+        view.setText(text);
+        return view;
+    }
+
+    private TextView totalText(Typeface georgia, long totalMillis) {
+        TextView view = new TextView(this);
+        view.setTextColor(Color.WHITE);
+        view.setTextSize(15);
+        view.setTypeface(georgia);
+        view.setText("Total: " + formatDuration(totalMillis));
+        return view;
     }
 
     private static String formatDuration(long millis) {
