@@ -65,6 +65,9 @@ public class SettingsActivity extends Activity {
         root.addView(row("App lock",
                 v -> startActivity(new Intent(this, LockedAppsActivity.class))));
 
+        root.addView(row("Home screen art",
+                v -> startActivity(new Intent(this, PixelSceneActivity.class))));
+
         root.addView(row("Grant usage access (for all-apps stats)",
                 v -> startActivity(new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))));
     }
