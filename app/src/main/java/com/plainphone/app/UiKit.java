@@ -12,7 +12,7 @@ class UiKit {
 
     static void style(Context context, Button button) {
         button.setTextColor(Color.WHITE);
-        button.setTypeface(Fonts.georgia(context));
+        button.setTypeface(Fonts.current(context));
         button.setAllCaps(false);
         button.setPadding(48, 28, 48, 28);
         button.setBackground(buttonBackground());
@@ -20,7 +20,7 @@ class UiKit {
 
     static void style(Context context, EditText input) {
         input.setTextColor(Color.WHITE);
-        input.setTypeface(Fonts.georgia(context));
+        input.setTypeface(Fonts.current(context));
         input.setPadding(32, 20, 32, 20);
         input.setBackground(inputBackground());
     }

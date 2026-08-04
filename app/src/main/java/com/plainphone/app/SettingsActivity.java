@@ -24,7 +24,7 @@ public class SettingsActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        georgia = Fonts.georgia(this);
+        georgia = Fonts.current(this);
 
         root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -67,6 +67,9 @@ public class SettingsActivity extends Activity {
 
         root.addView(row("Home screen art",
                 v -> startActivity(new Intent(this, PixelSceneActivity.class))));
+
+        root.addView(row("Font: " + Config.getFontChoice(this).label,
+                v -> startActivity(new Intent(this, FontActivity.class))));
 
         root.addView(row("Grant usage access (for all-apps stats)",
                 v -> startActivity(new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))));

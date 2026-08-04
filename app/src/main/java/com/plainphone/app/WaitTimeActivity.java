@@ -23,7 +23,7 @@ public class WaitTimeActivity extends Activity {
         super.onCreate(savedInstanceState);
         seconds = Config.getWaitSeconds(this);
 
-        Typeface georgia = Fonts.georgia(this);
+        Typeface georgia = Fonts.current(this);
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);

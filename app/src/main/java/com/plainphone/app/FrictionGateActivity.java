@@ -36,7 +36,7 @@ public abstract class FrictionGateActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        georgia = Fonts.georgia(this);
+        georgia = Fonts.current(this);
 
         content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);

@@ -35,7 +35,7 @@ public class StatsActivity extends Activity {
     }
 
     private void render() {
-        Typeface georgia = Fonts.georgia(this);
+        Typeface georgia = Fonts.current(this);
 
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);

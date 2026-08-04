@@ -51,7 +51,7 @@ public class OnboardingActivity extends Activity {
 
     private void renderStep() {
         content.removeAllViews();
-        Typeface georgia = Fonts.georgia(this);
+        Typeface georgia = Fonts.current(this);
 
         TextView title = new TextView(this);
         title.setTextColor(Color.WHITE);

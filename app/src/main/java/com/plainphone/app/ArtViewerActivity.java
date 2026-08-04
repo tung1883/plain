@@ -101,7 +101,7 @@ public class ArtViewerActivity extends Activity {
             return true;
         });
 
-        Typeface georgia = Fonts.georgia(this);
+        Typeface georgia = Fonts.current(this);
         Button close = new Button(this);
         close.setText("X");
         UiKit.style(this, close);

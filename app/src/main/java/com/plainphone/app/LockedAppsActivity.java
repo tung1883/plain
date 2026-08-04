@@ -78,7 +78,7 @@ public class LockedAppsActivity extends Activity {
                     label = (TextView) row.getChildAt(0);
                     checkBox = (CheckBox) row.getChildAt(1);
                 } else {
-                    Typeface georgia = Fonts.georgia(LockedAppsActivity.this);
+                    Typeface georgia = Fonts.current(LockedAppsActivity.this);
 
                     row = new LinearLayout(LockedAppsActivity.this);
                     row.setOrientation(LinearLayout.HORIZONTAL);
@@ -154,7 +154,7 @@ public class LockedAppsActivity extends Activity {
     }
 
     private View buildPinHeader() {
-        Typeface georgia = Fonts.georgia(this);
+        Typeface georgia = Fonts.current(this);
 
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.VERTICAL);
