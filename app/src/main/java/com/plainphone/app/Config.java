@@ -71,6 +71,27 @@ class Config {
         prefs(context).edit().putStringSet("locked_packages", packages).apply();
     }
 
+    static Scene getPixelScene(Context context) {
+        String stored = prefs(context).getString("pixel_scene", Scene.RAIN.name());
+        try {
+            return Scene.valueOf(stored);
+        } catch (IllegalArgumentException e) {
+            return Scene.RAIN;
+        }
+    }
+
+    static void setPixelScene(Context context, Scene scene) {
+        prefs(context).edit().putString("pixel_scene", scene.name()).apply();
+    }
+
+    static boolean isPixelArtEnabled(Context context) {
+        return prefs(context).getBoolean("pixel_art_enabled", true);
+    }
+
+    static void setPixelArtEnabled(Context context, boolean enabled) {
+        prefs(context).edit().putBoolean("pixel_art_enabled", enabled).apply();
+    }
+
     static boolean isPinSet(Context context) {
         return prefs(context).getString("lock_pin_hash", null) != null;
     }

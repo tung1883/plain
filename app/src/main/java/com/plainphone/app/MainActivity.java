@@ -45,6 +45,7 @@ public class MainActivity extends Activity {
     private List<ResolveInfo> apps;
     private ArrayAdapter<ResolveInfo> adapter;
     private EditText search;
+    private PixelArtView pixelArt;
     private boolean showingHomeReminder = false;
     private boolean homeUiBuilt = false;
 
@@ -98,6 +99,8 @@ public class MainActivity extends Activity {
             // Apps may have been hidden/unhidden (or uninstalled) while we were away
             // (e.g. via Settings or a long-press action); reflect that on return.
             refreshApps();
+            pixelArt.setScene(Config.getPixelScene(this));
+            pixelArt.setVisibility(Config.isPixelArtEnabled(this) ? View.VISIBLE : View.GONE);
         }
     }
 
@@ -209,19 +212,37 @@ public class MainActivity extends Activity {
         root.addView(search, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
+        LinearLayout menuColumn = new LinearLayout(this);
+        menuColumn.setOrientation(LinearLayout.VERTICAL);
+
         TextView screenOffRow = buildRow(georgia, "Turn off screen");
         screenOffRow.setOnClickListener(v -> AppMonitorService.lockScreen());
-        root.addView(screenOffRow, new LinearLayout.LayoutParams(
+        menuColumn.addView(screenOffRow, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
         TextView statsRow = buildRow(georgia, "Usage stats");
         statsRow.setOnClickListener(v -> startActivity(new Intent(this, StatsActivity.class)));
-        root.addView(statsRow, new LinearLayout.LayoutParams(
+        menuColumn.addView(statsRow, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
         TextView settingsRow = buildRow(georgia, "Settings");
         settingsRow.setOnClickListener(v -> startActivity(new Intent(this, SettingsGateActivity.class)));
-        root.addView(settingsRow, new LinearLayout.LayoutParams(
+        menuColumn.addView(settingsRow, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        LinearLayout menuRow = new LinearLayout(this);
+        menuRow.setOrientation(LinearLayout.HORIZONTAL);
+        menuRow.setGravity(Gravity.CENTER_VERTICAL);
+        menuRow.addView(menuColumn, new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        pixelArt = new PixelArtView(this, Config.getPixelScene(this));
+        pixelArt.setVisibility(Config.isPixelArtEnabled(this) ? View.VISIBLE : View.GONE);
+        LinearLayout.LayoutParams pixelArtParams = new LinearLayout.LayoutParams(120, 150);
+        pixelArtParams.rightMargin = 48;
+        menuRow.addView(pixelArt, pixelArtParams);
+
+        root.addView(menuRow, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
         ListView listView = new ListView(this);
