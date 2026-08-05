@@ -35,20 +35,9 @@ public class PixelSceneActivity extends Activity {
                 () -> !Config.isPixelArtEnabled(this),
                 v -> Config.setPixelArtEnabled(this, false));
 
-        for (Scene scene : Scene.values()) {
-            addRow(list, georgia, scene.label, new PixelArtView(this, scene),
-                    () -> Config.isPixelArtEnabled(this) && !Config.isGifSceneSelected(this)
-                            && Config.getPixelScene(this) == scene,
-                    v -> {
-                        Config.setPixelScene(this, scene);
-                        Config.setPixelArtEnabled(this, true);
-                    });
-        }
-
         for (GifScene gif : GifScene.values()) {
             addRow(list, georgia, gif.label, new GifArtView(this, gif),
-                    () -> Config.isPixelArtEnabled(this) && Config.isGifSceneSelected(this)
-                            && Config.getGifScene(this) == gif,
+                    () -> Config.isPixelArtEnabled(this) && Config.getGifScene(this) == gif,
                     v -> {
                         Config.setGifScene(this, gif);
                         Config.setPixelArtEnabled(this, true);
