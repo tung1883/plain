@@ -34,9 +34,7 @@ public class ArtViewerActivity extends Activity {
         FrameLayout artFrame = new FrameLayout(this);
         artFrame.setForeground(UiKit.frameBorder());
 
-        content = (Config.isPixelArtEnabled(this) && Config.isGifSceneSelected(this))
-                ? new GifArtView(this, Config.getGifScene(this))
-                : new PixelArtView(this, Config.getPixelScene(this));
+        content = new GifArtView(this, Config.getGifScene(this));
         artFrame.addView(content, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 

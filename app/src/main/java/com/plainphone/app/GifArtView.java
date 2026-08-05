@@ -12,9 +12,9 @@ import java.io.InputStream;
 
 /**
  * Plays a bundled grayscale GIF (from assets/pixel_art/) scaled to fully cover the view
- * (cropping any excess, not letterboxing) — the real-art counterpart to PixelArtView's
- * hand-drawn scenes. Drives its own animation by continuously invalidating from onDraw, so it
- * only costs anything while actually attached and visible (a GONE view never gets onDraw called).
+ * (cropping any excess, not letterboxing). Drives its own animation by continuously
+ * invalidating from onDraw, so it only costs anything while actually attached and visible
+ * (a GONE view never gets onDraw called).
  */
 class GifArtView extends View {
 

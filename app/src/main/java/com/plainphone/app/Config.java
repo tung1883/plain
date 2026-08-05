@@ -71,22 +71,6 @@ class Config {
         prefs(context).edit().putStringSet("locked_packages", packages).apply();
     }
 
-    static Scene getPixelScene(Context context) {
-        String stored = prefs(context).getString("pixel_scene", Scene.RAIN.name());
-        try {
-            return Scene.valueOf(stored);
-        } catch (IllegalArgumentException e) {
-            return Scene.RAIN;
-        }
-    }
-
-    static void setPixelScene(Context context, Scene scene) {
-        prefs(context).edit()
-                .putString("pixel_scene", scene.name())
-                .putString("pixel_art_kind", "SCENE")
-                .apply();
-    }
-
     static GifScene getGifScene(Context context) {
         String stored = prefs(context).getString("pixel_gif_scene", GifScene.CITY.name());
         try {
@@ -97,14 +81,7 @@ class Config {
     }
 
     static void setGifScene(Context context, GifScene scene) {
-        prefs(context).edit()
-                .putString("pixel_gif_scene", scene.name())
-                .putString("pixel_art_kind", "GIF")
-                .apply();
-    }
-
-    static boolean isGifSceneSelected(Context context) {
-        return "GIF".equals(prefs(context).getString("pixel_art_kind", "SCENE"));
+        prefs(context).edit().putString("pixel_gif_scene", scene.name()).apply();
     }
 
     static boolean isPixelArtEnabled(Context context) {

@@ -47,7 +47,6 @@ public class MainActivity extends Activity {
     private List<ResolveInfo> apps;
     private ArrayAdapter<ResolveInfo> adapter;
     private EditText search;
-    private PixelArtView pixelArt;
     private GifArtView gifArt;
     private boolean showingHomeReminder = false;
     private boolean homeUiBuilt = false;
@@ -116,14 +115,8 @@ public class MainActivity extends Activity {
     }
 
     private void applyPixelArtSelection() {
-        boolean enabled = Config.isPixelArtEnabled(this);
-        boolean gifSelected = Config.isGifSceneSelected(this);
-
-        pixelArt.setScene(Config.getPixelScene(this));
-        pixelArt.setVisibility(enabled && !gifSelected ? View.VISIBLE : View.GONE);
-
         gifArt.setScene(Config.getGifScene(this));
-        gifArt.setVisibility(enabled && gifSelected ? View.VISIBLE : View.GONE);
+        gifArt.setVisibility(Config.isPixelArtEnabled(this) ? View.VISIBLE : View.GONE);
     }
 
     private void refreshApps() {
@@ -263,10 +256,6 @@ public class MainActivity extends Activity {
         // being painted over by it — the art views fill the frame edge-to-edge with no gap.
         artFrame.setForeground(UiKit.frameBorder());
         artFrame.setOnClickListener(v -> startActivity(new Intent(this, ArtViewerActivity.class)));
-
-        pixelArt = new PixelArtView(this, Config.getPixelScene(this));
-        artFrame.addView(pixelArt, new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
         gifArt = new GifArtView(this, Config.getGifScene(this));
         artFrame.addView(gifArt, new FrameLayout.LayoutParams(
