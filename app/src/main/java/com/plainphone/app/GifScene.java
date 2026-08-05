@@ -7,7 +7,9 @@ enum GifScene {
     HIGHWAY("Highway", "highway.gif"),
     CASTLE("Castle", "castle.gif"),
     VILLAGE("Village", "village.gif"),
-    CLIFFS("Cliffs", "cliffs.gif");
+    CLIFFS("Cliffs", "cliffs.gif"),
+    NIGHT_HOUSE("Night house", "nighthouse.gif"),
+    GLITCH("Glitch", "glitch.gif");
 
     final String label;
     final String assetFileName;
