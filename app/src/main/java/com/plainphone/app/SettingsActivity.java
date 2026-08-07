@@ -1,7 +1,6 @@
 package com.plainphone.app;
 
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -9,10 +8,8 @@ import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.StateListDrawable;
 import android.os.Bundle;
 import android.provider.Settings;
-import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
-import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -49,13 +46,6 @@ public class SettingsActivity extends Activity {
         boolean grayscaleOn = Config.isGrayscaleEnabled(this);
         root.addView(row("Grayscale: " + (grayscaleOn ? "On" : "Off"), v -> toggleGrayscale()));
 
-        root.addView(row("Wait time: " + Config.getWaitSeconds(this) + "s",
-                v -> startActivity(new Intent(this, WaitTimeActivity.class))));
-
-        root.addView(row("Auto-close after: " + Config.getBudgetMinutes(this) + "m",
-                v -> editNumber("Auto-close after (minutes)", Config.getBudgetMinutes(this),
-                        value -> Config.setBudgetMinutes(this, value))));
-
         root.addView(row("Flagged apps",
                 v -> startActivity(new Intent(this, FlaggedAppsActivity.class))));
 
@@ -87,36 +77,6 @@ public class SettingsActivity extends Activity {
                     android.widget.Toast.LENGTH_LONG).show();
         }
         render();
-    }
-
-    private interface IntConsumer {
-        void accept(int value);
-    }
-
-    private void editNumber(String title, int current, IntConsumer onSet) {
-        EditText input = new EditText(this);
-        input.setInputType(InputType.TYPE_CLASS_NUMBER);
-        input.setText(String.valueOf(current));
-        input.setTextColor(Color.WHITE);
-        input.setBackgroundColor(Color.BLACK);
-        input.setTypeface(georgia);
-
-        new AlertDialog.Builder(this)
-                .setTitle(title)
-                .setView(input)
-                .setPositiveButton("Save", (dialog, which) -> {
-                    try {
-                        int value = Integer.parseInt(input.getText().toString().trim());
-                        if (value > 0) {
-                            onSet.accept(value);
-                        }
-                    } catch (NumberFormatException ignored) {
-                        // leave the setting unchanged on invalid input
-                    }
-                    render();
-                })
-                .setNegativeButton("Cancel", null)
-                .show();
     }
 
     private TextView row(String label, View.OnClickListener listener) {

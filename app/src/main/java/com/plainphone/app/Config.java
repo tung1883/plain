@@ -36,6 +36,39 @@ class Config {
         prefs(context).edit().putInt("budget_minutes", minutes).apply();
     }
 
+    static int getLockoutMinutes(Context context) {
+        return prefs(context).getInt("lockout_minutes", 15);
+    }
+
+    static void setLockoutMinutes(Context context, int minutes) {
+        prefs(context).edit().putInt("lockout_minutes", minutes).apply();
+    }
+
+    static boolean isBudgetEnabled(Context context) {
+        return prefs(context).getBoolean("budget_enabled", false);
+    }
+
+    static void setBudgetEnabled(Context context, boolean enabled) {
+        prefs(context).edit().putBoolean("budget_enabled", enabled).apply();
+    }
+
+    static boolean isLockoutEnabled(Context context) {
+        return prefs(context).getBoolean("lockout_enabled", false);
+    }
+
+    static void setLockoutEnabled(Context context, boolean enabled) {
+        prefs(context).edit().putBoolean("lockout_enabled", enabled).apply();
+    }
+
+    /** Epoch millis until which a flagged app is barred from reopening after an auto-close, keyed per package. */
+    static long getLockoutUntil(Context context, String packageName) {
+        return prefs(context).getLong("lockout_until_" + packageName, 0L);
+    }
+
+    static void setLockoutUntil(Context context, String packageName, long untilEpochMillis) {
+        prefs(context).edit().putLong("lockout_until_" + packageName, untilEpochMillis).apply();
+    }
+
     static boolean isGrayscaleEnabled(Context context) {
         return prefs(context).getBoolean("grayscale_enabled", true);
     }

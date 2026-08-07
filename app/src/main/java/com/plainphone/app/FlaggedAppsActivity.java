@@ -15,6 +15,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ArrayAdapter;
+import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.TextView;
 
@@ -32,6 +33,11 @@ public class FlaggedAppsActivity extends Activity {
     private List<String> labels;
     private ListView listView;
     private ArrayAdapter<String> adapter;
+    private TextView waitRow;
+    private TextView budgetToggleRow;
+    private TextView budgetRow;
+    private TextView lockoutToggleRow;
+    private TextView lockoutRow;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -45,6 +51,7 @@ public class FlaggedAppsActivity extends Activity {
         listView.setBackgroundColor(Color.BLACK);
         listView.setDivider(null);
         listView.setDividerHeight(0);
+        listView.addHeaderView(buildHeader(georgia), null, false);
         setContentView(listView);
 
         labels = new ArrayList<>();
@@ -75,7 +82,12 @@ public class FlaggedAppsActivity extends Activity {
         };
         listView.setAdapter(adapter);
 
-        listView.setOnItemClickListener((parent, view, position, id) -> {
+        listView.setOnItemClickListener((parent, view, rawPosition, id) -> {
+            // rawPosition counts the header view too, so it must be un-offset before
+            // indexing into apps/labels — otherwise this toggles the row above the one tapped.
+            int position = rawPosition - listView.getHeaderViewsCount();
+            if (position < 0) return;
+
             String pkg = apps.get(position).activityInfo.packageName;
             boolean currentlyFlagged = Config.getFlaggedPackages(this).contains(pkg);
 
@@ -100,6 +112,82 @@ public class FlaggedAppsActivity extends Activity {
     protected void onResume() {
         super.onResume();
         adapter.notifyDataSetChanged(); // reflect a change confirmed while we were away
+        refreshHeader();
+    }
+
+    private LinearLayout buildHeader(Typeface georgia) {
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.VERTICAL);
+        header.setBackgroundColor(Color.BLACK);
+
+        waitRow = row(georgia, v -> startActivity(new Intent(this, WaitTimeActivity.class)));
+        header.addView(waitRow);
+
+        budgetToggleRow = row(georgia, v -> {
+            Config.setBudgetEnabled(this, !Config.isBudgetEnabled(this));
+            refreshHeader();
+        });
+        header.addView(budgetToggleRow);
+
+        budgetRow = row(georgia, v -> startActivity(new Intent(this, BudgetTimeActivity.class)));
+        header.addView(budgetRow);
+
+        lockoutToggleRow = row(georgia, v -> {
+            Config.setLockoutEnabled(this, !Config.isLockoutEnabled(this));
+            refreshHeader();
+        });
+        header.addView(lockoutToggleRow);
+
+        lockoutRow = row(georgia, v -> startActivity(new Intent(this, LockoutTimeActivity.class)));
+        header.addView(lockoutRow);
+
+        header.addView(divider());
+
+        TextView listTitle = new TextView(this);
+        listTitle.setText("List of apps");
+        listTitle.setTextColor(Color.GRAY);
+        listTitle.setTextSize(14);
+        listTitle.setTypeface(georgia);
+        listTitle.setPadding(48, 24, 48, 16);
+        header.addView(listTitle);
+
+        return header;
+    }
+
+    private void refreshHeader() {
+        waitRow.setText("Wait time: " + Config.getWaitSeconds(this) + "s");
+
+        boolean budgetOn = Config.isBudgetEnabled(this);
+        budgetToggleRow.setText("Auto-close: " + (budgetOn ? "On" : "Off"));
+        budgetRow.setText("Auto-close after: " + Config.getBudgetMinutes(this) + "m");
+        budgetRow.setVisibility(budgetOn ? View.VISIBLE : View.GONE);
+
+        boolean lockoutOn = Config.isLockoutEnabled(this);
+        lockoutToggleRow.setText("Reopen lockout: " + (lockoutOn ? "On" : "Off"));
+        lockoutRow.setText("Reopen lockout after: " + Config.getLockoutMinutes(this) + "m");
+        lockoutRow.setVisibility(lockoutOn ? View.VISIBLE : View.GONE);
+    }
+
+    private TextView row(Typeface georgia, View.OnClickListener listener) {
+        TextView view = new TextView(this);
+        view.setTextColor(Color.WHITE);
+        view.setTextSize(20);
+        view.setPadding(48, 32, 48, 32);
+        view.setGravity(Gravity.START);
+        view.setTypeface(georgia);
+        view.setBackground(rowBackground());
+        view.setOnClickListener(listener);
+        return view;
+    }
+
+    private View divider() {
+        View line = new View(this);
+        line.setBackgroundColor(Color.DKGRAY);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 2);
+        params.topMargin = 16;
+        line.setLayoutParams(params);
+        return line;
     }
 
     private Drawable rowBackground() {
