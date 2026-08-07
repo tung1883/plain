@@ -35,7 +35,10 @@ import java.util.Set;
  */
 public class AppMonitorService extends AccessibilityService {
 
-    private enum GateKind { COUNTDOWN, PIN }
+    private enum GateKind { COUNTDOWN, PIN, LOCKOUT }
+
+    // How far ahead of the auto-close budget timer to fire the warning notification.
+    private static final long WARNING_LEAD_MILLIS = 10_000L;
 
     // Lets MainActivity (a plain Activity, which can't call performGlobalAction itself)
     // reach the running service directly to trigger the lock-screen action.
@@ -63,6 +66,29 @@ public class AppMonitorService extends AccessibilityService {
             service.sessionPackage = packageName;
             service.sessionStartMillis = SystemClock.elapsedRealtime();
             UsageStore.recordOpen(service, packageName);
+        }
+    }
+
+    // Lets FlaggedGateActivity, which already ran the wait-time countdown before launching
+    // the real app, pre-arm the gate so the accessibility service's reactive countdown
+    // overlay doesn't show a second time the instant it sees that package come to the
+    // foreground. Mirrors startGate()'s COUNTDOWN-branch bookkeeping, including arming the
+    // budget timer, minus actually showing UI.
+    static void skipFlaggedGateFor(String packageName) {
+        AppMonitorService service = instance;
+        if (service != null) {
+            service.cancelPendingTeardown();
+            service.endSession();
+            service.cancelCountdown();
+            service.cancelBudgetTimer();
+            service.currentGatedPackage = packageName;
+            service.currentGateKind = GateKind.COUNTDOWN;
+            service.sessionPackage = packageName;
+            service.sessionStartMillis = SystemClock.elapsedRealtime();
+            UsageStore.recordOpen(service, packageName);
+            if (Config.isBudgetEnabled(service)) {
+                service.startBudgetTimer(packageName);
+            }
         }
     }
 
@@ -99,6 +125,7 @@ public class AppMonitorService extends AccessibilityService {
     private TextView countdownText = null;
     private EditText pinInput = null;
     private Runnable budgetRunnable = null;
+    private Runnable warningRunnable = null;
     private Runnable pendingTeardown = null;
     private Runnable countdownRunnable = null;
     private long homeReachedAt = 0L;
@@ -223,7 +250,9 @@ public class AppMonitorService extends AccessibilityService {
             }
             cancelPendingTeardown();
             if (!packageName.equals(currentGatedPackage)) {
-                startGate(packageName, GateKind.COUNTDOWN);
+                boolean lockedOut = Config.isLockoutEnabled(this)
+                        && Config.getLockoutUntil(this, packageName) > System.currentTimeMillis();
+                startGate(packageName, lockedOut ? GateKind.LOCKOUT : GateKind.COUNTDOWN);
             }
         } else if (currentGatedPackage != null) {
             schedulePendingTeardown();
@@ -235,6 +264,11 @@ public class AppMonitorService extends AccessibilityService {
         cancelCountdown();
         currentGatedPackage = packageName;
         currentGateKind = kind;
+        if (kind == GateKind.LOCKOUT) {
+            // Don't record this as a real open — the user never actually reaches the app.
+            showLockout(packageName);
+            return;
+        }
         sessionPackage = packageName;
         sessionStartMillis = SystemClock.elapsedRealtime();
         UsageStore.recordOpen(this, packageName);
@@ -243,6 +277,36 @@ public class AppMonitorService extends AccessibilityService {
         } else {
             showCountdown(Config.getWaitSeconds(this), packageName);
         }
+    }
+
+    private void showLockout(String packageName) {
+        if (!packageName.equals(currentGatedPackage)) return;
+
+        long remainingMillis = Config.getLockoutUntil(this, packageName) - System.currentTimeMillis();
+        if (remainingMillis <= 0) {
+            removeOverlay();
+            currentGateKind = GateKind.COUNTDOWN;
+            sessionPackage = packageName;
+            sessionStartMillis = SystemClock.elapsedRealtime();
+            UsageStore.recordOpen(this, packageName);
+            showCountdown(Config.getWaitSeconds(this), packageName);
+            return;
+        }
+
+        if (overlayRoot == null) {
+            addOverlay();
+        }
+        countdownText.setText("Locked. Try again in " + formatDuration(remainingMillis));
+
+        countdownRunnable = () -> showLockout(packageName);
+        handler.postDelayed(countdownRunnable, 1000);
+    }
+
+    private static String formatDuration(long millis) {
+        long totalSeconds = (millis + 999) / 1000;
+        long minutes = totalSeconds / 60;
+        long seconds = totalSeconds % 60;
+        return String.format(java.util.Locale.US, "%dm %02ds", minutes, seconds);
     }
 
     private void endSession() {
@@ -258,7 +322,9 @@ public class AppMonitorService extends AccessibilityService {
 
         if (secondsLeft <= 0) {
             removeOverlay();
-            startBudgetTimer(packageName);
+            if (Config.isBudgetEnabled(this)) {
+                startBudgetTimer(packageName);
+            }
             return;
         }
 
@@ -475,18 +541,38 @@ public class AppMonitorService extends AccessibilityService {
 
     private void startBudgetTimer(String packageName) {
         cancelBudgetTimer();
+        long budgetMillis = Config.getBudgetMinutes(this) * 60 * 1000L;
+
+        long warningDelay = budgetMillis - WARNING_LEAD_MILLIS;
+        if (warningDelay > 0) {
+            warningRunnable = () -> {
+                if (packageName.equals(lastForegroundPackage)) {
+                    NotificationHelper.notifyClosingSoon(this, packageName);
+                }
+            };
+            handler.postDelayed(warningRunnable, warningDelay);
+        }
+
         budgetRunnable = () -> {
             if (packageName.equals(lastForegroundPackage)) {
+                if (Config.isLockoutEnabled(this)) {
+                    Config.setLockoutUntil(this, packageName,
+                            System.currentTimeMillis() + Config.getLockoutMinutes(this) * 60 * 1000L);
+                }
                 performGlobalAction(GLOBAL_ACTION_HOME);
             }
         };
-        handler.postDelayed(budgetRunnable, Config.getBudgetMinutes(this) * 60 * 1000L);
+        handler.postDelayed(budgetRunnable, budgetMillis);
     }
 
     private void cancelBudgetTimer() {
         if (budgetRunnable != null) {
             handler.removeCallbacks(budgetRunnable);
             budgetRunnable = null;
+        }
+        if (warningRunnable != null) {
+            handler.removeCallbacks(warningRunnable);
+            warningRunnable = null;
         }
     }
 

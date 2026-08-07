@@ -10,6 +10,7 @@
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
         tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:label="@string/app_name"
@@ -74,6 +75,16 @@
             android:theme="@style/Theme.PlainPhone" />
 
         <activity
+            android:name=".BudgetTimeActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
+            android:name=".LockoutTimeActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
             android:name=".SettingsGateActivity"
             android:exported="false"
             android:theme="@style/Theme.PlainPhone" />
@@ -90,6 +101,11 @@
 
         <activity
             android:name=".PinGateActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
+            android:name=".FlaggedGateActivity"
             android:exported="false"
             android:theme="@style/Theme.PlainPhone" />
 

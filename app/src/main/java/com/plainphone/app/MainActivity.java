@@ -167,7 +167,18 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
     }
 
+    // Needed so AppMonitorService can show the "closing in 10 seconds" warning for
+    // flagged apps; without it, Notification.notify() silently does nothing on API 33+.
+    private void requestNotificationPermissionIfNeeded() {
+        if (android.os.Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
+                        != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 1001);
+        }
+    }
+
     private void startLoadingHomeUi() {
+        requestNotificationPermissionIfNeeded();
         setBlackWallpaperOnce();
 
         // Querying every launchable app (loadLaunchableApps) can take a noticeable moment,
@@ -380,6 +391,18 @@ public class MainActivity extends Activity {
         // is never visible without it.
         if (Config.getLockedPackages(this).contains(pkg)) {
             Intent gate = new Intent(this, PinGateActivity.class);
+            gate.putExtra("package", pkg);
+            gate.putExtra("label", labelFor(info).toString());
+            startActivity(gate);
+            return;
+        }
+
+        // Flagged apps are gated before they're ever started too, same as locked apps:
+        // the real app's screen is never visible before the wait-time countdown (or
+        // reopen lockout) clears, instead of flickering into view before
+        // AppMonitorService's reactive overlay catches up.
+        if (Config.getFlaggedPackages(this).contains(pkg)) {
+            Intent gate = new Intent(this, FlaggedGateActivity.class);
             gate.putExtra("package", pkg);
             gate.putExtra("label", labelFor(info).toString());
             startActivity(gate);
