@@ -317,6 +317,8 @@ public class MainActivity extends Activity {
         root.addView(timeBlockRow, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
+        root.addView(divider());
+
         ListView listView = new ListView(this);
         listView.setBackgroundColor(Color.BLACK);
         listView.setDivider(null);
@@ -376,6 +378,14 @@ public class MainActivity extends Activity {
         });
 
         refreshTimeBlockRow();
+    }
+
+    private View divider() {
+        View line = new View(this);
+        line.setBackgroundColor(Color.DKGRAY);
+        line.setLayoutParams(new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 2));
+        return line;
     }
 
     private void filter(String query) {
