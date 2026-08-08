@@ -123,7 +123,7 @@ public class MainActivity extends Activity {
             return;
         }
         TimeBlock first = active.get(0);
-        StringBuilder text = new StringBuilder(first.name)
+        StringBuilder text = new StringBuilder("Block: ").append(first.name)
                 .append(" until ").append(TimeBlockRules.formatEndTime(this, first));
         if (active.size() > 1) {
             text.append(" (+").append(active.size() - 1).append(')');
@@ -257,16 +257,6 @@ public class MainActivity extends Activity {
         root.addView(search, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        timeBlockRow = new TextView(this);
-        timeBlockRow.setTextColor(Color.WHITE);
-        timeBlockRow.setTextSize(16);
-        timeBlockRow.setTypeface(georgia);
-        timeBlockRow.setPadding(48, 16, 48, 0);
-        timeBlockRow.setVisibility(View.GONE);
-        timeBlockRow.setOnClickListener(v -> startActivity(new Intent(this, TimeBlocksActivity.class)));
-        root.addView(timeBlockRow, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-
         LinearLayout menuColumn = new LinearLayout(this);
         menuColumn.setOrientation(LinearLayout.VERTICAL);
 
@@ -319,6 +309,12 @@ public class MainActivity extends Activity {
         applyPixelArtSelection();
 
         root.addView(menuRow, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        timeBlockRow = buildRow(georgia, "");
+        timeBlockRow.setVisibility(View.GONE);
+        timeBlockRow.setOnClickListener(v -> startActivity(new Intent(this, TimeBlocksActivity.class)));
+        root.addView(timeBlockRow, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
         ListView listView = new ListView(this);
