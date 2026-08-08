@@ -33,6 +33,14 @@ class Config {
         prefs(context).edit().putInt("wait_seconds", seconds).apply();
     }
 
+    static int getSettingsWaitSeconds(Context context) {
+        return prefs(context).getInt("settings_wait_seconds", 10);
+    }
+
+    static void setSettingsWaitSeconds(Context context, int seconds) {
+        prefs(context).edit().putInt("settings_wait_seconds", seconds).apply();
+    }
+
     static int getBudgetMinutes(Context context) {
         return prefs(context).getInt("budget_minutes", 5);
     }

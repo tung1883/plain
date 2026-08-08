@@ -90,6 +90,11 @@
             android:theme="@style/Theme.PlainPhone" />
 
         <activity
+            android:name=".SettingsWaitTimeActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
             android:name=".LockedAppsActivity"
             android:exported="false"
             android:theme="@style/Theme.PlainPhone" />

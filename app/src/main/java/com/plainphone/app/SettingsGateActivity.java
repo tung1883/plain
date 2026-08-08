@@ -6,6 +6,16 @@ import android.content.Intent;
 public class SettingsGateActivity extends FrictionGateActivity {
 
     @Override
+    protected int waitSeconds() {
+        return Config.getSettingsWaitSeconds(this);
+    }
+
+    @Override
+    protected boolean requiresMathChallenge() {
+        return false;
+    }
+
+    @Override
     protected String describeAction() {
         return "Opening Settings";
     }
