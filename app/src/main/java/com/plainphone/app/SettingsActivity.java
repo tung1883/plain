@@ -55,6 +55,9 @@ public class SettingsActivity extends Activity {
         root.addView(row("App lock",
                 v -> startActivity(new Intent(this, LockedAppsActivity.class))));
 
+        root.addView(row("Time Blocks",
+                v -> startActivity(new Intent(this, TimeBlocksActivity.class))));
+
         root.addView(row("Home screen art",
                 v -> startActivity(new Intent(this, PixelSceneActivity.class))));
 
