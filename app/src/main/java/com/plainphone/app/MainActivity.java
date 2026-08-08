@@ -47,6 +47,7 @@ public class MainActivity extends Activity {
     private List<ResolveInfo> apps;
     private ArrayAdapter<ResolveInfo> adapter;
     private EditText search;
+    private TextView timeBlockRow;
     private GifArtView gifArt;
     private boolean showingHomeReminder = false;
     private boolean homeUiBuilt = false;
@@ -111,7 +112,24 @@ public class MainActivity extends Activity {
             // (e.g. via Settings or a long-press action); reflect that on return.
             refreshApps();
             applyPixelArtSelection();
+            refreshTimeBlockRow();
         }
+    }
+
+    private void refreshTimeBlockRow() {
+        List<TimeBlock> active = TimeBlockRules.getActiveBlocks(this);
+        if (active.isEmpty()) {
+            timeBlockRow.setVisibility(View.GONE);
+            return;
+        }
+        TimeBlock first = active.get(0);
+        StringBuilder text = new StringBuilder(first.name)
+                .append(" until ").append(TimeBlockRules.formatEndTime(this, first));
+        if (active.size() > 1) {
+            text.append(" (+").append(active.size() - 1).append(')');
+        }
+        timeBlockRow.setText(text.toString());
+        timeBlockRow.setVisibility(View.VISIBLE);
     }
 
     private void applyPixelArtSelection() {
@@ -239,6 +257,16 @@ public class MainActivity extends Activity {
         root.addView(search, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
+        timeBlockRow = new TextView(this);
+        timeBlockRow.setTextColor(Color.WHITE);
+        timeBlockRow.setTextSize(16);
+        timeBlockRow.setTypeface(georgia);
+        timeBlockRow.setPadding(48, 16, 48, 0);
+        timeBlockRow.setVisibility(View.GONE);
+        timeBlockRow.setOnClickListener(v -> startActivity(new Intent(this, TimeBlocksActivity.class)));
+        root.addView(timeBlockRow, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
         LinearLayout menuColumn = new LinearLayout(this);
         menuColumn.setOrientation(LinearLayout.VERTICAL);
 
@@ -350,6 +378,8 @@ public class MainActivity extends Activity {
             }
             return false;
         });
+
+        refreshTimeBlockRow();
     }
 
     private void filter(String query) {
@@ -385,6 +415,18 @@ public class MainActivity extends Activity {
 
     private void launchApp(ResolveInfo info) {
         String pkg = info.activityInfo.packageName;
+
+        // A time-block restriction is checked before locked/flagged: it's a deliberate
+        // scheduling decision (e.g. an allow-only Study block) that should override even
+        // a normally-unlocked app, same precedence as in AppMonitorService's reactive gate.
+        TimeBlock blockingBlock = TimeBlockRules.getBlockingBlock(this, pkg);
+        if (blockingBlock != null) {
+            Intent gate = new Intent(this, TimeBlockGateActivity.class);
+            gate.putExtra("package", pkg);
+            gate.putExtra("blockId", blockingBlock.id);
+            startActivity(gate);
+            return;
+        }
 
         // Locked apps are gated before they're ever started, not after: PinGateActivity
         // only launches the real app once the PIN is confirmed, so the app's own screen

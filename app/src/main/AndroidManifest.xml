@@ -129,6 +129,61 @@
             android:exported="false"
             android:theme="@style/Theme.PlainPhone" />
 
+        <activity
+            android:name=".TimeBlocksActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
+            android:name=".TimeBlockEditActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
+            android:name=".TimeBlockStartTimeActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
+            android:name=".TimeBlockEndTimeActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
+            android:name=".TimeBlockAppsActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
+            android:name=".TimeBlockDeleteActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
+            android:name=".TimeBlockDisableActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
+            android:name=".SessionLengthActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
+            android:name=".TimeBlockGateActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
+            android:name=".TimeBlockOverridePinActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
+            android:name=".TimeBlockOverrideActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
         <service
             android:name=".AppMonitorService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"

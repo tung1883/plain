@@ -2,6 +2,7 @@ package com.plainphone.app;
 
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.AccessibilityServiceInfo;
+import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.PixelFormat;
@@ -35,7 +36,7 @@ import java.util.Set;
  */
 public class AppMonitorService extends AccessibilityService {
 
-    private enum GateKind { COUNTDOWN, PIN, LOCKOUT }
+    private enum GateKind { COUNTDOWN, PIN, LOCKOUT, TIME_BLOCK }
 
     // How far ahead of the auto-close budget timer to fire the warning notification.
     private static final long WARNING_LEAD_MILLIS = 10_000L;
@@ -89,6 +90,22 @@ public class AppMonitorService extends AccessibilityService {
             if (Config.isBudgetEnabled(service)) {
                 service.startBudgetTimer(packageName);
             }
+        }
+    }
+
+    // Lets TimeBlockOverrideActivity, which just lifted a time-block restriction (or ended
+    // an ad-hoc session), clear the stale gate before relaunching the app — unlike
+    // skipGateFor()/skipFlaggedGateFor(), this doesn't pre-arm a specific gate kind, since
+    // the whole point is that the previously-blocking condition is now gone and something
+    // else (locked/flagged, or nothing) may apply once the foreground event is re-evaluated.
+    static void skipTimeBlockGateFor(String packageName) {
+        AppMonitorService service = instance;
+        if (service != null) {
+            service.cancelPendingTeardown();
+            service.cancelCountdown();
+            service.currentGatedPackage = null;
+            service.currentGateKind = null;
+            service.removeOverlay();
         }
     }
 
@@ -233,10 +250,18 @@ public class AppMonitorService extends AccessibilityService {
             return;
         }
 
-        // Locked takes precedence over flagged when a package is both: it's the
-        // stronger gate, and there's no reason to make the user clear a countdown
-        // before even reaching the PIN prompt.
-        if (Config.getLockedPackages(this).contains(packageName)) {
+        // A time-block restriction takes precedence over both locked and flagged: it's a
+        // deliberate scheduling decision (e.g. an allow-only Study block should restrict
+        // even a normally-unlocked app), not an impulse-control gate like the other two.
+        if (TimeBlockRules.getBlockingBlock(this, packageName) != null) {
+            if (SystemClock.elapsedRealtime() - homeReachedAt < HOME_COOLDOWN_MILLIS) {
+                return;
+            }
+            cancelPendingTeardown();
+            if (!packageName.equals(currentGatedPackage)) {
+                startGate(packageName, GateKind.TIME_BLOCK);
+            }
+        } else if (Config.getLockedPackages(this).contains(packageName)) {
             if (SystemClock.elapsedRealtime() - homeReachedAt < HOME_COOLDOWN_MILLIS) {
                 return;
             }
@@ -267,6 +292,11 @@ public class AppMonitorService extends AccessibilityService {
         if (kind == GateKind.LOCKOUT) {
             // Don't record this as a real open — the user never actually reaches the app.
             showLockout(packageName);
+            return;
+        }
+        if (kind == GateKind.TIME_BLOCK) {
+            // Don't record this as a real open — the user never actually reaches the app.
+            showTimeBlockGate(packageName);
             return;
         }
         sessionPackage = packageName;
@@ -300,6 +330,81 @@ public class AppMonitorService extends AccessibilityService {
 
         countdownRunnable = () -> showLockout(packageName);
         handler.postDelayed(countdownRunnable, 1000);
+    }
+
+    private void showTimeBlockGate(String packageName) {
+        if (!packageName.equals(currentGatedPackage)) return;
+        if (overlayRoot == null) {
+            addTimeBlockOverlay(packageName);
+        }
+    }
+
+    private void addTimeBlockOverlay(String packageName) {
+        TimeBlock block = TimeBlockRules.getBlockingBlock(this, packageName);
+        String name = block != null ? block.name : "a time block";
+        String endTime = block != null ? TimeBlockRules.formatEndTime(this, block) : "";
+        String blockId = block != null ? block.id : null;
+
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setGravity(Gravity.CENTER);
+        root.setBackgroundColor(Color.BLACK);
+        root.setPadding(48, 48, 48, 48);
+
+        Typeface georgia = Fonts.current(this);
+
+        TextView text = new TextView(this);
+        text.setTextColor(Color.WHITE);
+        text.setTextSize(24);
+        text.setGravity(Gravity.CENTER);
+        text.setTypeface(georgia);
+        text.setText("Unavailable during " + name + " until " + endTime);
+        root.addView(text);
+
+        Button override = new Button(this);
+        override.setText("Override");
+        UiKit.style(this, override);
+        override.setOnClickListener(v -> {
+            Intent intent = new Intent(this, TimeBlockOverridePinActivity.class);
+            intent.putExtra("package", packageName);
+            intent.putExtra("blockId", blockId);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(intent);
+            closeGatedApp();
+        });
+        LinearLayout.LayoutParams overrideParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        overrideParams.topMargin = 48;
+        root.addView(override, overrideParams);
+
+        Button closeButton = new Button(this);
+        closeButton.setText("Close");
+        UiKit.style(this, closeButton);
+        closeButton.setOnClickListener(v -> closeGatedApp());
+        LinearLayout.LayoutParams closeParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        closeParams.topMargin = 24;
+        root.addView(closeButton, closeParams);
+
+        root.setFocusableInTouchMode(true);
+        root.setOnKeyListener((v, keyCode, event) -> {
+            if (keyCode == KeyEvent.KEYCODE_BACK && event.getAction() == KeyEvent.ACTION_UP) {
+                closeGatedApp();
+                return true;
+            }
+            return false;
+        });
+
+        WindowManager.LayoutParams params = new WindowManager.LayoutParams(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                0, // focusable + touchable: blocks interaction with the app underneath
+                PixelFormat.OPAQUE);
+
+        WindowManager wm = (WindowManager) getSystemService(WINDOW_SERVICE);
+        wm.addView(root, params);
+        overlayRoot = root;
     }
 
     private static String formatDuration(long millis) {

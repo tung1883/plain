@@ -3,7 +3,12 @@ package com.plainphone.app;
 import android.content.Context;
 import android.content.SharedPreferences;
 
+import org.json.JSONArray;
+import org.json.JSONException;
+
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 /** Persisted, user-editable settings: wait time, auto-close budget, grayscale, flagged/hidden/locked apps, lock PIN. */
@@ -102,6 +107,57 @@ class Config {
 
     static void setLockedPackages(Context context, Set<String> packages) {
         prefs(context).edit().putStringSet("locked_packages", packages).apply();
+    }
+
+    static List<TimeBlock> getTimeBlocks(Context context) {
+        String stored = prefs(context).getString("time_blocks", null);
+        List<TimeBlock> blocks = new ArrayList<>();
+        if (stored == null) return blocks;
+        try {
+            JSONArray arr = new JSONArray(stored);
+            for (int i = 0; i < arr.length(); i++) {
+                blocks.add(TimeBlock.fromJson(arr.getJSONObject(i)));
+            }
+        } catch (JSONException e) {
+            return new ArrayList<>();
+        }
+        return blocks;
+    }
+
+    static void setTimeBlocks(Context context, List<TimeBlock> blocks) {
+        JSONArray arr = new JSONArray();
+        for (TimeBlock block : blocks) {
+            arr.put(block.toJson());
+        }
+        prefs(context).edit().putString("time_blocks", arr.toString()).apply();
+    }
+
+    static String getAdhocBlockId(Context context) {
+        return prefs(context).getString("adhoc_block_id", null);
+    }
+
+    static long getAdhocUntil(Context context) {
+        return prefs(context).getLong("adhoc_until", 0L);
+    }
+
+    static void setAdhocSession(Context context, String blockId, long untilEpochMillis) {
+        prefs(context).edit()
+                .putString("adhoc_block_id", blockId)
+                .putLong("adhoc_until", untilEpochMillis)
+                .apply();
+    }
+
+    static void clearAdhocSession(Context context) {
+        prefs(context).edit().remove("adhoc_block_id").remove("adhoc_until").apply();
+    }
+
+    /** Epoch millis until which a time block's restriction is lifted early via the emergency override. */
+    static long getOverrideUntil(Context context, String blockId) {
+        return prefs(context).getLong("override_until_" + blockId, 0L);
+    }
+
+    static void setOverrideUntil(Context context, String blockId, long untilEpochMillis) {
+        prefs(context).edit().putLong("override_until_" + blockId, untilEpochMillis).apply();
     }
 
     static GifScene getGifScene(Context context) {
