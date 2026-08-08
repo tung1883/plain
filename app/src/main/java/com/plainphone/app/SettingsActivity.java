@@ -46,6 +46,9 @@ public class SettingsActivity extends Activity {
         boolean grayscaleOn = Config.isGrayscaleEnabled(this);
         root.addView(row("Grayscale: " + (grayscaleOn ? "On" : "Off"), v -> toggleGrayscale()));
 
+        root.addView(row("Settings wait time: " + Config.getSettingsWaitSeconds(this) + "s",
+                v -> startActivity(new Intent(this, SettingsWaitTimeActivity.class))));
+
         root.addView(row("Flagged apps",
                 v -> startActivity(new Intent(this, FlaggedAppsActivity.class))));
 

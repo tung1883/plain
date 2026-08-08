@@ -16,13 +16,14 @@ import android.widget.TextView;
 import java.util.Random;
 
 /**
- * Shared 30s-wait + math-check friction gate, used anywhere a change should be
- * hard to make on impulse. Subclasses describe what's being confirmed and what
- * happens once the gate passes; a Back button is always available to bail out.
+ * Shared wait + math-check friction gate, used anywhere a change should be hard
+ * to make on impulse. Subclasses describe what's being confirmed and what happens
+ * once the gate passes; a Back button is always available to bail out. The wait
+ * length and the math check itself are both overridable per subclass.
  */
 public abstract class FrictionGateActivity extends Activity {
 
-    private static final int WAIT_SECONDS = 30;
+    private static final int DEFAULT_WAIT_SECONDS = 30;
 
     private LinearLayout content;
     private Typeface georgia;
@@ -32,6 +33,16 @@ public abstract class FrictionGateActivity extends Activity {
     protected abstract String describeAction();
 
     protected abstract void onConfirmed();
+
+    /** Overridable so a subclass (e.g. the Settings gate) can use a user-configured wait instead. */
+    protected int waitSeconds() {
+        return DEFAULT_WAIT_SECONDS;
+    }
+
+    /** Overridable so a subclass (e.g. the Settings gate) can skip straight to onConfirmed() after the wait. */
+    protected boolean requiresMathChallenge() {
+        return true;
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -45,7 +56,7 @@ public abstract class FrictionGateActivity extends Activity {
         content.setPadding(48, 48, 48, 48);
         setContentView(content);
 
-        startCountdown(WAIT_SECONDS);
+        startCountdown(waitSeconds());
     }
 
     private void startCountdown(int secondsLeft) {
@@ -62,7 +73,12 @@ public abstract class FrictionGateActivity extends Activity {
         content.addView(backButton(), backButtonParams());
 
         if (secondsLeft <= 0) {
-            showMathChallenge();
+            if (requiresMathChallenge()) {
+                showMathChallenge();
+            } else {
+                onConfirmed();
+                finish();
+            }
             return;
         }
         handler.postDelayed(() -> startCountdown(secondsLeft - 1), 1000);
