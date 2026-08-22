@@ -49,6 +49,15 @@ public abstract class FrictionGateActivity extends Activity {
         super.onCreate(savedInstanceState);
         georgia = Fonts.current(this);
 
+        // Nothing to wait out and nothing to answer: skip straight through rather than
+        // building and instantly tearing down a countdown screen, which would otherwise
+        // flash "Wait 0s..." for a frame.
+        if (waitSeconds() <= 0 && !requiresMathChallenge()) {
+            onConfirmed();
+            finish();
+            return;
+        }
+
         content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         content.setGravity(Gravity.CENTER);

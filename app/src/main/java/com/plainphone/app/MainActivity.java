@@ -529,8 +529,12 @@ public class MainActivity extends Activity {
 
         boolean fullAccess = FileIndex.canWalk(this);
         if (!fullAccess && !DeviceSearch.canSearchFiles(this)) {
-            return singleRow(permissionRow(SearchResult.Kind.FILE, "Search files on this phone",
-                    DeviceSearch.filePermissions(), DeviceSearch.REQUEST_FILES));
+            // Asks straight for full access (folders included) rather than the narrower
+            // media-only permission — the same single-tier choice Settings' "Search files"
+            // row makes, so there's one thing to grant, not two.
+            SearchResult ask = new SearchResult(SearchResult.Kind.FILE, "Search files on this phone",
+                    "Tap to allow access", 0, () -> DeviceSearch.requestFullFileAccess(this));
+            return singleRow(ask);
         }
 
         List<SearchResult> results = needle.equals(deviceQuery)

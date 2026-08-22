@@ -44,6 +44,33 @@ class UiKit {
         return frame;
     }
 
+    /**
+     * Flat black fill for a custom dialog's content, matching the plain, borderless popup
+     * MainActivity's own app-options menu uses — no stroke, no corner radius, since a boxed
+     * white border read as too decorative against the rest of the app's flat styling. Pair
+     * with a transparent window background (see {@link #clearDialogChrome}) so this fill is
+     * the only thing the dialog shows, instead of stock AlertDialog's own inset and shadow
+     * sitting outside it.
+     */
+    static GradientDrawable dialogBackground() {
+        GradientDrawable box = new GradientDrawable();
+        box.setColor(Color.BLACK);
+        return box;
+    }
+
+    /**
+     * Strips an AlertDialog down to just the view passed to setView(): no title bar, no
+     * inset frame, no built-in buttons. Everything the dialog needs — title text, buttons,
+     * their behavior — is expected to already be inside that view, styled to match the rest
+     * of the app rather than the system's default dialog theme.
+     */
+    static void clearDialogChrome(android.app.AlertDialog dialog) {
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(
+                    Color.TRANSPARENT));
+        }
+    }
+
     private static StateListDrawable buttonBackground() {
         GradientDrawable normal = new GradientDrawable();
         normal.setColor(Color.BLACK);

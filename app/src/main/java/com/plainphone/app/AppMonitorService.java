@@ -52,6 +52,26 @@ public class AppMonitorService extends AccessibilityService {
         }
     }
 
+    /**
+     * Whether the OS currently has this service switched on. Checked via the running-instance
+     * field first — the fast, always-correct answer while the service is actually alive — and
+     * falls back to reading Android's enabled-services list for the (common) case of checking
+     * from a plain Activity, where no instance exists to ask.
+     */
+    static boolean isEnabled(android.content.Context context) {
+        if (instance != null) return true;
+
+        String enabled = android.provider.Settings.Secure.getString(context.getContentResolver(),
+                android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
+        if (enabled == null) return false;
+
+        String component = context.getPackageName() + "/" + AppMonitorService.class.getName();
+        for (String service : enabled.split(":")) {
+            if (service.equalsIgnoreCase(component)) return true;
+        }
+        return false;
+    }
+
     // Lets PinGateActivity, which already verified the PIN before launching the real
     // app, pre-arm the gate so the accessibility service's own reactive PIN overlay
     // doesn't prompt a second time the instant it sees that package come to the
