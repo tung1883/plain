@@ -14,6 +14,7 @@ import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.StateListDrawable;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -71,7 +72,7 @@ public class MainActivity extends Activity {
     private Runnable pendingDeviceSearch;
     private int deviceSearchToken;
     private TextView timeBlockRow;
-    private GifArtView gifArt;
+    private FrameLayout artFrame;
     private boolean showingHomeReminder = false;
     private boolean homeUiBuilt = false;
     private FontChoice builtWithFont;
@@ -167,8 +168,23 @@ public class MainActivity extends Activity {
     }
 
     private void applyPixelArtSelection() {
-        gifArt.setScene(Config.getGifScene(this));
-        gifArt.setVisibility(Config.isPixelArtEnabled(this) ? View.VISIBLE : View.GONE);
+        // Rebuilt from scratch rather than updated in place: the source can now be either
+        // a bundled GifArtView or a user PhotoArtView, and swapping between the two
+        // concrete types needs a new instance either way, so there's no cheaper path.
+        artFrame.removeAllViews();
+        View art = Config.isPhotoArtSelected(this) && Config.getArtPhotoUri(this) != null
+                ? new PhotoArtView(this, Uri.parse(Config.getArtPhotoUri(this)),
+                        Config.getArtPhotoFocusX(this), Config.getArtPhotoFocusY(this),
+                        Config.getArtPhotoZoom(this))
+                : new GifArtView(this, Config.getGifScene(this));
+        artFrame.addView(art, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+
+        // Hide the frame itself, not just the art inside it — the frame's foreground is
+        // where the white border lives, so hiding only the art would leave an empty
+        // bordered box on screen instead of nothing at all. menuColumn has layout weight,
+        // so it simply expands to fill the row once the frame takes up no space.
+        artFrame.setVisibility(Config.isPixelArtEnabled(this) ? View.VISIBLE : View.GONE);
     }
 
     private void refreshApps() {
@@ -315,15 +331,12 @@ public class MainActivity extends Activity {
         menuRow.addView(menuColumn, new LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
-        FrameLayout artFrame = new FrameLayout(this);
+        artFrame = new FrameLayout(this);
         // A foreground (not background) so the border draws on top of the art instead of
         // being painted over by it — the art views fill the frame edge-to-edge with no gap.
+        // Its content view (GifArtView or PhotoArtView) is added by applyPixelArtSelection().
         artFrame.setForeground(UiKit.frameBorder());
         artFrame.setOnClickListener(v -> startActivity(new Intent(this, ArtViewerActivity.class)));
-
-        gifArt = new GifArtView(this, Config.getGifScene(this));
-        artFrame.addView(gifArt, new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
         LinearLayout.LayoutParams artFrameParams = new LinearLayout.LayoutParams(320, 0);
         artFrameParams.rightMargin = 48;

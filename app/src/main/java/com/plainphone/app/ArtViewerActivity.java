@@ -34,7 +34,11 @@ public class ArtViewerActivity extends Activity {
         FrameLayout artFrame = new FrameLayout(this);
         artFrame.setForeground(UiKit.frameBorder());
 
-        content = new GifArtView(this, Config.getGifScene(this));
+        content = Config.isPhotoArtSelected(this) && Config.getArtPhotoUri(this) != null
+                ? new PhotoArtView(this, android.net.Uri.parse(Config.getArtPhotoUri(this)),
+                        Config.getArtPhotoFocusX(this), Config.getArtPhotoFocusY(this),
+                        Config.getArtPhotoZoom(this))
+                : new GifArtView(this, Config.getGifScene(this));
         artFrame.addView(content, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
