@@ -35,8 +35,9 @@ class SearchResult {
     /** Lower sorts first within a group; see {@link TextMatch}. */
     final int score;
     /**
-     * Source object for results that need more than activation — currently the ResolveInfo
-     * behind an app result, so a long press can still open that app's options.
+     * Source object for results that need more than activation: the ResolveInfo behind an
+     * app result, so a long press can open that app's options, or the FileIndex.Entry
+     * behind an indexed file, so a long press can offer an alternate way to open it.
      */
     final Object payload;
 
