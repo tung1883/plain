@@ -82,10 +82,6 @@ class SearchTargets {
                     "usage access", "grant"),
             new PlainTarget("Font", "Change the launcher typeface", FontActivity.class, true,
                     "typeface", "typography", "serif", "text"),
-            // Grayscale is a toggle inside Settings rather than its own screen, so it lands
-            // on Settings itself — searching "grayscale" should still get you to the switch.
-            new PlainTarget("Grayscale", "Toggle in Settings", SettingsActivity.class, true,
-                    "grayscale", "greyscale", "black and white", "color", "colour", "saturation"),
     };
 
     private static final SystemTarget[] SYSTEM = {
