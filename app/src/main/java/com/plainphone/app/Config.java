@@ -90,6 +90,92 @@ class Config {
         prefs(context).edit().putBoolean("grayscale_enabled", enabled).apply();
     }
 
+    /** User-defined web searches, shown as extra rows under the Web heading. */
+    static List<WebTarget> getWebTargets(Context context) {
+        String stored = prefs(context).getString("web_targets", null);
+        List<WebTarget> targets = new ArrayList<>();
+        if (stored == null) return targets;
+        try {
+            JSONArray arr = new JSONArray(stored);
+            for (int i = 0; i < arr.length(); i++) {
+                targets.add(WebTarget.fromJson(arr.getJSONObject(i)));
+            }
+        } catch (JSONException e) {
+            return new ArrayList<>();
+        }
+        return targets;
+    }
+
+    static void setWebTargets(Context context, List<WebTarget> targets) {
+        JSONArray arr = new JSONArray();
+        try {
+            for (WebTarget target : targets) {
+                arr.put(target.toJson());
+            }
+        } catch (JSONException e) {
+            return; // Nothing sensible to write; leave the stored list untouched.
+        }
+        prefs(context).edit().putString("web_targets", arr.toString()).apply();
+    }
+
+    /**
+     * Whether home-screen search may include files and contacts. Both default on, but are
+     * switched off automatically the first time their permission prompt is declined, so a
+     * "tap to allow" row doesn't keep reappearing under every search. Settings is where
+     * they're switched back on.
+     */
+    static boolean isFileSearchEnabled(Context context) {
+        return prefs(context).getBoolean("file_search_enabled", true);
+    }
+
+    static void setFileSearchEnabled(Context context, boolean enabled) {
+        prefs(context).edit().putBoolean("file_search_enabled", enabled).apply();
+    }
+
+    static boolean isContactSearchEnabled(Context context) {
+        return prefs(context).getBoolean("contact_search_enabled", true);
+    }
+
+    static void setContactSearchEnabled(Context context, boolean enabled) {
+        prefs(context).edit().putBoolean("contact_search_enabled", enabled).apply();
+    }
+
+    /**
+     * URL template for web search, with %s standing in for the encoded query. Stored rather
+     * than hardcoded so the engine can be swapped without a rebuild — e.g.
+     * "https://duckduckgo.com/?q=%s".
+     */
+    static String getSearchEngine(Context context) {
+        return prefs(context).getString("search_engine", "https://www.google.com/search?q=%s");
+    }
+
+    static void setSearchEngine(Context context, String urlTemplate) {
+        prefs(context).edit().putString("search_engine", urlTemplate).apply();
+    }
+
+    /** Whether the "Search the web" row appears at the bottom of results. */
+    static boolean isWebSearchEnabled(Context context) {
+        return prefs(context).getBoolean("web_search_enabled", true);
+    }
+
+    static void setWebSearchEnabled(Context context, boolean enabled) {
+        prefs(context).edit().putBoolean("web_search_enabled", enabled).apply();
+    }
+
+    /**
+     * Search result sections the user has collapsed, stored by Kind name. Persisted because
+     * it's a lasting preference about what's worth seeing — someone who never wants file
+     * results shouldn't have to re-hide them on every search.
+     */
+    static Set<String> getCollapsedSections(Context context) {
+        Set<String> stored = prefs(context).getStringSet("collapsed_sections", null);
+        return stored != null ? new HashSet<>(stored) : new HashSet<>();
+    }
+
+    static void setCollapsedSections(Context context, Set<String> sections) {
+        prefs(context).edit().putStringSet("collapsed_sections", sections).apply();
+    }
+
     static Set<String> getFlaggedPackages(Context context) {
         Set<String> stored = prefs(context).getStringSet("flagged_packages", null);
         return stored != null ? new HashSet<>(stored) : new HashSet<>(DEFAULT_FLAGGED);
@@ -115,6 +201,34 @@ class Config {
 
     static void setLockedPackages(Context context, Set<String> packages) {
         prefs(context).edit().putStringSet("locked_packages", packages).apply();
+    }
+
+    /**
+     * Ordered list of pinned package names, in the order they were pinned (most recent last).
+     * Stored as a JSON array (unlike the other package sets) because pin order matters for
+     * display, and SharedPreferences string sets don't preserve insertion order.
+     */
+    static List<String> getPinnedPackages(Context context) {
+        String stored = prefs(context).getString("pinned_packages", null);
+        List<String> packages = new ArrayList<>();
+        if (stored == null) return packages;
+        try {
+            JSONArray arr = new JSONArray(stored);
+            for (int i = 0; i < arr.length(); i++) {
+                packages.add(arr.getString(i));
+            }
+        } catch (JSONException e) {
+            return new ArrayList<>();
+        }
+        return packages;
+    }
+
+    static void setPinnedPackages(Context context, List<String> packages) {
+        JSONArray arr = new JSONArray();
+        for (String pkg : packages) {
+            arr.put(pkg);
+        }
+        prefs(context).edit().putString("pinned_packages", arr.toString()).apply();
     }
 
     static List<TimeBlock> getTimeBlocks(Context context) {

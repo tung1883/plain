@@ -12,6 +12,24 @@
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Home-screen search over contacts and on-device files. Both are requested at
+         runtime the first time a search actually reaches for them, not at install.
+         Android 13 replaced the single storage read with per-media-type permissions,
+         hence the maxSdkVersion split. -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <!-- Folders and non-media files (documents, archives, downloads) are invisible to
+         MediaStore, so searching them means reading the filesystem directly. Since Android
+         11 that needs this special permission, granted from a settings screen rather than a
+         runtime dialog. It stays optional: without it, file search falls back to MediaStore
+         and finds media only. -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage" />
+
     <application
         android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
@@ -130,6 +148,11 @@
             android:theme="@style/Theme.PlainPhone" />
 
         <activity
+            android:name=".WebTargetsActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
             android:name=".FontActivity"
             android:exported="false"
             android:theme="@style/Theme.PlainPhone" />
@@ -188,6 +211,15 @@
             android:name=".TimeBlockOverrideActivity"
             android:exported="false"
             android:theme="@style/Theme.PlainPhone" />
+
+        <!-- Hands one searched-for file to a viewer app. Not exported, so nothing can query
+             it directly; grantUriPermissions is what lets a single Uri be shared through an
+             Intent carrying FLAG_GRANT_READ_URI_PERMISSION, and only that Uri. -->
+        <provider
+            android:name=".PlainFileProvider"
+            android:authorities="com.plainphone.app.files"
+            android:exported="false"
+            android:grantUriPermissions="true" />
 
         <service
             android:name=".AppMonitorService"
