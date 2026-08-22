@@ -90,6 +90,10 @@ class TimeBlockRules {
     /** Returns the block currently blocking this package, or null if it's allowed. */
     static TimeBlock getBlockingBlock(Context context, String packageName) {
         for (TimeBlock block : getActiveBlocks(context)) {
+            // An allow-only block with no apps picked yet isn't "block everything" —
+            // it just hasn't been finished being set up, so it shouldn't restrict anything.
+            if (block.mode == TimeBlock.Mode.ALLOW_ONLY && block.packages.isEmpty()) continue;
+
             boolean blocked = block.mode == TimeBlock.Mode.BLACKOUT
                     ? block.packages.contains(packageName)
                     : !block.packages.contains(packageName);

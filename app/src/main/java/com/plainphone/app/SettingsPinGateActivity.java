@@ -121,7 +121,10 @@ public class SettingsPinGateActivity extends Activity {
         }
 
         submitted = true;
-        startActivity(new Intent(this, SettingsActivity.class));
+        Intent settings = new Intent(this, SettingsActivity.class);
+        settings.putExtra(SettingsActivity.EXTRA_DESTINATION,
+                getIntent().getStringExtra(SettingsActivity.EXTRA_DESTINATION));
+        startActivity(settings);
         finish();
     }
 }

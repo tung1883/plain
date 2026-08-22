@@ -90,13 +90,36 @@ public class FlaggedGateActivity extends Activity {
     }
 
     private void openApp() {
-        Intent launchIntent = getPackageManager().getLaunchIntentForPackage(packageName);
+        Intent launchIntent = openIntent();
         if (launchIntent != null) {
             AppMonitorService.skipFlaggedGateFor(packageName);
             startActivity(launchIntent);
         }
         finish();
     }
+
+    /**
+     * What to open once the gate is passed: normally the app's own launcher screen, but an
+     * Intent handed over in the OPEN_INTENT extra replaces that. Web search from the home
+     * screen sets it, so a gated browser still receives the query rather than opening on a
+     * blank start page with what was typed thrown away.
+     */
+    private Intent openIntent() {
+        Intent carried = carriedIntent();
+        if (carried != null && carried.resolveActivity(getPackageManager()) != null) {
+            return carried;
+        }
+        return getPackageManager().getLaunchIntentForPackage(packageName);
+    }
+
+    private Intent carriedIntent() {
+        Intent intent = getIntent();
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            return intent.getParcelableExtra(WebSearch.OPEN_INTENT, Intent.class);
+        }
+        return intent.getParcelableExtra(WebSearch.OPEN_INTENT);
+    }
+
 
     private static String formatDuration(long millis) {
         long totalSeconds = (millis + 999) / 1000;

@@ -15,6 +15,8 @@ import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.StateListDrawable;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.Gravity;
@@ -23,7 +25,6 @@ import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
 import android.view.inputmethod.EditorInfo;
 import android.widget.AdapterView;
-import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
@@ -37,16 +38,38 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Set;
 
 public class MainActivity extends Activity {
 
+    /** How long typing has to pause before the file/contact providers are queried. */
+    private static final long DEVICE_SEARCH_DEBOUNCE_MS = 180;
+
     private PackageManager pm;
     private List<ResolveInfo> allApps;
-    private List<ResolveInfo> apps;
-    private ArrayAdapter<ResolveInfo> adapter;
+    /** Headers (String) interleaved with SearchResults, exactly as the list draws them. */
+    private List<Object> rows;
+    private SearchResultsAdapter adapter;
     private EditText search;
+
+    /** Kind names of sections the user has collapsed; mirrors what Config has stored. */
+    private Set<String> collapsedSections;
+
+    private String currentQuery = "";
+    /** The folded, tokenized form of currentQuery, prepared once and reused per candidate. */
+    private TextMatch.Query currentSearch = TextMatch.prepare("");
+    /**
+     * File and contact lookups hit content providers, so they run off the main thread and
+     * land after the in-memory groups are already on screen. These hold the last completed
+     * batch alongside the query it answered, so a stale batch is never shown next to a
+     * newer query's app results.
+     */
+    private String deviceQuery = "";
+    private List<SearchResult> deviceFiles = new ArrayList<>();
+    private List<SearchResult> deviceContacts = new ArrayList<>();
+    private final Handler searchHandler = new Handler(Looper.getMainLooper());
+    private Runnable pendingDeviceSearch;
+    private int deviceSearchToken;
     private TextView timeBlockRow;
     private GifArtView gifArt;
     private boolean showingHomeReminder = false;
@@ -111,9 +134,20 @@ public class MainActivity extends Activity {
             // Apps may have been hidden/unhidden (or uninstalled) while we were away
             // (e.g. via Settings or a long-press action); reflect that on return.
             refreshApps();
+            // The default browser may have been changed while we were away.
+            WebSearch.forget();
             applyPixelArtSelection();
             refreshTimeBlockRow();
         }
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        // A debounced device search still queued here would fire against a dead Activity,
+        // and FileIndex's listener is static — leaving it set would leak this instance.
+        searchHandler.removeCallbacksAndMessages(null);
+        FileIndex.setListener(null);
     }
 
     private void refreshTimeBlockRow() {
@@ -235,7 +269,8 @@ public class MainActivity extends Activity {
 
     private void buildHomeUi(List<ResolveInfo> loaded) {
         allApps = loaded;
-        apps = new ArrayList<>(allApps);
+        rows = new ArrayList<>();
+        collapsedSections = Config.getCollapsedSections(this);
         homeUiBuilt = true;
         builtWithFont = Config.getFontChoice(this);
 
@@ -328,31 +363,29 @@ public class MainActivity extends Activity {
 
         setContentView(root);
 
-        adapter = new ArrayAdapter<ResolveInfo>(this, android.R.layout.simple_list_item_1, apps) {
-            @Override
-            public View getView(int position, View convertView, ViewGroup parent) {
-                TextView view = (TextView) super.getView(position, convertView, parent);
-                view.setText(labelFor(getItem(position)));
-                view.setBackground(rowBackground());
-                view.setTextColor(Color.WHITE);
-                view.setTextSize(20);
-                view.setPadding(48, 40, 48, 40);
-                view.setGravity(Gravity.START);
-                view.setTypeface(georgia);
-                return view;
-            }
-        };
+        adapter = new SearchResultsAdapter(this, rows, georgia);
         listView.setAdapter(adapter);
 
         listView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             @Override
             public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
-                launchApp(apps.get(position));
+                SearchResultsAdapter.Header header = adapter.headerAt(position);
+                if (header != null) {
+                    toggleSection(header.kind);
+                    return;
+                }
+                SearchResult result = adapter.resultAt(position);
+                if (result != null) result.activate();
             }
         });
 
         listView.setOnItemLongClickListener((parent, view, position, id) -> {
-            showAppOptions(apps.get(position));
+            SearchResult result = adapter.resultAt(position);
+            // Only apps carry per-item options; a settings, file, or contact row has
+            // nothing extra to offer, so a long press there should do nothing at all
+            // rather than open an empty or wrong menu.
+            if (result == null || !(result.payload instanceof ResolveInfo)) return false;
+            showAppOptions((ResolveInfo) result.payload);
             return true;
         });
 
@@ -370,13 +403,23 @@ public class MainActivity extends Activity {
         });
 
         search.setOnEditorActionListener((v, actionId, event) -> {
-            if (actionId == EditorInfo.IME_ACTION_GO && !apps.isEmpty()) {
-                launchApp(apps.get(0));
-                return true;
-            }
-            return false;
+            if (actionId != EditorInfo.IME_ACTION_GO) return false;
+            SearchResult first = firstResult();
+            if (first == null) return false;
+            first.activate();
+            return true;
         });
 
+        FileIndex.setListener(() -> {
+            // The scan finishes on its own schedule, long after the search that started it
+            // returned empty; rerun that search so its results appear without retyping.
+            if (!currentQuery.isEmpty()) {
+                deviceQuery = "";
+                filter(search.getText().toString());
+            }
+        });
+
+        filter("");
         refreshTimeBlockRow();
     }
 
@@ -389,16 +432,231 @@ public class MainActivity extends Activity {
     }
 
     private void filter(String query) {
-        apps.clear();
-        String needle = query.trim().toLowerCase(Locale.getDefault());
-        for (ResolveInfo info : allApps) {
-            String label = labelFor(info).toString().toLowerCase(Locale.getDefault());
-            if (needle.isEmpty() || label.contains(needle)) {
-                apps.add(info);
+        currentSearch = TextMatch.prepare(query);
+        currentQuery = currentSearch.folded;
+        // In-memory groups (apps, Plain screens, phone settings) are cheap enough to draw
+        // on every keystroke; files and contacts catch up separately once typing pauses.
+        renderRows();
+        scheduleDeviceSearch(currentQuery);
+    }
+
+    private void renderRows() {
+        rows.clear();
+        String needle = currentQuery;
+
+        // An empty query is the plain home list it has always been: just apps, no headers
+        // and no settings clutter. Groups only appear once there's something to match.
+        addGroup(SearchResult.Kind.APP, appResults(currentSearch), !needle.isEmpty());
+        if (!needle.isEmpty()) {
+            // Groups follow the order Kind declares them in, rather than a hand-written
+            // sequence of calls here — the two drifted apart once already, leaving the enum
+            // reordered and the display unchanged.
+            for (SearchResult.Kind kind : SearchResult.Kind.values()) {
+                if (kind == SearchResult.Kind.APP) continue; // added above, headerless when empty
+                addGroup(kind, resultsFor(kind, needle), true);
             }
         }
+
         adapter.notifyDataSetChanged();
     }
+
+    private List<SearchResult> resultsFor(SearchResult.Kind kind, String needle) {
+        switch (kind) {
+            case PLAIN: return SearchTargets.plain(this, currentSearch);
+            case SYSTEM: return SearchTargets.system(this, currentSearch);
+            case WEB: return webResults();
+            case FILE: return fileResults(needle);
+            case CONTACT: return contactResults(needle);
+            default: return new ArrayList<>();
+        }
+    }
+
+    private void addGroup(SearchResult.Kind kind, List<SearchResult> results, boolean showHeader) {
+        if (results.isEmpty()) return;
+        Collections.sort(results, new Comparator<SearchResult>() {
+            @Override
+            public int compare(SearchResult a, SearchResult b) {
+                return Integer.compare(a.score, b.score);
+            }
+        });
+
+        // With no header there's nothing to tap, so a section can't be collapsed — which is
+        // the empty-query app list, where hiding the only content would leave a blank screen.
+        if (!showHeader) {
+            rows.addAll(results);
+            return;
+        }
+
+        boolean collapsed = collapsedSections.contains(kind.name());
+        rows.add(new SearchResultsAdapter.Header(kind, collapsed, results.size()));
+        if (!collapsed) rows.addAll(results);
+    }
+
+    private void toggleSection(SearchResult.Kind kind) {
+        if (!collapsedSections.remove(kind.name())) {
+            collapsedSections.add(kind.name());
+        }
+        Config.setCollapsedSections(this, collapsedSections);
+        renderRows();
+    }
+
+    private List<SearchResult> appResults(TextMatch.Query query) {
+        List<String> pinnedOrder = Config.getPinnedPackages(this);
+        List<SearchResult> results = new ArrayList<>();
+
+        for (ResolveInfo info : allApps) {
+            String label = labelFor(info).toString();
+            int score = TextMatch.score(label, query);
+            if (score == TextMatch.NO_MATCH) continue;
+
+            // With no query typed, pinned apps float to the top in the order they were
+            // pinned and everything else keeps its alphabetical order — the same home
+            // list as before. Once something is typed, match quality leads instead, since
+            // a pinned app outranking a better-matching one is just a worse search.
+            int pinnedAt = pinnedOrder.indexOf(info.activityInfo.packageName);
+            int rank = query.empty
+                    ? (pinnedAt >= 0 ? pinnedAt : pinnedOrder.size())
+                    : score;
+
+            results.add(new SearchResult(SearchResult.Kind.APP, label, null, rank,
+                    () -> launchApp(info), info));
+        }
+        return results;
+    }
+
+    private List<SearchResult> fileResults(String needle) {
+        if (!Config.isFileSearchEnabled(this)) return new ArrayList<>();
+
+        boolean fullAccess = FileIndex.canWalk(this);
+        if (!fullAccess && !DeviceSearch.canSearchFiles(this)) {
+            return singleRow(permissionRow(SearchResult.Kind.FILE, "Search files on this phone",
+                    DeviceSearch.filePermissions(), DeviceSearch.REQUEST_FILES));
+        }
+
+        List<SearchResult> results = needle.equals(deviceQuery)
+                ? new ArrayList<>(deviceFiles)
+                : new ArrayList<>();
+
+        if (fullAccess) {
+            // The first search after a cold start finds an empty index while the walk is
+            // still running; saying so beats an empty group that looks like "no matches".
+            if (results.isEmpty() && FileIndex.isScanning()) {
+                results.add(new SearchResult(SearchResult.Kind.FILE, "Indexing files…",
+                        "Searching again in a moment will find them", 0, () -> {}));
+            }
+        } else {
+            // MediaStore can't see folders or documents at all, so a search that comes up
+            // short here has a real remedy — offered last, below whatever media did match.
+            results.add(new SearchResult(SearchResult.Kind.FILE,
+                    "Search folders and all files", "Tap to allow full file access",
+                    Integer.MAX_VALUE, () -> DeviceSearch.requestAllFilesAccess(this)));
+        }
+        return results;
+    }
+
+    private List<SearchResult> contactResults(String needle) {
+        if (!Config.isContactSearchEnabled(this)) return new ArrayList<>();
+        if (!DeviceSearch.canSearchContacts(this)) {
+            return singleRow(permissionRow(SearchResult.Kind.CONTACT, "Search your contacts",
+                    new String[]{android.Manifest.permission.READ_CONTACTS},
+                    DeviceSearch.REQUEST_CONTACTS));
+        }
+        return needle.equals(deviceQuery) ? deviceContacts : new ArrayList<>();
+    }
+
+    /**
+     * The web fallback, always last: it matches any query at all, so putting it anywhere
+     * else would push real results — an app, a file — below a row that means nothing more
+     * than "I found nothing better".
+     */
+    private List<SearchResult> webResults() {
+        if (!Config.isWebSearchEnabled(this)) return new ArrayList<>();
+        return WebSearch.results(this, currentSearch);
+    }
+
+    /** Mutable single-element list, since addGroup() sorts the list it's handed in place. */
+    private List<SearchResult> singleRow(SearchResult result) {
+        List<SearchResult> only = new ArrayList<>();
+        only.add(result);
+        return only;
+    }
+
+    /**
+     * Stand-in row shown in place of a group Plain can't read yet. Asking only when the
+     * user actually reaches for the feature keeps first launch free of permission prompts
+     * for two sources many people will never use.
+     */
+    private SearchResult permissionRow(SearchResult.Kind kind, String title,
+                                       String[] permissions, int requestCode) {
+        return new SearchResult(kind, title, "Tap to allow access", 0,
+                () -> requestPermissions(permissions, requestCode));
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode != DeviceSearch.REQUEST_FILES && requestCode != DeviceSearch.REQUEST_CONTACTS) {
+            return;
+        }
+
+        // An interrupted (rather than answered) request comes back with empty arrays; that's
+        // not a decision, so leave the source enabled and let the row ask again next time.
+        if (grantResults.length == 0) return;
+
+        // A decline switches the whole source off rather than leaving a "tap to allow" row
+        // under every future search. Settings has a switch to turn it back on, which is a
+        // deliberate enough act to be worth re-prompting for.
+        boolean granted = false;
+        for (int result : grantResults) {
+            if (result == PackageManager.PERMISSION_GRANTED) granted = true;
+        }
+        if (!granted) {
+            if (requestCode == DeviceSearch.REQUEST_FILES) {
+                Config.setFileSearchEnabled(this, false);
+            } else {
+                Config.setContactSearchEnabled(this, false);
+            }
+        }
+
+        deviceQuery = "";
+        filter(search.getText().toString());
+    }
+
+    /**
+     * Queries the file and contact providers for {@code needle} after a short typing pause.
+     * Both hit disk, so they'd stutter the list if run on every keystroke, and a slow
+     * provider can outlive the query that triggered it — the token guards against a late
+     * batch overwriting the results of whatever the user has typed since.
+     */
+    private void scheduleDeviceSearch(String needle) {
+        if (pendingDeviceSearch != null) searchHandler.removeCallbacks(pendingDeviceSearch);
+        if (needle.isEmpty() || needle.equals(deviceQuery)) return;
+
+        final int token = ++deviceSearchToken;
+        TextMatch.Query query = currentSearch;
+        pendingDeviceSearch = () -> new Thread(() -> {
+            List<SearchResult> files = DeviceSearch.files(this, query);
+            List<SearchResult> contacts = DeviceSearch.contacts(this, query);
+            runOnUiThread(() -> {
+                if (token != deviceSearchToken) return;
+                deviceQuery = needle;
+                deviceFiles = files;
+                deviceContacts = contacts;
+                renderRows();
+            });
+        }).start();
+        searchHandler.postDelayed(pendingDeviceSearch, DEVICE_SEARCH_DEBOUNCE_MS);
+    }
+
+    /** First actionable row, i.e. what the keyboard's Go key opens. */
+    private SearchResult firstResult() {
+        for (Object row : rows) {
+            if (row instanceof SearchResult) return (SearchResult) row;
+        }
+        return null;
+    }
+
+
 
     private TextView buildRow(Typeface georgia, String label) {
         TextView row = new TextView(this);
@@ -500,6 +758,19 @@ public class MainActivity extends Activity {
         if (dialog.getWindow() != null) {
             dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
         }
+
+        boolean pinned = Config.getPinnedPackages(this).contains(pkg);
+        root.addView(optionRow(georgia, pinned ? "Unpin app" : "Pin app", v -> {
+            dialog.dismiss();
+            List<String> pinnedPackages = Config.getPinnedPackages(this);
+            if (pinned) {
+                pinnedPackages.remove(pkg);
+            } else {
+                pinnedPackages.add(pkg);
+            }
+            Config.setPinnedPackages(this, pinnedPackages);
+            filter(search.getText().toString());
+        }));
 
         // Intentionally offers only forward actions (info, uninstall, flag) — no way to
         // un-flag or unhide from here; loosening a restriction goes through Settings
