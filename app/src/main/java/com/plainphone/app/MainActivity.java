@@ -381,12 +381,33 @@ public class MainActivity extends Activity {
 
         listView.setOnItemLongClickListener((parent, view, position, id) -> {
             SearchResult result = adapter.resultAt(position);
-            // Only apps carry per-item options; a settings, file, or contact row has
-            // nothing extra to offer, so a long press there should do nothing at all
-            // rather than open an empty or wrong menu.
-            if (result == null || !(result.payload instanceof ResolveInfo)) return false;
-            showAppOptions((ResolveInfo) result.payload);
-            return true;
+            if (result == null) return false;
+
+            if (result.payload instanceof ResolveInfo) {
+                showAppOptions((ResolveInfo) result.payload);
+                return true;
+            }
+            if (result.payload instanceof FileIndex.Entry) {
+                FileIndex.Entry entry = (FileIndex.Entry) result.payload;
+                // A folder's tap action already is "open it in a file manager" — there's no
+                // second way to open one worth offering, so long-press stays a no-op there.
+                if (entry.directory) return false;
+                showFileOptions(entry.name,
+                        () -> DeviceSearch.openWithChooser(this, entry.file),
+                        () -> DeviceSearch.revealInFileManager(this, entry.file));
+                return true;
+            }
+            if (result.payload instanceof DeviceSearch.MediaFile) {
+                // No All-files access here, so only a content Uri exists — there's no
+                // filesystem path to reveal in a file manager, just an app to pick.
+                DeviceSearch.MediaFile media = (DeviceSearch.MediaFile) result.payload;
+                showFileOptions(result.title,
+                        () -> DeviceSearch.openWithChooser(this, media.uri, media.mime), null);
+                return true;
+            }
+            // Settings and contact rows carry nothing extra to offer, so a long press
+            // there should do nothing rather than open an empty or wrong menu.
+            return false;
         });
 
         search.addTextChangedListener(new TextWatcher() {
@@ -801,6 +822,60 @@ public class MainActivity extends Activity {
             android.widget.Toast.makeText(this, label + " flagged",
                     android.widget.Toast.LENGTH_SHORT).show();
         }));
+
+        dialog.show();
+        if (dialog.getWindow() != null) {
+            android.view.WindowManager.LayoutParams params = dialog.getWindow().getAttributes();
+            params.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.85);
+            dialog.getWindow().setAttributes(params);
+        }
+    }
+
+    /**
+     * A tap on a file result opens it with whatever app is currently the default for that
+     * type — the fast, common-case path. This long-press menu covers the two things that
+     * path can't: picking a different app just for this once, and landing in a file
+     * manager instead of a viewer, to move, rename, or share the file from there.
+     */
+    /**
+     * @param revealInFileManager null when there's no filesystem path to reveal — a
+     *                            directory (tap already does this) or a MediaStore-backed
+     *                            result (only a content Uri, no real path)
+     */
+    private void showFileOptions(String title, Runnable openWith, Runnable revealInFileManager) {
+        Typeface georgia = Fonts.current(this);
+
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackground(popupBackground());
+        root.setPadding(0, 8, 0, 8);
+
+        TextView titleView = new TextView(this);
+        titleView.setText(title);
+        titleView.setTextColor(Color.WHITE);
+        titleView.setTextSize(18);
+        titleView.setTypeface(georgia);
+        titleView.setPadding(48, 32, 48, 24);
+        root.addView(titleView);
+
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
+                .setView(root)
+                .create();
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        }
+
+        root.addView(optionRow(georgia, "Open with…", v -> {
+            dialog.dismiss();
+            openWith.run();
+        }));
+
+        if (revealInFileManager != null) {
+            root.addView(optionRow(georgia, "Show in file manager", v -> {
+                dialog.dismiss();
+                revealInFileManager.run();
+            }));
+        }
 
         dialog.show();
         if (dialog.getWindow() != null) {

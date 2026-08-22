@@ -25,6 +25,22 @@ class DeviceSearch {
 
     private DeviceSearch() {}
 
+    /**
+     * Payload for a MediaStore-backed file result — used when All-files access isn't
+     * granted, so there's a content Uri and a MIME type but no real filesystem path.
+     * Enough for a long press to offer "Open with…"; there's no folder to reveal, so that
+     * option is skipped for these the way it already is for directories.
+     */
+    static class MediaFile {
+        final Uri uri;
+        final String mime;
+
+        MediaFile(Uri uri, String mime) {
+            this.uri = uri;
+            this.mime = mime;
+        }
+    }
+
     /** Enough rows to be useful without burying the other result groups. */
     private static final int MAX_FILES = 8;
     private static final int MAX_CONTACTS = 8;
@@ -127,7 +143,7 @@ class DeviceSearch {
             String subtitle = (entry.directory ? "Folder · " : "File · ")
                     + describeLocation(entry.file.getParentFile());
             results.add(new SearchResult(SearchResult.Kind.FILE, entry.name, subtitle,
-                    hit.score, () -> open(host, entry.file, entry.directory)));
+                    hit.score, () -> open(host, entry.file, entry.directory), entry));
         }
         return results;
     }
@@ -179,7 +195,8 @@ class DeviceSearch {
                     Uri fileUri = ContentUris.withAppendedId(collection, id);
 
                     results.add(new SearchResult(SearchResult.Kind.FILE, name, describe(mime),
-                            TextMatch.score(name, query), () -> openFile(host, fileUri, mime)));
+                            TextMatch.score(name, query), () -> openFile(host, fileUri, mime),
+                            new MediaFile(fileUri, mime)));
                 }
             } catch (Exception ignored) {
                 // A revoked permission or an OEM provider that rejects the query shouldn't
@@ -280,23 +297,132 @@ class DeviceSearch {
         }
     }
 
-    private static void openFolder(Activity host, File directory) {
-        String[] folderMimes = {"resource/folder", "vnd.android.document/directory", "*/*"};
-        for (String mime : folderMimes) {
-            Intent view = new Intent(Intent.ACTION_VIEW);
-            view.setDataAndType(Uri.parse(directory.getAbsolutePath()), mime);
-            view.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            if (view.resolveActivity(host.getPackageManager()) == null) continue;
-            try {
-                host.startActivity(view);
-                return;
-            } catch (Exception ignored) {
-                // Try the next convention.
-            }
+    /**
+     * The long-press alternative to a plain tap on a file result: instead of going straight
+     * to whatever app is currently the default for that type, this forces Android's own
+     * chooser so a different app can be picked just for this once, without touching the
+     * system default.
+     */
+    static void openWithChooser(Activity host, File file) {
+        try {
+            Uri uri = PlainFileProvider.uriFor(host.getPackageName() + ".files", file);
+            openWithChooser(host, uri, guessMime(file));
+        } catch (Exception e) {
+            android.widget.Toast.makeText(host, "No app can open this file",
+                    android.widget.Toast.LENGTH_SHORT).show();
         }
-        // No file manager took it — the path itself is still the useful answer, since
-        // knowing where a folder lives is usually why it was searched for.
-        android.widget.Toast.makeText(host, directory.getAbsolutePath(),
+    }
+
+    /** Same as above, for a result that only has a content Uri to begin with (see MediaFile). */
+    static void openWithChooser(Activity host, Uri uri, String mime) {
+        try {
+            Intent view = new Intent(Intent.ACTION_VIEW);
+            view.setDataAndType(uri, TextUtils.isEmpty(mime) ? "*/*" : mime);
+            view.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            host.startActivity(Intent.createChooser(view, "Open with"));
+        } catch (Exception e) {
+            android.widget.Toast.makeText(host, "No app can open this file",
+                    android.widget.Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    /**
+     * The long-press alternative for landing in a file manager instead of a viewer app —
+     * useful for moving, renaming, or sharing a file from the file manager's own UI, none of
+     * which a plain ACTION_VIEW tap offers. Opens the file's containing folder, via the same
+     * best-effort openFolder() a directory result itself uses — Android defines no reliable
+     * "reveal this one file" intent to depend on instead.
+     */
+    static void revealInFileManager(Activity host, File file) {
+        File parent = file.getParentFile();
+        if (parent == null) {
+            android.widget.Toast.makeText(host, file.getAbsolutePath(),
+                    android.widget.Toast.LENGTH_LONG).show();
+            return;
+        }
+        openFolder(host, parent);
+    }
+
+    /** The path-view MIME conventions file managers variously register for. */
+    private static final String[] FOLDER_MIMES = {"resource/folder", "vnd.android.document/directory", "*/*"};
+
+    /** One attempt at opening a folder Uri with a given MIME. */
+    private static boolean tryOpen(Activity host, Uri uri, String mime) {
+        Intent view = new Intent(Intent.ACTION_VIEW);
+        view.setDataAndType(uri, mime);
+        view.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        if (view.resolveActivity(host.getPackageManager()) == null) return false;
+        try {
+            host.startActivity(view);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * The Storage Access Framework's content:// Uri for a folder — "primary:DCIM" for
+     * /storage/emulated/0/DCIM, "6364-3862:DCIM" for the same path on an SD card — which is
+     * what an SAF-aware file manager (Google's Files app among them) actually expects handed
+     * to it. Returns null below Android 11, where StorageVolume.getDirectory() doesn't exist
+     * to map a path back to its volume, and whenever the file doesn't sit under any volume
+     * this device reports (a state that shouldn't come up in practice).
+     */
+    private static Uri documentUriFor(Activity host, File directory) {
+        if (Build.VERSION.SDK_INT < 30) return null;
+
+        android.os.storage.StorageManager storage =
+                host.getSystemService(android.os.storage.StorageManager.class);
+        if (storage == null) return null;
+
+        String path = directory.getAbsolutePath();
+        for (android.os.storage.StorageVolume volume : storage.getStorageVolumes()) {
+            File root = volume.getDirectory();
+            if (root == null) continue;
+            String rootPath = root.getAbsolutePath();
+            if (!path.equals(rootPath) && !path.startsWith(rootPath + "/")) continue;
+
+            String volumeId = volume.isPrimary() ? "primary" : volume.getUuid();
+            if (volumeId == null) continue; // no id this Uri format can be built from
+
+            String relative = path.equals(rootPath) ? "" : path.substring(rootPath.length() + 1);
+            String documentId = volumeId + ":" + relative;
+            return android.provider.DocumentsContract.buildDocumentUri(
+                    "com.android.externalstorage.documents", documentId);
+        }
+        return null;
+    }
+
+    private static void copyToClipboard(Activity host, String text) {
+        android.content.ClipboardManager clipboard =
+                (android.content.ClipboardManager) host.getSystemService(Context.CLIPBOARD_SERVICE);
+        if (clipboard == null) return;
+        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Folder path", text));
+    }
+
+    private static void openFolder(Activity host, File directory) {
+        // The real, standards-compliant way to ask for a folder: a content:// document Uri
+        // from the Storage Access Framework, not a bare filesystem path. Tried first since
+        // it's the one convention an SAF-aware file manager (Google's Files app among them)
+        // is actually built to answer.
+        Uri documentUri = documentUriFor(host, directory);
+        if (documentUri != null && tryOpen(host, documentUri, "vnd.android.document/directory")) {
+            return;
+        }
+
+        // Kept as a second attempt for whatever the newer convention above doesn't reach —
+        // costs nothing to try, even though in practice it resolves for less than the
+        // document Uri does.
+        for (String mime : FOLDER_MIMES) {
+            if (tryOpen(host, Uri.parse(directory.getAbsolutePath()), mime)) return;
+        }
+
+        // No file manager took it — the path is copied to the clipboard as well as shown,
+        // since a toast alone would otherwise have to be retyped from memory once whatever
+        // app opens next (if any) is reached.
+        copyToClipboard(host, directory.getAbsolutePath());
+        android.widget.Toast.makeText(host,
+                "Path copied:\n" + directory.getAbsolutePath(),
                 android.widget.Toast.LENGTH_LONG).show();
     }
 
