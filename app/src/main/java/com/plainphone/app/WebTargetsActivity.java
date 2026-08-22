@@ -10,6 +10,8 @@ import android.os.Bundle;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
+import android.view.ViewGroup;
+import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -81,19 +83,39 @@ public class WebTargetsActivity extends Activity {
      * One dialog with both fields, rather than the stepper flow the other settings use: a
      * URL template is only meaningful alongside its name, and splitting them across screens
      * would mean typing a long address with no idea what it's for.
+     *
+     * <p>Built entirely from scratch (title, fields, buttons) rather than through
+     * AlertDialog.Builder's setTitle/setPositiveButton — those render with the system's
+     * own dialog theme, which looks foreign against the rest of the app's plain black-and
+     * white styling. This is the same card treatment MainActivity's app-options popup uses.
      */
     private void showEditor() {
-        LinearLayout form = new LinearLayout(this);
-        form.setOrientation(LinearLayout.VERTICAL);
-        form.setBackgroundColor(Color.BLACK);
-        form.setPadding(48, 40, 48, 24);
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setBackground(UiKit.dialogBackground());
+        card.setPadding(56, 48, 56, 40);
+
+        TextView title = new TextView(this);
+        title.setText("Add a web search");
+        title.setTextColor(Color.WHITE);
+        title.setTextSize(20);
+        title.setTypeface(Typeface.create(georgia, Typeface.BOLD));
+        card.addView(title);
+
+        TextView hint = new TextView(this);
+        hint.setText("Use " + WebTarget.WORD + " where the typed words should go.");
+        hint.setTextColor(Color.GRAY);
+        hint.setTextSize(13);
+        hint.setTypeface(georgia);
+        LinearLayout.LayoutParams hintParams = topMargin(8);
+        card.addView(hint, hintParams);
 
         EditText name = new EditText(this);
-        name.setHint("Name (e.g. Wiktionary DE)");
+        name.setHint("Name");
         name.setHintTextColor(Color.GRAY);
         name.setSingleLine(true);
         UiKit.style(this, name);
-        form.addView(name);
+        card.addView(name, topMargin(28));
 
         EditText url = new EditText(this);
         url.setHint("https://example.com/search?q=" + WebTarget.WORD);
@@ -101,55 +123,101 @@ public class WebTargetsActivity extends Activity {
         url.setSingleLine(true);
         url.setInputType(InputType.TYPE_TEXT_VARIATION_URI);
         UiKit.style(this, url);
-        LinearLayout.LayoutParams urlParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        urlParams.topMargin = 24;
-        form.addView(url, urlParams);
+        card.addView(url, topMargin(16));
 
-        AlertDialog dialog = new AlertDialog.Builder(this)
-                .setView(form)
-                .setPositiveButton("Save", null) // wired below so validation can keep it open
-                .setNegativeButton("Cancel", null)
-                .create();
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.BLACK));
-        }
+        LinearLayout buttons = new LinearLayout(this);
+        buttons.setOrientation(LinearLayout.HORIZONTAL);
+        buttons.setGravity(Gravity.END);
 
-        dialog.setOnShowListener(shown -> dialog.getButton(AlertDialog.BUTTON_POSITIVE)
-                .setOnClickListener(v -> {
-                    String urlText = url.getText().toString().trim();
-                    if (!WebTarget.hasPlaceholder(urlText)) {
-                        // Without the placeholder the query has nowhere to go, so saving it
-                        // would produce a row that opens the same page whatever was typed.
-                        Toast.makeText(this, "The URL needs " + WebTarget.WORD
-                                + " where the words go", Toast.LENGTH_LONG).show();
-                        return;
-                    }
-                    List<WebTarget> targets = Config.getWebTargets(this);
-                    targets.add(WebTarget.create(name.getText().toString().trim(), urlText));
-                    Config.setWebTargets(this, targets);
-                    dialog.dismiss();
-                    render();
-                }));
+        Button cancel = new Button(this);
+        cancel.setText("Cancel");
+        UiKit.style(this, cancel);
+        buttons.addView(cancel);
+
+        Button save = new Button(this);
+        save.setText("Save");
+        UiKit.style(this, save);
+        LinearLayout.LayoutParams saveParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        saveParams.leftMargin = 20;
+        buttons.addView(save, saveParams);
+
+        card.addView(buttons, topMargin(32));
+
+        AlertDialog dialog = new AlertDialog.Builder(this).setView(card).create();
+        UiKit.clearDialogChrome(dialog);
+
+        cancel.setOnClickListener(v -> dialog.dismiss());
+        save.setOnClickListener(v -> {
+            String urlText = url.getText().toString().trim();
+            if (!WebTarget.hasPlaceholder(urlText)) {
+                // Without the placeholder the query has nowhere to go, so saving it would
+                // produce a row that opens the same page whatever was typed.
+                Toast.makeText(this, "The URL needs " + WebTarget.WORD + " where the words go",
+                        Toast.LENGTH_LONG).show();
+                return;
+            }
+            List<WebTarget> targets = Config.getWebTargets(this);
+            targets.add(WebTarget.create(name.getText().toString().trim(), urlText));
+            Config.setWebTargets(this, targets);
+            dialog.dismiss();
+            render();
+        });
         dialog.show();
     }
 
     private void confirmDelete(WebTarget target) {
-        AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle("Remove " + WebTarget.nameOrHost(target.name, target.url) + "?")
-                .setPositiveButton("Remove", (d, which) -> {
-                    List<WebTarget> targets = Config.getWebTargets(this);
-                    WebTarget existing = WebTarget.findById(targets, target.id);
-                    if (existing != null) targets.remove(existing);
-                    Config.setWebTargets(this, targets);
-                    render();
-                })
-                .setNegativeButton("Cancel", null)
-                .create();
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.BLACK));
-        }
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setBackground(UiKit.dialogBackground());
+        card.setPadding(56, 48, 56, 40);
+
+        TextView title = new TextView(this);
+        title.setText("Remove " + WebTarget.nameOrHost(target.name, target.url) + "?");
+        title.setTextColor(Color.WHITE);
+        title.setTextSize(18);
+        title.setTypeface(georgia);
+        card.addView(title);
+
+        LinearLayout buttons = new LinearLayout(this);
+        buttons.setOrientation(LinearLayout.HORIZONTAL);
+        buttons.setGravity(Gravity.END);
+
+        Button cancel = new Button(this);
+        cancel.setText("Cancel");
+        UiKit.style(this, cancel);
+        buttons.addView(cancel);
+
+        Button remove = new Button(this);
+        remove.setText("Remove");
+        UiKit.style(this, remove);
+        LinearLayout.LayoutParams removeParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        removeParams.leftMargin = 20;
+        buttons.addView(remove, removeParams);
+
+        card.addView(buttons, topMargin(28));
+
+        AlertDialog dialog = new AlertDialog.Builder(this).setView(card).create();
+        UiKit.clearDialogChrome(dialog);
+
+        cancel.setOnClickListener(v -> dialog.dismiss());
+        remove.setOnClickListener(v -> {
+            List<WebTarget> targets = Config.getWebTargets(this);
+            WebTarget existing = WebTarget.findById(targets, target.id);
+            if (existing != null) targets.remove(existing);
+            Config.setWebTargets(this, targets);
+            dialog.dismiss();
+            render();
+        });
         dialog.show();
+    }
+
+    private LinearLayout.LayoutParams topMargin(int px) {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.topMargin = px;
+        return params;
     }
 
     private View row(String label, String subtitle, View.OnClickListener listener) {

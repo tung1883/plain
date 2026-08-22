@@ -34,7 +34,7 @@ class Config {
     }
 
     static int getSettingsWaitSeconds(Context context) {
-        return prefs(context).getInt("settings_wait_seconds", 10);
+        return prefs(context).getInt("settings_wait_seconds", 0);
     }
 
     static void setSettingsWaitSeconds(Context context, int seconds) {

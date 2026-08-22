@@ -33,6 +33,26 @@ class DeviceSearch {
     static final int REQUEST_CONTACTS = 2002;
 
     /**
+     * The single action behind Settings' "Search files" row: whatever grants full
+     * filesystem access (folders included) on this Android version, in one tap.
+     *
+     * <p>Below Android 11 that's just READ_EXTERNAL_STORAGE, a normal one-tap runtime
+     * prompt — pre-scoped-storage, that permission already opens the whole filesystem, so
+     * there's no separate "all files" tier to ask for. On 11+ it's MANAGE_EXTERNAL_STORAGE,
+     * granted from a system settings screen rather than a dialog. Either way this is the
+     * one thing worth asking for: it supersedes the narrower per-media-type permissions,
+     * which searching through Plain never requests on its own — see canSearchFiles().
+     */
+    static void requestFullFileAccess(Activity host) {
+        if (Build.VERSION.SDK_INT >= 30) {
+            requestAllFilesAccess(host);
+        } else {
+            host.requestPermissions(
+                    new String[]{android.Manifest.permission.READ_EXTERNAL_STORAGE}, REQUEST_FILES);
+        }
+    }
+
+    /**
      * Sends the user to the system's "All files access" toggle, the only way to grant
      * MANAGE_EXTERNAL_STORAGE — it's a special permission with a settings screen of its
      * own rather than a runtime dialog, so there's no requestPermissions() equivalent.
@@ -52,10 +72,12 @@ class DeviceSearch {
     }
 
     /**
-     * Android 13 split storage reads into per-media-type permissions and dropped the broad
-     * one, so which permissions to ask for depends on the OS version. On 13+ this means
-     * only media files are reachable — documents live behind the picker, which isn't a
-     * search surface — so a plain "Files" search finds photos, video, and audio.
+     * The media-only permission tier: images, video, and audio via MediaStore, no folders
+     * and no other file types. Plain no longer asks for this on its own — Settings' single
+     * "Search files" row goes straight for {@link #requestFullFileAccess}, which is
+     * strictly more capable. This stays only as the fallback {@link #files} falls back to
+     * when it's already granted (e.g. from an older version of the app), so a prior grant
+     * still does something useful instead of being silently ignored.
      */
     static String[] filePermissions() {
         if (Build.VERSION.SDK_INT >= 33) {

@@ -15,6 +15,11 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.List;
+
 public class SettingsActivity extends Activity {
 
     /**
@@ -25,8 +30,26 @@ public class SettingsActivity extends Activity {
      */
     static final String EXTRA_DESTINATION = "destination";
 
+    /** Fixed top-to-bottom order for sections — a reading order, not alphabetical. */
+    private static final List<String> SECTION_ORDER =
+            Arrays.asList("Appearance", "Restrictions", "Search", "Permissions");
+
     private LinearLayout root;
     private Typeface georgia;
+
+    /** A row plus the section and label it sorts by — the row's own text carries live
+     *  state ("On"/"Off", a value) that shouldn't affect where it lands in the list. */
+    private static class Entry {
+        final String section;
+        final String sortKey;
+        final View view;
+
+        Entry(String section, String sortKey, View view) {
+            this.section = section;
+            this.sortKey = sortKey;
+            this.view = view;
+        }
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -71,94 +94,61 @@ public class SettingsActivity extends Activity {
     private void render() {
         root.removeAllViews();
 
-        root.addView(row("Change home app",
-                v -> startActivity(new Intent(Settings.ACTION_HOME_SETTINGS))));
-        root.addView(row("Turn off Accessibility Service",
-                v -> startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))));
+        List<Entry> entries = new ArrayList<>();
+
+        entries.add(new Entry("Appearance", "Change home app", row("Change home app",
+                v -> startActivity(new Intent(Settings.ACTION_HOME_SETTINGS)))));
+
+        entries.add(new Entry("Appearance", "Font", row("Font: " + Config.getFontChoice(this).label,
+                v -> startActivity(new Intent(this, FontActivity.class)))));
 
         boolean grayscaleOn = Config.isGrayscaleEnabled(this);
-        root.addView(row("Grayscale: " + (grayscaleOn ? "On" : "Off"), v -> toggleGrayscale()));
+        entries.add(new Entry("Appearance", "Grayscale", row(
+                "Grayscale: " + (grayscaleOn ? "On" : "Off"), v -> toggleGrayscale())));
 
-        root.addView(row("Settings wait time: " + Config.getSettingsWaitSeconds(this) + "s",
-                v -> startActivity(new Intent(this, SettingsWaitTimeActivity.class))));
+        entries.add(new Entry("Appearance", "Home screen art", row("Home screen art",
+                v -> startActivity(new Intent(this, PixelSceneActivity.class)))));
 
-        root.addView(row("Flagged apps",
-                v -> startActivity(new Intent(this, FlaggedAppsActivity.class))));
+        entries.add(new Entry("Restrictions", "App lock", row("App lock",
+                v -> startActivity(new Intent(this, LockedAppsActivity.class)))));
 
-        root.addView(row("Hide apps from app list",
-                v -> startActivity(new Intent(this, HiddenAppsActivity.class))));
+        entries.add(new Entry("Restrictions", "Flagged apps", row("Flagged apps",
+                v -> startActivity(new Intent(this, FlaggedAppsActivity.class)))));
 
-        root.addView(row("App lock",
-                v -> startActivity(new Intent(this, LockedAppsActivity.class))));
+        entries.add(new Entry("Restrictions", "Hide apps from app list", row("Hide apps from app list",
+                v -> startActivity(new Intent(this, HiddenAppsActivity.class)))));
 
-        root.addView(row("Time Blocks",
-                v -> startActivity(new Intent(this, TimeBlocksActivity.class))));
+        entries.add(new Entry("Restrictions", "Settings wait time", row(
+                "Settings wait time: " + Config.getSettingsWaitSeconds(this) + "s",
+                v -> startActivity(new Intent(this, SettingsWaitTimeActivity.class)))));
 
-        root.addView(row("Home screen art",
-                v -> startActivity(new Intent(this, PixelSceneActivity.class))));
+        entries.add(new Entry("Restrictions", "Time Blocks", row("Time Blocks",
+                v -> startActivity(new Intent(this, TimeBlocksActivity.class)))));
 
-        root.addView(row("Font: " + Config.getFontChoice(this).label,
-                v -> startActivity(new Intent(this, FontActivity.class))));
+        // Everything that shapes home-screen search — files, folders, contacts, the web,
+        // and the user's own web searches — lives together on its own screen now; five
+        // separate toggles interleaved among unrelated settings made none of them easy
+        // to find, including from within Settings itself.
+        entries.add(new Entry("Search", "Search", row("Search",
+                v -> startActivity(new Intent(this, SearchSettingsActivity.class)))));
 
-        root.addView(row("Grant usage access (for all-apps stats)",
-                v -> startActivity(new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))));
+        // Replaces the old standalone "Turn off Accessibility Service" shortcut — that
+        // screen is still one tap away from here, but now alongside every other permission
+        // Plain holds, with its actual current state, instead of a bare link.
+        entries.add(new Entry("Permissions", "App access", row("App access",
+                v -> startActivity(new Intent(this, AppAccessActivity.class)))));
 
-        boolean fileSearch = Config.isFileSearchEnabled(this);
-        root.addView(row("Search files: " + (fileSearch ? "On" : "Off"), v -> {
-            Config.setFileSearchEnabled(this, !fileSearch);
-            if (!fileSearch && !DeviceSearch.canSearchFiles(this)) {
-                requestPermissions(DeviceSearch.filePermissions(), DeviceSearch.REQUEST_FILES);
+        entries.sort(Comparator
+                .comparingInt((Entry e) -> SECTION_ORDER.indexOf(e.section))
+                .thenComparing(e -> e.sortKey, String.CASE_INSENSITIVE_ORDER));
+
+        String currentSection = null;
+        for (Entry entry : entries) {
+            if (!entry.section.equals(currentSection)) {
+                currentSection = entry.section;
+                root.addView(sectionHeader(currentSection));
             }
-            render();
-        }));
-
-        // Only meaningful where the permission exists as a separate toggle (Android 11+);
-        // below that, plain storage permission already allows the filesystem walk.
-        if (android.os.Build.VERSION.SDK_INT >= 30) {
-            boolean allFiles = FileIndex.canWalk(this);
-            root.addView(row("Search folders & all files: " + (allFiles ? "On" : "Off"),
-                    v -> DeviceSearch.requestAllFilesAccess(this)));
-        }
-
-        boolean webSearch = Config.isWebSearchEnabled(this);
-        root.addView(row("Search the web: " + (webSearch ? "On" : "Off"), v -> {
-            Config.setWebSearchEnabled(this, !webSearch);
-            render();
-        }));
-
-        int webTargets = Config.getWebTargets(this).size();
-        root.addView(row("My web searches" + (webTargets > 0 ? " (" + webTargets + ")" : ""),
-                v -> startActivity(new Intent(this, WebTargetsActivity.class))));
-
-        boolean contactSearch = Config.isContactSearchEnabled(this);
-        root.addView(row("Search contacts: " + (contactSearch ? "On" : "Off"), v -> {
-            Config.setContactSearchEnabled(this, !contactSearch);
-            if (!contactSearch && !DeviceSearch.canSearchContacts(this)) {
-                requestPermissions(new String[]{android.Manifest.permission.READ_CONTACTS},
-                        DeviceSearch.REQUEST_CONTACTS);
-            }
-            render();
-        }));
-    }
-
-    @Override
-    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        // Turning a search source on here only sticks if its permission was actually
-        // granted — otherwise the row would claim "On" for a source that can't read
-        // anything. An interrupted request (empty arrays) is left alone.
-        if (grantResults.length == 0) return;
-
-        boolean granted = false;
-        for (int result : grantResults) {
-            if (result == android.content.pm.PackageManager.PERMISSION_GRANTED) granted = true;
-        }
-        if (granted) return;
-
-        if (requestCode == DeviceSearch.REQUEST_FILES) {
-            Config.setFileSearchEnabled(this, false);
-        } else if (requestCode == DeviceSearch.REQUEST_CONTACTS) {
-            Config.setContactSearchEnabled(this, false);
+            root.addView(entry.view);
         }
     }
 
@@ -174,6 +164,17 @@ public class SettingsActivity extends Activity {
                     android.widget.Toast.LENGTH_LONG).show();
         }
         render();
+    }
+
+    private TextView sectionHeader(String label) {
+        TextView header = new TextView(this);
+        header.setText(label.toUpperCase());
+        header.setTextColor(Color.GRAY);
+        header.setTextSize(13);
+        header.setLetterSpacing(0.15f);
+        header.setTypeface(georgia);
+        header.setPadding(48, 36, 48, 12);
+        return header;
     }
 
     private TextView row(String label, View.OnClickListener listener) {

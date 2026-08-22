@@ -148,6 +148,16 @@
             android:theme="@style/Theme.PlainPhone" />
 
         <activity
+            android:name=".AppAccessActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
+            android:name=".SearchSettingsActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
             android:name=".WebTargetsActivity"
             android:exported="false"
             android:theme="@style/Theme.PlainPhone" />
