@@ -144,8 +144,8 @@ public class AppMonitorService extends AccessibilityService {
     private static final long HOME_COOLDOWN_MILLIS = 1500L;
 
     // Transient system UI surfaces (notification shade, Recents/Overview).
-    // Foreground-change events for these must not reset gate/grayscale state,
-    // otherwise leaving a flagged app to view Recents snaps color back on.
+    // Foreground-change events for these must not reset gate state, otherwise leaving
+    // a flagged app to view Recents counts as a genuine reopen.
     private static final Set<String> PASSTHROUGH_PACKAGES = new HashSet<>();
     static {
         PASSTHROUGH_PACKAGES.add("com.android.systemui");
@@ -176,17 +176,11 @@ public class AppMonitorService extends AccessibilityService {
         info.eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED;
         info.feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC;
         setServiceInfo(info);
-        if (Config.isGrayscaleEnabled(this)) {
-            GrayscaleController.enable(this);
-        }
     }
 
     @Override
     public boolean onUnbind(android.content.Intent intent) {
         // Fires when the user disables the service in Settings > Accessibility.
-        // Grayscale is a standalone system setting, not tied to this service running,
-        // so it must be explicitly turned off here or it would persist forever.
-        GrayscaleController.disable(this);
         instance = null;
         endSession();
         return super.onUnbind(intent);

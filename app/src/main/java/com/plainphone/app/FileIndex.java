@@ -9,13 +9,17 @@ import android.os.storage.StorageManager;
 import android.os.storage.StorageVolume;
 
 import java.io.File;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.ForkJoinTask;
+import java.util.concurrent.RecursiveAction;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * A flat, in-memory list of every file and folder on internal storage and the SD card,
@@ -147,14 +151,15 @@ class FileIndex {
         Context appContext = context.getApplicationContext();
         new Thread(() -> {
             List<Entry> scanned = new ArrayList<>();
+            long startedAt = System.currentTimeMillis();
             try {
-                for (File root : roots(appContext)) {
-                    walk(root, scanned);
-                }
+                walkAll(roots(appContext), scanned);
             } catch (Exception ignored) {
                 // A storage volume yanked mid-scan (or an OEM quirk) shouldn't lose the
                 // entries already collected — serve the partial index instead of none.
             } finally {
+                android.util.Log.d("PlainFileIndex", "scan finished in "
+                        + (System.currentTimeMillis() - startedAt) + "ms, " + scanned.size() + " entries");
                 entries = scanned;
                 builtAt = System.currentTimeMillis();
                 scanning = false;
@@ -203,45 +208,83 @@ class FileIndex {
     }
 
     /**
-     * Breadth-first so the shallow, commonly-wanted paths land in the index even if the
-     * entry cap cuts the walk short. Canonical paths are tracked because storage roots
-     * alias each other (/sdcard and /storage/emulated/0 are the same tree) and symlinks
-     * would otherwise send this in circles.
+     * Walks every root in parallel across a pool sized to the device's core count. A
+     * directory listing is I/O, and per-name folding (Unicode normalization, in
+     * TextMatch.fold) is real CPU work repeated tens of thousands of times — both overlap
+     * cleanly across threads, and ForkJoinPool's work-stealing handles the wildly uneven
+     * subtree sizes a real storage layout has (one folder with one file, another with
+     * thousands) better than splitting the roots evenly up front would.
      */
-    private static void walk(File root, List<Entry> out) {
-        Set<String> visited = new HashSet<>();
-        List<File> level = new ArrayList<>();
-        level.add(root);
+    private static void walkAll(List<File> roots, List<Entry> out) {
+        if (roots.isEmpty()) return;
 
-        for (int depth = 0; depth < MAX_DEPTH && !level.isEmpty(); depth++) {
-            List<File> next = new ArrayList<>();
-            for (File directory : level) {
-                if (out.size() >= MAX_ENTRIES) return;
-                if (!visited.add(canonical(directory))) continue;
+        ForkJoinPool pool = new ForkJoinPool(Math.max(2, Runtime.getRuntime().availableProcessors()));
+        ConcurrentLinkedQueue<Entry> collected = new ConcurrentLinkedQueue<>();
+        Set<String> visited = ConcurrentHashMap.newKeySet();
+        AtomicInteger count = new AtomicInteger();
 
-                File[] children = directory.listFiles();
-                if (children == null) continue; // unreadable (e.g. Android/data) — skip quietly
-
-                for (File child : children) {
-                    // Hidden entries are caches and dotfiles nobody searches for by name,
-                    // and skipping them keeps .thumbnails from flooding the index.
-                    if (child.getName().startsWith(".")) continue;
-
-                    boolean isDirectory = child.isDirectory();
-                    out.add(new Entry(child, isDirectory));
-                    if (isDirectory) next.add(child);
-                    if (out.size() >= MAX_ENTRIES) return;
-                }
+        try {
+            List<ForkJoinTask<Void>> top = new ArrayList<>();
+            for (File root : roots) {
+                top.add(pool.submit(new WalkTask(root, 0, collected, visited, count)));
             }
-            level = next;
+            for (ForkJoinTask<Void> task : top) task.join();
+        } finally {
+            pool.shutdown();
+        }
+        out.addAll(collected);
+    }
+
+    private static class WalkTask extends RecursiveAction {
+        private final File directory;
+        private final int depth;
+        private final ConcurrentLinkedQueue<Entry> out;
+        private final Set<String> visited;
+        private final AtomicInteger count;
+
+        WalkTask(File directory, int depth, ConcurrentLinkedQueue<Entry> out,
+                 Set<String> visited, AtomicInteger count) {
+            this.directory = directory;
+            this.depth = depth;
+            this.out = out;
+            this.visited = visited;
+            this.count = count;
+        }
+
+        @Override
+        protected void compute() {
+            if (depth >= MAX_DEPTH || count.get() >= MAX_ENTRIES) return;
+            // A plain absolute-path string, not File.getCanonicalPath() — that resolves
+            // symlinks via real filesystem calls, paid on every directory visited, to guard
+            // against a loop that MAX_DEPTH already bounds on its own. Storage roots
+            // (internal, SD card) essentially never contain symlinks in practice; this still
+            // catches the one real risk, a root appearing twice in roots().
+            if (!visited.add(directory.getAbsolutePath())) return;
+
+            File[] children = directory.listFiles();
+            if (children == null) return; // unreadable — skip quietly
+
+            List<WalkTask> subtasks = new ArrayList<>();
+            for (File child : children) {
+                if (count.get() >= MAX_ENTRIES) break;
+                // Hidden entries are caches and dotfiles nobody searches for by name.
+                if (child.getName().startsWith(".")) continue;
+                // Android/data and Android/obb are per-app private storage — overwhelmingly
+                // cache files (WhatsApp, Telegram, browsers) nobody searches for by name,
+                // and easily the majority of a phone's total file count on their own.
+                if (isAppPrivateStorage(directory, child)) continue;
+
+                boolean isDirectory = child.isDirectory();
+                out.add(new Entry(child, isDirectory));
+                count.incrementAndGet();
+                if (isDirectory) subtasks.add(new WalkTask(child, depth + 1, out, visited, count));
+            }
+            invokeAll(subtasks);
         }
     }
 
-    private static String canonical(File file) {
-        try {
-            return file.getCanonicalPath();
-        } catch (IOException e) {
-            return file.getAbsolutePath();
-        }
+    private static boolean isAppPrivateStorage(File parent, File child) {
+        return "Android".equals(parent.getName())
+                && ("data".equals(child.getName()) || "obb".equals(child.getName()));
     }
 }

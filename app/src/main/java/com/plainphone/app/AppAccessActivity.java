@@ -17,7 +17,6 @@ import android.view.ViewGroup;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
-import android.widget.Toast;
 
 /**
  * A full account of what Plain currently has access to on this phone — everything it can
@@ -112,21 +111,6 @@ public class AppAccessActivity extends Activity {
                         }
                     }));
         }
-
-        boolean secureSettings = checkSelfPermission(android.Manifest.permission.WRITE_SECURE_SETTINGS)
-                == PackageManager.PERMISSION_GRANTED;
-        root.addView(row("Modify system settings",
-                secureSettings ? "Granted — needed for Grayscale"
-                        : "Not granted — Grayscale won't work until this is granted over adb",
-                v -> {
-                    if (!secureSettings) {
-                        Toast.makeText(this,
-                                "This one can't be granted from a settings screen — run:\n"
-                                        + "adb shell pm grant com.plainphone.app "
-                                        + "android.permission.WRITE_SECURE_SETTINGS",
-                                Toast.LENGTH_LONG).show();
-                    }
-                }));
 
         root.addView(sectionHeader("Granted automatically"));
 

@@ -83,8 +83,8 @@ public class OnboardingActivity extends Activity {
                 break;
             case 2:
                 title.setText("2. Enable the Accessibility Service");
-                body.setText("This lets Plain add a wait screen before addictive apps, apply grayscale, "
-                        + "and lock the screen. Tap below, go to Installed Apps\n\n"
+                body.setText("This lets Plain add a wait screen before addictive apps and lock the "
+                        + "screen. Tap below, go to Installed Apps\n\n"
                         + "If it won't turn on: go to Settings → Apps → Plain, tap the ⋮ menu in the "
                         + "top-right corner, then tap \"Allow restricted settings\" — then come back "
                         + "here and try the toggle again.");
@@ -93,12 +93,12 @@ public class OnboardingActivity extends Activity {
                 addButton("Next", v -> nextStep());
                 break;
             case 3:
-                title.setText("3. Enable grayscale (optional, needs a computer)");
-                body.setText("Connect your phone to a computer with adb and run:\n\n"
-                        + "adb shell pm grant com.plainphone.app android.permission.WRITE_SECURE_SETTINGS\n\n"
-                        + "Everything else works fine without this — you can do it later\n\n"
-                        + "Reminder: If you ever uninstall Plain, turn grayscale off first from Settings "
-                        + "here in the app — otherwise it can stay stuck after that");
+                title.setText("3. Everything else is optional");
+                body.setText("Plain works from here. Search on the home screen can also look through "
+                        + "your files, contacts, and the web — each of those asks for its own "
+                        + "permission the first time you actually use it, not now.\n\n"
+                        + "Settings → Permissions → App access lists everything Plain can see or "
+                        + "control, and what each one is for, whenever you want to check.");
                 addButton("Done", v -> finishOnboarding());
                 break;
             default:

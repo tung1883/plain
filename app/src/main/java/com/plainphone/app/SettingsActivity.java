@@ -102,11 +102,7 @@ public class SettingsActivity extends Activity {
         entries.add(new Entry("Appearance", "Font", row("Font: " + Config.getFontChoice(this).label,
                 v -> startActivity(new Intent(this, FontActivity.class)))));
 
-        boolean grayscaleOn = Config.isGrayscaleEnabled(this);
-        entries.add(new Entry("Appearance", "Grayscale", row(
-                "Grayscale: " + (grayscaleOn ? "On" : "Off"), v -> toggleGrayscale())));
-
-        entries.add(new Entry("Appearance", "Home screen art", row("Home screen art",
+entries.add(new Entry("Appearance", "Home screen art", row("Home screen art",
                 v -> startActivity(new Intent(this, PixelSceneActivity.class)))));
 
         entries.add(new Entry("Restrictions", "App lock", row("App lock",
@@ -152,21 +148,7 @@ public class SettingsActivity extends Activity {
         }
     }
 
-    private void toggleGrayscale() {
-        boolean newValue = !Config.isGrayscaleEnabled(this);
-        Config.setGrayscaleEnabled(this, newValue);
-        boolean applied = newValue ? GrayscaleController.enable(this) : GrayscaleController.disable(this);
-        if (!applied) {
-            android.widget.Toast.makeText(this,
-                    "Couldn't change grayscale — the permission may have been lost. "
-                            + "Run: adb shell pm grant com.plainphone.app "
-                            + "android.permission.WRITE_SECURE_SETTINGS",
-                    android.widget.Toast.LENGTH_LONG).show();
-        }
-        render();
-    }
-
-    private TextView sectionHeader(String label) {
+private TextView sectionHeader(String label) {
         TextView header = new TextView(this);
         header.setText(label.toUpperCase());
         header.setTextColor(Color.GRAY);

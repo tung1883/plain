@@ -11,7 +11,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-/** Persisted, user-editable settings: wait time, auto-close budget, grayscale, flagged/hidden/locked apps, lock PIN. */
+/** Persisted, user-editable settings: wait time, auto-close budget, flagged/hidden/locked apps, lock PIN. */
 class Config {
 
     private static final String PREFS = "config";
@@ -82,15 +82,7 @@ class Config {
         prefs(context).edit().putLong("lockout_until_" + packageName, untilEpochMillis).apply();
     }
 
-    static boolean isGrayscaleEnabled(Context context) {
-        return prefs(context).getBoolean("grayscale_enabled", true);
-    }
-
-    static void setGrayscaleEnabled(Context context, boolean enabled) {
-        prefs(context).edit().putBoolean("grayscale_enabled", enabled).apply();
-    }
-
-    /** User-defined web searches, shown as extra rows under the Web heading. */
+/** User-defined web searches, shown as extra rows under the Web heading. */
     static List<WebTarget> getWebTargets(Context context) {
         String stored = prefs(context).getString("web_targets", null);
         List<WebTarget> targets = new ArrayList<>();
