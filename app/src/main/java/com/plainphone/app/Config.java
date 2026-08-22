@@ -283,6 +283,57 @@ class Config {
         }
     }
 
+    /**
+     * Whether the home screen's art frame currently shows the user's own photo instead of
+     * a bundled GIF scene. Kept separate from isPixelArtEnabled — that's the on/off switch
+     * for the frame entirely, this is which of the two sources fills it when it's on, so
+     * picking a GIF and picking a photo don't have to erase each other's state.
+     */
+    static boolean isPhotoArtSelected(Context context) {
+        return "photo".equals(prefs(context).getString("art_source", "gif"));
+    }
+
+    static void setPhotoArtSelected(Context context, boolean selected) {
+        prefs(context).edit().putString("art_source", selected ? "photo" : "gif").apply();
+    }
+
+    /** content:// Uri of the user's chosen photo, or null if none has been picked yet. */
+    static String getArtPhotoUri(Context context) {
+        return prefs(context).getString("art_photo_uri", null);
+    }
+
+    static void setArtPhotoUri(Context context, String uriString) {
+        prefs(context).edit().putString("art_photo_uri", uriString).apply();
+    }
+
+    /**
+     * Which part of the photo shows, chosen in PhotoCropActivity: focusX/focusY are the
+     * bitmap point (0..1 each) centered in the frame, zoom is how far past the minimum
+     * "cover the frame" scale the user pinched in. Stored this way rather than as a pixel
+     * crop rectangle because it stays meaningful regardless of the frame's actual size —
+     * the home screen's frame and the full-screen viewer's are different sizes, and both
+     * read the same three numbers.
+     */
+    static float getArtPhotoFocusX(Context context) {
+        return prefs(context).getFloat("art_photo_focus_x", 0.5f);
+    }
+
+    static float getArtPhotoFocusY(Context context) {
+        return prefs(context).getFloat("art_photo_focus_y", 0.5f);
+    }
+
+    static float getArtPhotoZoom(Context context) {
+        return prefs(context).getFloat("art_photo_zoom", 1f);
+    }
+
+    static void setArtPhotoCrop(Context context, float focusX, float focusY, float zoom) {
+        prefs(context).edit()
+                .putFloat("art_photo_focus_x", focusX)
+                .putFloat("art_photo_focus_y", focusY)
+                .putFloat("art_photo_zoom", zoom)
+                .apply();
+    }
+
     static void setGifScene(Context context, GifScene scene) {
         prefs(context).edit().putString("pixel_gif_scene", scene.name()).apply();
     }
