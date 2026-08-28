@@ -18,7 +18,6 @@ import android.widget.TextView;
 import java.util.Calendar;
 import java.util.List;
 
-/** List of Time Blocks (Study, Sleep, etc.); tap to edit, long-press to start an ad-hoc session now. */
 public class TimeBlocksActivity extends Activity {
 
     private ListView listView;
@@ -116,3 +115,4 @@ public class TimeBlocksActivity extends Activity {
         return drawable;
     }
 }
+

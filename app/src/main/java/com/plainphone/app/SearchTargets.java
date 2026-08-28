@@ -7,18 +7,10 @@ import android.provider.Settings;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * The searchable catalog of destinations that aren't apps: Plain's own screens and a
- * curated set of phone settings pages. Both are static lists rather than anything
- * discovered at runtime — Android exposes no way to enumerate settings screens, and
- * hand-listing them is what lets each one carry the alternate words people actually
- * type ("wifi" for Wi-Fi, "screen time" for Usage).
- */
 class SearchTargets {
 
     private SearchTargets() {}
 
-    /** A destination plus the alternate words that should find it. */
     private static class Target {
         final String title;
         final String subtitle;
@@ -32,11 +24,7 @@ class SearchTargets {
     }
 
     private static class PlainTarget extends Target {
-        /**
-         * Screens reached from Settings stay behind the settings friction gate here too —
-         * search is a faster way to find a screen, never a way around the wait that
-         * protects it.
-         */
+
         final Class<? extends Activity> destination;
         final boolean gated;
 
@@ -129,11 +117,9 @@ class SearchTargets {
                     "system settings", "android settings"),
     };
 
-    /** Plain's own screens matching the query. */
     static List<SearchResult> plain(Activity host, TextMatch.Query query) {
         List<SearchResult> results = new ArrayList<>();
 
-        // Not a screen, so it isn't in the table: an action that runs and stays put.
         int screenOff = TextMatch.score("Screen off",
                 new String[]{"lock", "sleep", "turn off", "display off"}, query);
         if (screenOff != TextMatch.NO_MATCH) {
@@ -160,7 +146,6 @@ class SearchTargets {
         return gate;
     }
 
-    /** Phone settings pages matching the query, skipping any this device can't open. */
     static List<SearchResult> system(Activity host, TextMatch.Query query) {
         List<SearchResult> results = new ArrayList<>();
         for (SystemTarget target : SYSTEM) {
@@ -168,9 +153,7 @@ class SearchTargets {
             if (score == TextMatch.NO_MATCH) continue;
 
             Intent intent = new Intent(target.action);
-            // Not every Settings.ACTION_* screen exists on every device or OEM skin;
-            // showing a row that dies with ActivityNotFoundException is worse than
-            // leaving it out.
+
             if (intent.resolveActivity(host.getPackageManager()) == null) continue;
 
             results.add(new SearchResult(SearchResult.Kind.SYSTEM, target.title, target.subtitle,
@@ -180,3 +163,4 @@ class SearchTargets {
     }
 
 }
+

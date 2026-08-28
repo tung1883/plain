@@ -7,7 +7,6 @@ import android.app.NotificationManager;
 import android.content.Context;
 import android.content.pm.PackageManager;
 
-/** Fires the "closing soon" warning for flagged apps about to hit their time budget. */
 class NotificationHelper {
 
     private static final String CHANNEL_ID = "flagged_app_timeout";
@@ -45,3 +44,4 @@ class NotificationHelper {
         }
     }
 }
+

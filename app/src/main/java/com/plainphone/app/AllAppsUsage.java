@@ -14,7 +14,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/** This week's foreground time for every app, via the system's own usage stats. */
 class AllAppsUsage {
 
     static class Entry {
@@ -75,3 +74,4 @@ class AllAppsUsage {
         return totals;
     }
 }
+

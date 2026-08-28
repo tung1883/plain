@@ -1,6 +1,5 @@
 package com.plainphone.app;
 
-/** A selectable app-wide typeface, picked in Settings > Font. */
 enum FontChoice {
     GEORGIA("Georgia"),
     IBM_PLEX_MONO("IBM Plex Mono");
@@ -11,3 +10,4 @@ enum FontChoice {
         this.label = label;
     }
 }
+

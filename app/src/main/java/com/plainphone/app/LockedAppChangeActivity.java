@@ -4,7 +4,6 @@ import android.os.Bundle;
 
 import java.util.Set;
 
-/** Confirms removing one app from the locked list — friction only applies to loosening it. */
 public class LockedAppChangeActivity extends FrictionGateActivity {
 
     private String packageName;
@@ -29,3 +28,4 @@ public class LockedAppChangeActivity extends FrictionGateActivity {
         Config.setLockedPackages(this, locked);
     }
 }
+

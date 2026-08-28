@@ -6,7 +6,6 @@ import android.os.Bundle;
 import java.util.Calendar;
 import java.util.List;
 
-/** Second half of the emergency override flow: full wait+math friction before a block is lifted early. */
 public class TimeBlockOverrideActivity extends FrictionGateActivity {
 
     private String packageName;
@@ -47,3 +46,4 @@ public class TimeBlockOverrideActivity extends FrictionGateActivity {
         }
     }
 }
+

@@ -62,3 +62,4 @@ public class TimeBlockStartTimeActivity extends StepperActivity {
         return TimeBlock.formatTime(value);
     }
 }
+

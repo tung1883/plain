@@ -15,7 +15,6 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
 
-/** Plain per-day open counts and foreground time for flagged apps, kept in SharedPreferences. */
 class UsageStore {
 
     private static final String PREFS = "usage";
@@ -40,7 +39,6 @@ class UsageStore {
         prefs.edit().putLong(key, prefs.getLong(key, 0L) + millis).apply();
     }
 
-    /** Per-app totals for packages with any recorded usage in [startOffset, endOffset] days from today, sorted by time. */
     static List<Entry> rangeUsage(Context context, Set<String> packages, int startOffset, int endOffset) {
         SharedPreferences prefs = prefs(context);
         Map<String, Long> millisTotals = new TreeMap<>();
@@ -97,3 +95,4 @@ class UsageStore {
         return DAY_FORMAT.format(cal.getTime());
     }
 }
+

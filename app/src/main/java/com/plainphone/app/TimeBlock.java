@@ -10,16 +10,15 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 
-/** A named, recurring (or ad-hoc) app-restriction window: Study, Sleep, etc. */
 class TimeBlock {
 
     enum Mode { BLACKOUT, ALLOW_ONLY }
 
     final String id;
     String name;
-    int daysMask; // bit 0 = Sunday .. bit 6 = Saturday (matches Calendar.DAY_OF_WEEK - 1)
-    int startMinute; // minutes since midnight
-    int endMinute; // endMinute <= startMinute means the window wraps past midnight
+    int daysMask;
+    int startMinute;
+    int endMinute;
     Mode mode;
     Set<String> packages;
     boolean enabled;
@@ -27,7 +26,7 @@ class TimeBlock {
     private TimeBlock(String id) {
         this.id = id;
         this.name = "New block";
-        this.daysMask = 0b1111111; // every day by default
+        this.daysMask = 0b1111111;
         this.startMinute = 9 * 60;
         this.endMinute = 17 * 60;
         this.mode = Mode.BLACKOUT;
@@ -98,3 +97,4 @@ class TimeBlock {
         return block;
     }
 }
+

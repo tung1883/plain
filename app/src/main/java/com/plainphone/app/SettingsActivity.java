@@ -22,23 +22,14 @@ import java.util.List;
 
 public class SettingsActivity extends Activity {
 
-    /**
-     * Class name of a settings screen to open immediately, used when home-screen search
-     * deep-links to one. It rides through the friction (and PIN) gates rather than being
-     * launched directly, so a searched-for screen still costs the same wait as reaching
-     * it by hand — Settings is left underneath so Back lands somewhere sensible.
-     */
     static final String EXTRA_DESTINATION = "destination";
 
-    /** Fixed top-to-bottom order for sections — a reading order, not alphabetical. */
     private static final List<String> SECTION_ORDER =
             Arrays.asList("Appearance", "Restrictions", "Search", "Permissions");
 
     private LinearLayout root;
     private Typeface georgia;
 
-    /** A row plus the section and label it sorts by — the row's own text carries live
-     *  state ("On"/"Off", a value) that shouldn't affect where it lands in the list. */
     private static class Entry {
         final String section;
         final String sortKey;
@@ -60,16 +51,12 @@ public class SettingsActivity extends Activity {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(Color.BLACK);
 
-        // The list has outgrown the screen, so it has to scroll — without this the rows
-        // past the bottom edge are simply unreachable rather than merely off-screen.
         ScrollView scroller = new ScrollView(this);
         scroller.setBackgroundColor(Color.BLACK);
         scroller.addView(root, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         setContentView(scroller);
 
-        // Only on a fresh create: after a rotation or a return from the deep-linked screen
-        // this Activity is reused, and forwarding again would trap the user in a loop.
         if (savedInstanceState == null) {
             openDeepLinkedScreen(getIntent().getStringExtra(EXTRA_DESTINATION));
         }
@@ -80,15 +67,14 @@ public class SettingsActivity extends Activity {
         try {
             startActivity(new Intent(this, Class.forName(className)));
         } catch (ClassNotFoundException e) {
-            // The catalog in SearchTargets named a screen that no longer exists; showing
-            // plain Settings is a fine landing spot, so there's nothing to report.
+
         }
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-        render(); // reflect any changes made via dialogs or returning from system Settings
+        render();
     }
 
     private void render() {
@@ -121,16 +107,9 @@ entries.add(new Entry("Appearance", "Home screen art", row("Home screen art",
         entries.add(new Entry("Restrictions", "Time Blocks", row("Time Blocks",
                 v -> startActivity(new Intent(this, TimeBlocksActivity.class)))));
 
-        // Everything that shapes home-screen search — files, folders, contacts, the web,
-        // and the user's own web searches — lives together on its own screen now; five
-        // separate toggles interleaved among unrelated settings made none of them easy
-        // to find, including from within Settings itself.
         entries.add(new Entry("Search", "Search", row("Search",
                 v -> startActivity(new Intent(this, SearchSettingsActivity.class)))));
 
-        // Replaces the old standalone "Turn off Accessibility Service" shortcut — that
-        // screen is still one tap away from here, but now alongside every other permission
-        // Plain holds, with its actual current state, instead of a bare link.
         entries.add(new Entry("Permissions", "App access", row("App access",
                 v -> startActivity(new Intent(this, AppAccessActivity.class)))));
 
@@ -177,3 +156,4 @@ private TextView sectionHeader(String label) {
         return view;
     }
 }
+

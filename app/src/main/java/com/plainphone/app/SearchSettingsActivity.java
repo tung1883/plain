@@ -18,19 +18,11 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
-/**
- * Every setting that controls what home-screen search can see: files, folders, contacts,
- * the web, and the user's own web searches. Split out of SettingsActivity because these
- * five all edit one thing — what shows up when you type on the home screen — and mixing
- * them into the general settings list buried them among unrelated toggles.
- */
 public class SearchSettingsActivity extends Activity {
 
     private LinearLayout root;
     private Typeface georgia;
 
-    /** A row plus the label it sorts by, kept separate since a row's visible text carries
-     *  live state ("On"/"Off", a count) that shouldn't affect where it lands in the list. */
     private static class Entry {
         final String sortKey;
         final View view;
@@ -84,21 +76,12 @@ public class SearchSettingsActivity extends Activity {
                     render();
                 })));
 
-        // One row, not two: the OS permission that finds folders and every file type
-        // (MANAGE_EXTERNAL_STORAGE, or plain storage access pre-Android-11) supersedes the
-        // narrower media-only one, so offering both as separate toggles just left one of
-        // them dead the moment the other was granted. This one always asks for the
-        // stronger permission — see DeviceSearch.requestFullFileAccess.
         boolean fileGranted = FileIndex.canWalk(this);
         boolean fileEnabled = Config.isFileSearchEnabled(this);
         entries.add(new Entry("Search files", row(
                 "Search files: " + (fileGranted && fileEnabled ? "On" : "Off"), v -> {
                     if (!fileGranted) {
-                        // Optimistic: flips true so results appear the moment the OS
-                        // permission lands, without a second tap here. If it's actually
-                        // denied, onRequestPermissionsResult below reverts it (SDK<30 only —
-                        // the 30+ path is a settings screen with no denial callback, so
-                        // there this simply stays "Off" until the OS permission shows up).
+
                         Config.setFileSearchEnabled(this, true);
                         DeviceSearch.requestFullFileAccess(this);
                     } else {
@@ -121,9 +104,7 @@ public class SearchSettingsActivity extends Activity {
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        // Turning a source on here only sticks if its permission was actually granted —
-        // otherwise the row would claim "On" for a source that can't read anything. An
-        // interrupted request (empty arrays) is left alone.
+
         if (grantResults.length == 0) return;
 
         boolean granted = false;
@@ -157,3 +138,4 @@ public class SearchSettingsActivity extends Activity {
         return view;
     }
 }
+

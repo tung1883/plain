@@ -46,3 +46,4 @@ public class WaitTimeActivity extends StepperActivity {
         return value + "s";
     }
 }
+

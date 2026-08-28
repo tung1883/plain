@@ -2,7 +2,6 @@ package com.plainphone.app;
 
 import android.os.Bundle;
 
-/** Ad-hoc "start this block now for N minutes" session, launched via long-press from TimeBlocksActivity. */
 public class SessionLengthActivity extends StepperActivity {
 
     private static final int STEP_MINUTES = 5;
@@ -59,3 +58,4 @@ public class SessionLengthActivity extends StepperActivity {
         return value + "m";
     }
 }
+

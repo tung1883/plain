@@ -64,7 +64,6 @@ public class HiddenAppsActivity extends Activity {
                 view.setGravity(Gravity.START);
                 view.setTypeface(georgia);
 
-                // Hidden apps read as crossed out instead of using a separate checkbox.
                 boolean hidden = Config.getHiddenPackages(HiddenAppsActivity.this)
                         .contains(apps.get(position).activityInfo.packageName);
                 int flags = view.getPaintFlags();
@@ -80,14 +79,13 @@ public class HiddenAppsActivity extends Activity {
             boolean currentlyHidden = Config.getHiddenPackages(this).contains(pkg);
 
             if (currentlyHidden) {
-                // Unhiding loosens the restriction, so it goes through the friction gate.
-                // The crossed-out look only clears once the gate is actually completed.
+
                 Intent intent = new Intent(this, HiddenAppChangeActivity.class);
                 intent.putExtra("package", pkg);
                 intent.putExtra("label", labels.get(position));
                 startActivity(intent);
             } else {
-                // Hiding tightens the restriction, so it applies immediately.
+
                 Set<String> hidden = Config.getHiddenPackages(this);
                 hidden.add(pkg);
                 Config.setHiddenPackages(this, hidden);
@@ -99,7 +97,7 @@ public class HiddenAppsActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        adapter.notifyDataSetChanged(); // reflect a change confirmed while we were away
+        adapter.notifyDataSetChanged();
     }
 
     private Drawable rowBackground() {
@@ -133,3 +131,4 @@ public class HiddenAppsActivity extends Activity {
         return deduped;
     }
 }
+

@@ -4,7 +4,6 @@ import android.os.Bundle;
 
 import java.util.Set;
 
-/** Confirms removing one app from the flagged list — friction only applies to loosening it. */
 public class FlaggedAppChangeActivity extends FrictionGateActivity {
 
     private String packageName;
@@ -29,3 +28,4 @@ public class FlaggedAppChangeActivity extends FrictionGateActivity {
         Config.setFlaggedPackages(this, flagged);
     }
 }
+

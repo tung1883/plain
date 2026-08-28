@@ -12,7 +12,6 @@ import android.widget.TextView;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Lets the user pick which typeface the whole app uses, with a live sample per option. */
 public class FontActivity extends Activity {
 
     private final List<LinearLayout> rows = new ArrayList<>();
@@ -47,7 +46,7 @@ public class FontActivity extends Activity {
         TextView label = new TextView(this);
         label.setText(font.label);
         label.setTextSize(16);
-        label.setTypeface(Fonts.current(this)); // the app's current font, for the label itself
+        label.setTypeface(Fonts.current(this));
         row.addView(label);
 
         TextView sample = new TextView(this);
@@ -89,3 +88,4 @@ public class FontActivity extends Activity {
         }
     }
 }
+

@@ -12,7 +12,6 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.FrameLayout;
 
-/** A smaller, framed, pinch-to-zoom/pan view of whichever home-screen art is currently selected. */
 public class ArtViewerActivity extends Activity {
 
     private static final float MIN_SCALE = 1f;
@@ -51,8 +50,7 @@ public class ArtViewerActivity extends Activity {
                     @Override
                     public boolean onScale(ScaleGestureDetector detector) {
                         float newScale = clampScale(scaleFactor * detector.getScaleFactor());
-                        // How much scale actually changed after clamping — keeps the focal
-                        // point calculation correct even once MAX_SCALE/MIN_SCALE is hit.
+
                         float appliedFactor = newScale / scaleFactor;
 
                         float cx = content.getWidth() / 2f;
@@ -60,8 +58,6 @@ public class ArtViewerActivity extends Activity {
                         float fx = detector.getFocusX();
                         float fy = detector.getFocusY();
 
-                        // Keeps the content point under the fingers fixed on screen as the
-                        // scale changes, instead of always zooming from the view's center.
                         translateX = fx - cx - appliedFactor * (fx - cx - translateX);
                         translateY = fy - cy - appliedFactor * (fy - cy - translateY);
 
@@ -123,8 +119,6 @@ public class ArtViewerActivity extends Activity {
         return Math.max(MIN_SCALE, Math.min(scale, MAX_SCALE));
     }
 
-    // Keeps the scaled content covering the whole frame — at scaleFactor 1 this pins
-    // translation to exactly (0,0), so no blank space is ever visible past the content's edge.
     private void clampTranslation() {
         float maxX = content.getWidth() * (scaleFactor - 1) / 2f;
         float maxY = content.getHeight() * (scaleFactor - 1) / 2f;
@@ -139,3 +133,4 @@ public class ArtViewerActivity extends Activity {
         content.setTranslationY(translateY);
     }
 }
+

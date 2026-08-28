@@ -46,3 +46,4 @@ public class SettingsWaitTimeActivity extends StepperActivity {
         return value + "s";
     }
 }
+

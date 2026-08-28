@@ -28,21 +28,12 @@ import android.widget.TextView;
 import java.util.HashSet;
 import java.util.Set;
 
-/**
- * Watches foreground app changes. Flagged packages get a blocking countdown
- * overlay before they're usable, then get auto-closed after a time budget.
- * Locked packages get a blocking PIN-entry overlay instead, and stay gated
- * again every time the user leaves and comes back (no time budget applies).
- */
 public class AppMonitorService extends AccessibilityService {
 
     private enum GateKind { COUNTDOWN, PIN, LOCKOUT, TIME_BLOCK }
 
-    // How far ahead of the auto-close budget timer to fire the warning notification.
     private static final long WARNING_LEAD_MILLIS = 10_000L;
 
-    // Lets MainActivity (a plain Activity, which can't call performGlobalAction itself)
-    // reach the running service directly to trigger the lock-screen action.
     private static volatile AppMonitorService instance;
 
     static void lockScreen() {
@@ -52,12 +43,6 @@ public class AppMonitorService extends AccessibilityService {
         }
     }
 
-    /**
-     * Whether the OS currently has this service switched on. Checked via the running-instance
-     * field first — the fast, always-correct answer while the service is actually alive — and
-     * falls back to reading Android's enabled-services list for the (common) case of checking
-     * from a plain Activity, where no instance exists to ask.
-     */
     static boolean isEnabled(android.content.Context context) {
         if (instance != null) return true;
 
@@ -72,10 +57,6 @@ public class AppMonitorService extends AccessibilityService {
         return false;
     }
 
-    // Lets PinGateActivity, which already verified the PIN before launching the real
-    // app, pre-arm the gate so the accessibility service's own reactive PIN overlay
-    // doesn't prompt a second time the instant it sees that package come to the
-    // foreground. Mirrors startGate()'s session bookkeeping, minus actually showing UI.
     static void skipGateFor(String packageName) {
         AppMonitorService service = instance;
         if (service != null) {
@@ -90,11 +71,6 @@ public class AppMonitorService extends AccessibilityService {
         }
     }
 
-    // Lets FlaggedGateActivity, which already ran the wait-time countdown before launching
-    // the real app, pre-arm the gate so the accessibility service's reactive countdown
-    // overlay doesn't show a second time the instant it sees that package come to the
-    // foreground. Mirrors startGate()'s COUNTDOWN-branch bookkeeping, including arming the
-    // budget timer, minus actually showing UI.
     static void skipFlaggedGateFor(String packageName) {
         AppMonitorService service = instance;
         if (service != null) {
@@ -113,11 +89,6 @@ public class AppMonitorService extends AccessibilityService {
         }
     }
 
-    // Lets TimeBlockOverrideActivity, which just lifted a time-block restriction (or ended
-    // an ad-hoc session), clear the stale gate before relaunching the app — unlike
-    // skipGateFor()/skipFlaggedGateFor(), this doesn't pre-arm a specific gate kind, since
-    // the whole point is that the previously-blocking condition is now gone and something
-    // else (locked/flagged, or nothing) may apply once the foreground event is re-evaluated.
     static void skipTimeBlockGateFor(String packageName) {
         AppMonitorService service = instance;
         if (service != null) {
@@ -129,27 +100,14 @@ public class AppMonitorService extends AccessibilityService {
         }
     }
 
-    // Grace period before actually tearing down a gate/budget session after
-    // seeing a non-flagged package. Covers transient OEM UI bounces (quick
-    // settings tile toggles, Recents flings) that briefly report some other
-    // package before control returns to the still-open flagged app, without
-    // needing to enumerate every such package by name.
     private static final long TEARDOWN_GRACE_MILLIS = 700L;
 
-    // Android appears to briefly resume the most-recently-used app's process shortly
-    // after Home is reached, likely to refresh its cached Recents thumbnail. That
-    // generates a real WINDOW_STATE_CHANGED event with no actual app visible to the
-    // user. A genuine reopen requires physically tapping the app in the list, which
-    // never happens this fast, so suppress flagged-app events in this window.
     private static final long HOME_COOLDOWN_MILLIS = 1500L;
 
-    // Transient system UI surfaces (notification shade, Recents/Overview).
-    // Foreground-change events for these must not reset gate state, otherwise leaving
-    // a flagged app to view Recents counts as a genuine reopen.
     private static final Set<String> PASSTHROUGH_PACKAGES = new HashSet<>();
     static {
         PASSTHROUGH_PACKAGES.add("com.android.systemui");
-        PASSTHROUGH_PACKAGES.add("com.sec.android.app.launcher"); // Samsung Recents/Overview host
+        PASSTHROUGH_PACKAGES.add("com.sec.android.app.launcher");
     }
 
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -180,7 +138,7 @@ public class AppMonitorService extends AccessibilityService {
 
     @Override
     public boolean onUnbind(android.content.Intent intent) {
-        // Fires when the user disables the service in Settings > Accessibility.
+
         instance = null;
         endSession();
         return super.onUnbind(intent);
@@ -196,59 +154,31 @@ public class AppMonitorService extends AccessibilityService {
         CharSequence clsSeq = event.getClassName();
         String className = clsSeq == null ? "" : clsSeq.toString();
 
-        // Dedup on (package, class) together, not package alone: our own overlay's
-        // self-generated events share our package name but a different class (e.g.
-        // LinearLayout) from the real MainActivity arrival. Deduping on package only
-        // let the overlay's event silently swallow the real "reached home" event that
-        // followed it, leaving currentGatedPackage stuck forever.
         String eventKey = packageName + "/" + className;
         if (eventKey.equals(lastEventKey)) return;
         lastEventKey = eventKey;
 
         if (PASSTHROUGH_PACKAGES.contains(packageName)) {
-            // Recents/notification shade: transient system UI, not a real app switch.
-            // Don't update lastForegroundPackage so the budget timer's "did the user
-            // actually leave the flagged app" check still sees the real app underneath.
+
             return;
         }
 
         if (className.equals("android.inputmethodservice.SoftInputWindow")) {
-            // The soft keyboard opening for the PIN overlay's EditText fires its own
-            // WINDOW_STATE_CHANGED event, attributed to the keyboard app's package. Left
-            // unhandled, that reads as "the user left the gated app," and the pending-teardown
-            // grace period below removes the PIN overlay mid-entry — flickering the locked app
-            // and killing the EditText's IME connection (dismissing the keyboard) with it.
+
             return;
         }
 
         if (className.equals("com.android.settings.password.ConfirmDeviceCredentialActivity")) {
-            // The system-wide "confirm your device PIN/pattern/biometric" screen, hosted in
-            // com.android.settings but launched BY other apps (via
-            // KeyguardManager.createConfirmDeviceCredentialIntent()) to verify identity —
-            // e.g. an authenticator app falling back to device credentials for its own lock.
-            // It's not the user navigating into Settings. If Settings is also a locked
-            // package, treating this as "entering Settings" fires our gate mid-flow through
-            // the other app's own security check, which then knocks that app's gate loose
-            // too and the two ping-pong, forcing the PIN to be re-entered repeatedly.
+
             return;
         }
 
         lastForegroundPackage = packageName;
 
         if (packageName.equals(getPackageName())) {
-            // Adding our own accessibility overlay window fires a WINDOW_STATE_CHANGED
-            // event attributed to our own package, with a raw view class (TextView,
-            // LinearLayout) rather than an Activity. Only treat this as genuine
-            // navigation into one of our own real screens (Settings, Flagged Apps,
-            // MainActivity, etc. all live under this package) — otherwise the overlay
-            // tears itself down the instant it appears (visible as flicker), or a real
-            // screen like Settings gets silently ignored and never clears a stale gate.
+
             if (className.startsWith(getPackageName() + ".")) {
-                // Only start the ghost-suppression cooldown when we're actually leaving a
-                // gated session, not on every incidental glance at the home screen (e.g.
-                // the launcher briefly flashing while navigating Recents). Otherwise the
-                // cooldown keeps getting pushed forward indefinitely and swallows a
-                // genuine quick reopen of the same app.
+
                 boolean wasGated = currentGatedPackage != null;
                 cancelPendingTeardown();
                 cancelCountdown();
@@ -264,9 +194,6 @@ public class AppMonitorService extends AccessibilityService {
             return;
         }
 
-        // A time-block restriction takes precedence over both locked and flagged: it's a
-        // deliberate scheduling decision (e.g. an allow-only Study block should restrict
-        // even a normally-unlocked app), not an impulse-control gate like the other two.
         if (TimeBlockRules.getBlockingBlock(this, packageName) != null) {
             if (SystemClock.elapsedRealtime() - homeReachedAt < HOME_COOLDOWN_MILLIS) {
                 return;
@@ -304,12 +231,12 @@ public class AppMonitorService extends AccessibilityService {
         currentGatedPackage = packageName;
         currentGateKind = kind;
         if (kind == GateKind.LOCKOUT) {
-            // Don't record this as a real open — the user never actually reaches the app.
+
             showLockout(packageName);
             return;
         }
         if (kind == GateKind.TIME_BLOCK) {
-            // Don't record this as a real open — the user never actually reaches the app.
+
             showTimeBlockGate(packageName);
             return;
         }
@@ -413,7 +340,7 @@ public class AppMonitorService extends AccessibilityService {
                 WindowManager.LayoutParams.MATCH_PARENT,
                 WindowManager.LayoutParams.MATCH_PARENT,
                 WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-                0, // focusable + touchable: blocks interaction with the app underneath
+                0,
                 PixelFormat.OPAQUE);
 
         WindowManager wm = (WindowManager) getSystemService(WINDOW_SERVICE);
@@ -513,8 +440,7 @@ public class AppMonitorService extends AccessibilityService {
 
             @Override
             public void afterTextChanged(Editable s) {
-                // Submit the instant what's typed so far is a correct PIN, rather than
-                // waiting for a fixed length or a manual tap/Done press.
+
                 if (s.length() >= 4 && Config.checkLockPin(AppMonitorService.this, s.toString())) {
                     submitPin(packageName, s.toString());
                 }
@@ -546,10 +472,6 @@ public class AppMonitorService extends AccessibilityService {
         closeParams.topMargin = 24;
         root.addView(closeButton, closeParams);
 
-        // The overlay is focusable/touchable (flags=0 below), but Back doesn't
-        // route through an accessibility overlay's window the way it does an
-        // Activity's — wire it explicitly so it can't be used to peek at the
-        // locked app underneath instead of going Home like Close does.
         root.setFocusableInTouchMode(true);
         root.setOnKeyListener((v, keyCode, event) -> {
             if (keyCode == KeyEvent.KEYCODE_BACK && event.getAction() == KeyEvent.ACTION_UP) {
@@ -563,10 +485,9 @@ public class AppMonitorService extends AccessibilityService {
                 WindowManager.LayoutParams.MATCH_PARENT,
                 WindowManager.LayoutParams.MATCH_PARENT,
                 WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-                0, // focusable + touchable: blocks interaction with the app underneath
+                0,
                 PixelFormat.OPAQUE);
-        // Keyboard should already be up when this overlay appears — the user shouldn't
-        // have to know to tap the input box first.
+
         params.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE;
 
         WindowManager wm = (WindowManager) getSystemService(WINDOW_SERVICE);
@@ -586,9 +507,7 @@ public class AppMonitorService extends AccessibilityService {
     private void submitPin(String packageName, String pin) {
         if (Config.checkLockPin(this, pin)) {
             removeOverlay();
-            // currentGatedPackage/currentGateKind are left alone: the gate stays
-            // "armed" so leaving and coming back to this app re-shows the PIN
-            // prompt, matching the flagged-app gate's teardown-driven re-arming.
+
         } else if (pinInput != null) {
             pinInput.setText("");
             pinInput.requestFocus();
@@ -623,7 +542,7 @@ public class AppMonitorService extends AccessibilityService {
                 WindowManager.LayoutParams.MATCH_PARENT,
                 WindowManager.LayoutParams.MATCH_PARENT,
                 WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-                0, // focusable + touchable: blocks interaction with the app underneath
+                0,
                 PixelFormat.OPAQUE);
 
         WindowManager wm = (WindowManager) getSystemService(WINDOW_SERVICE);
@@ -649,11 +568,7 @@ public class AppMonitorService extends AccessibilityService {
         removeOverlay();
         performGlobalAction(GLOBAL_ACTION_HOME);
         if (packageName != null) {
-            // Don't null out currentGatedPackage immediately: there's a brief race where
-            // the app underneath (still resumed until Home fully takes over) flashes back
-            // into "foreground" for a moment right after the overlay is removed. Clearing
-            // state only via the grace-period teardown (same mechanism as the OEM-bounce
-            // fix) means that flash doesn't look like a fresh entry and re-trigger the gate.
+
             schedulePendingTeardown();
         }
     }
@@ -724,3 +639,4 @@ public class AppMonitorService extends AccessibilityService {
         endSession();
     }
 }
+

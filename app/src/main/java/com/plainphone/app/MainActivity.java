@@ -43,28 +43,21 @@ import java.util.Set;
 
 public class MainActivity extends Activity {
 
-    /** How long typing has to pause before the file/contact providers are queried. */
     private static final long DEVICE_SEARCH_DEBOUNCE_MS = 180;
 
     private PackageManager pm;
     private List<ResolveInfo> allApps;
-    /** Headers (String) interleaved with SearchResults, exactly as the list draws them. */
+
     private List<Object> rows;
     private SearchResultsAdapter adapter;
     private EditText search;
 
-    /** Kind names of sections the user has collapsed; mirrors what Config has stored. */
     private Set<String> collapsedSections;
 
     private String currentQuery = "";
-    /** The folded, tokenized form of currentQuery, prepared once and reused per candidate. */
+
     private TextMatch.Query currentSearch = TextMatch.prepare("");
-    /**
-     * File and contact lookups hit content providers, so they run off the main thread and
-     * land after the in-memory groups are already on screen. These hold the last completed
-     * batch alongside the query it answered, so a stale batch is never shown next to a
-     * newer query's app results.
-     */
+
     private String deviceQuery = "";
     private List<SearchResult> deviceFiles = new ArrayList<>();
     private List<SearchResult> deviceContacts = new ArrayList<>();
@@ -80,10 +73,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
-        // MainActivity is singleTask, so it's reused (not re-created) whenever something
-        // sends it a fresh Intent — including OnboardingActivity handing off once setup is
-        // done. Without this, onCreate() never re-runs and the real UI never gets built,
-        // since the original onCreate() bailed out early while onboarding was incomplete.
+
         recreate();
     }
 
@@ -94,11 +84,7 @@ public class MainActivity extends Activity {
 
         SharedPreferences onboardingPrefs = getSharedPreferences("plain", Context.MODE_PRIVATE);
         if (!onboardingPrefs.getBoolean("onboarding_complete", false)) {
-            // OnboardingActivity has its own taskAffinity + singleTask, and this flag puts
-            // it in its own separate task. Without this, it shares MainActivity's task —
-            // and since MainActivity is itself singleTask, every time Home is pressed,
-            // Android destroys everything stacked above MainActivity in that task
-            // (per singleTask semantics), wiping out onboarding's progress each time.
+
             Intent intent = new Intent(this, OnboardingActivity.class);
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             startActivity(intent);
@@ -106,10 +92,7 @@ public class MainActivity extends Activity {
         }
 
         if (!isDefaultHomeApp()) {
-            // Plain was opened via its own launcher icon (not by pressing Home), and it's
-            // not currently set as the Home app — e.g. the user picked a different launcher
-            // via Settings > Apps > Default apps. Ask them to fix it instead of silently
-            // showing a home screen that Home won't actually route to.
+
             showSetHomeReminder();
             return;
         }
@@ -125,17 +108,13 @@ public class MainActivity extends Activity {
             startLoadingHomeUi();
         } else if (homeUiBuilt) {
             if (Config.getFontChoice(this) != builtWithFont) {
-                // MainActivity is singleTask, so it's reused rather than rebuilt when
-                // returning from Settings — recreate() is the simplest way to pick up a
-                // font changed there, since every TextView was already built with the old
-                // Typeface and there's no cheap way to walk and restyle them all in place.
+
                 recreate();
                 return;
             }
-            // Apps may have been hidden/unhidden (or uninstalled) while we were away
-            // (e.g. via Settings or a long-press action); reflect that on return.
+
             refreshApps();
-            // The default browser may have been changed while we were away.
+
             WebSearch.forget();
             applyPixelArtSelection();
             refreshTimeBlockRow();
@@ -145,8 +124,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        // A debounced device search still queued here would fire against a dead Activity,
-        // and FileIndex's listener is static — leaving it set would leak this instance.
+
         searchHandler.removeCallbacksAndMessages(null);
         FileIndex.setListener(null);
     }
@@ -168,9 +146,7 @@ public class MainActivity extends Activity {
     }
 
     private void applyPixelArtSelection() {
-        // Rebuilt from scratch rather than updated in place: the source can now be either
-        // a bundled GifArtView or a user PhotoArtView, and swapping between the two
-        // concrete types needs a new instance either way, so there's no cheaper path.
+
         artFrame.removeAllViews();
         View art = Config.isPhotoArtSelected(this) && Config.getArtPhotoUri(this) != null
                 ? new PhotoArtView(this, Uri.parse(Config.getArtPhotoUri(this)),
@@ -180,10 +156,6 @@ public class MainActivity extends Activity {
         artFrame.addView(art, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
-        // Hide the frame itself, not just the art inside it — the frame's foreground is
-        // where the white border lives, so hiding only the art would leave an empty
-        // bordered box on screen instead of nothing at all. menuColumn has layout weight,
-        // so it simply expands to fill the row once the frame takes up no space.
         artFrame.setVisibility(Config.isPixelArtEnabled(this) ? View.VISIBLE : View.GONE);
     }
 
@@ -235,8 +207,6 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
     }
 
-    // Needed so AppMonitorService can show the "closing in 10 seconds" warning for
-    // flagged apps; without it, Notification.notify() silently does nothing on API 33+.
     private void requestNotificationPermissionIfNeeded() {
         if (android.os.Build.VERSION.SDK_INT >= 33
                 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
@@ -249,9 +219,6 @@ public class MainActivity extends Activity {
         requestNotificationPermissionIfNeeded();
         setBlackWallpaperOnce();
 
-        // Querying every launchable app (loadLaunchableApps) can take a noticeable moment,
-        // during which the screen would otherwise just look frozen/blank. Show a spinner
-        // immediately and do the query off the main thread so it actually gets to render.
         showLoadingSpinner();
         new Thread(() -> {
             List<ResolveInfo> loaded = loadLaunchableApps();
@@ -332,9 +299,7 @@ public class MainActivity extends Activity {
                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
         artFrame = new FrameLayout(this);
-        // A foreground (not background) so the border draws on top of the art instead of
-        // being painted over by it — the art views fill the frame edge-to-edge with no gap.
-        // Its content view (GifArtView or PhotoArtView) is added by applyPixelArtSelection().
+
         artFrame.setForeground(UiKit.frameBorder());
         artFrame.setOnClickListener(v -> startActivity(new Intent(this, ArtViewerActivity.class)));
 
@@ -342,9 +307,6 @@ public class MainActivity extends Activity {
         artFrameParams.rightMargin = 48;
         menuRow.addView(artFrame, artFrameParams);
 
-        // Match the frame's height to menuColumn's actual rendered height (its three rows'
-        // full boxes, padding included) once layout has run — simpler and more reliable
-        // than fighting LinearLayout's MATCH_PARENT-across-WRAP_CONTENT-siblings resolution.
         menuColumn.getViewTreeObserver().addOnGlobalLayoutListener(new ViewTreeObserver.OnGlobalLayoutListener() {
             @Override
             public void onGlobalLayout() {
@@ -402,8 +364,7 @@ public class MainActivity extends Activity {
             }
             if (result.payload instanceof FileIndex.Entry) {
                 FileIndex.Entry entry = (FileIndex.Entry) result.payload;
-                // A folder's tap action already is "open it in a file manager" — there's no
-                // second way to open one worth offering, so long-press stays a no-op there.
+
                 if (entry.directory) return false;
                 showFileOptions(entry.name,
                         () -> DeviceSearch.openWithChooser(this, entry.file),
@@ -411,15 +372,13 @@ public class MainActivity extends Activity {
                 return true;
             }
             if (result.payload instanceof DeviceSearch.MediaFile) {
-                // No All-files access here, so only a content Uri exists — there's no
-                // filesystem path to reveal in a file manager, just an app to pick.
+
                 DeviceSearch.MediaFile media = (DeviceSearch.MediaFile) result.payload;
                 showFileOptions(result.title,
                         () -> DeviceSearch.openWithChooser(this, media.uri, media.mime), null);
                 return true;
             }
-            // Settings and contact rows carry nothing extra to offer, so a long press
-            // there should do nothing rather than open an empty or wrong menu.
+
             return false;
         });
 
@@ -445,8 +404,7 @@ public class MainActivity extends Activity {
         });
 
         FileIndex.setListener(() -> {
-            // The scan finishes on its own schedule, long after the search that started it
-            // returned empty; rerun that search so its results appear without retyping.
+
             if (!currentQuery.isEmpty()) {
                 deviceQuery = "";
                 filter(search.getText().toString());
@@ -468,8 +426,7 @@ public class MainActivity extends Activity {
     private void filter(String query) {
         currentSearch = TextMatch.prepare(query);
         currentQuery = currentSearch.folded;
-        // In-memory groups (apps, Plain screens, phone settings) are cheap enough to draw
-        // on every keystroke; files and contacts catch up separately once typing pauses.
+
         renderRows();
         scheduleDeviceSearch(currentQuery);
     }
@@ -478,15 +435,11 @@ public class MainActivity extends Activity {
         rows.clear();
         String needle = currentQuery;
 
-        // An empty query is the plain home list it has always been: just apps, no headers
-        // and no settings clutter. Groups only appear once there's something to match.
         addGroup(SearchResult.Kind.APP, appResults(currentSearch), !needle.isEmpty());
         if (!needle.isEmpty()) {
-            // Groups follow the order Kind declares them in, rather than a hand-written
-            // sequence of calls here — the two drifted apart once already, leaving the enum
-            // reordered and the display unchanged.
+
             for (SearchResult.Kind kind : SearchResult.Kind.values()) {
-                if (kind == SearchResult.Kind.APP) continue; // added above, headerless when empty
+                if (kind == SearchResult.Kind.APP) continue;
                 addGroup(kind, resultsFor(kind, needle), true);
             }
         }
@@ -514,8 +467,6 @@ public class MainActivity extends Activity {
             }
         });
 
-        // With no header there's nothing to tap, so a section can't be collapsed — which is
-        // the empty-query app list, where hiding the only content would leave a blank screen.
         if (!showHeader) {
             rows.addAll(results);
             return;
@@ -543,10 +494,6 @@ public class MainActivity extends Activity {
             int score = TextMatch.score(label, query);
             if (score == TextMatch.NO_MATCH) continue;
 
-            // With no query typed, pinned apps float to the top in the order they were
-            // pinned and everything else keeps its alphabetical order — the same home
-            // list as before. Once something is typed, match quality leads instead, since
-            // a pinned app outranking a better-matching one is just a worse search.
             int pinnedAt = pinnedOrder.indexOf(info.activityInfo.packageName);
             int rank = query.empty
                     ? (pinnedAt >= 0 ? pinnedAt : pinnedOrder.size())
@@ -563,9 +510,7 @@ public class MainActivity extends Activity {
 
         boolean fullAccess = FileIndex.canWalk(this);
         if (!fullAccess && !DeviceSearch.canSearchFiles(this)) {
-            // Asks straight for full access (folders included) rather than the narrower
-            // media-only permission — the same single-tier choice Settings' "Search files"
-            // row makes, so there's one thing to grant, not two.
+
             SearchResult ask = new SearchResult(SearchResult.Kind.FILE, "Search files on this phone",
                     "Tap to allow access", 0, () -> DeviceSearch.requestFullFileAccess(this));
             return singleRow(ask);
@@ -576,15 +521,13 @@ public class MainActivity extends Activity {
                 : new ArrayList<>();
 
         if (fullAccess) {
-            // The first search after a cold start finds an empty index while the walk is
-            // still running; saying so beats an empty group that looks like "no matches".
+
             if (results.isEmpty() && FileIndex.isScanning()) {
                 results.add(new SearchResult(SearchResult.Kind.FILE, "Indexing files…",
                         "Searching again in a moment will find them", 0, () -> {}));
             }
         } else {
-            // MediaStore can't see folders or documents at all, so a search that comes up
-            // short here has a real remedy — offered last, below whatever media did match.
+
             results.add(new SearchResult(SearchResult.Kind.FILE,
                     "Search folders and all files", "Tap to allow full file access",
                     Integer.MAX_VALUE, () -> DeviceSearch.requestAllFilesAccess(this)));
@@ -602,28 +545,17 @@ public class MainActivity extends Activity {
         return needle.equals(deviceQuery) ? deviceContacts : new ArrayList<>();
     }
 
-    /**
-     * The web fallback, always last: it matches any query at all, so putting it anywhere
-     * else would push real results — an app, a file — below a row that means nothing more
-     * than "I found nothing better".
-     */
     private List<SearchResult> webResults() {
         if (!Config.isWebSearchEnabled(this)) return new ArrayList<>();
         return WebSearch.results(this, currentSearch);
     }
 
-    /** Mutable single-element list, since addGroup() sorts the list it's handed in place. */
     private List<SearchResult> singleRow(SearchResult result) {
         List<SearchResult> only = new ArrayList<>();
         only.add(result);
         return only;
     }
 
-    /**
-     * Stand-in row shown in place of a group Plain can't read yet. Asking only when the
-     * user actually reaches for the feature keeps first launch free of permission prompts
-     * for two sources many people will never use.
-     */
     private SearchResult permissionRow(SearchResult.Kind kind, String title,
                                        String[] permissions, int requestCode) {
         return new SearchResult(kind, title, "Tap to allow access", 0,
@@ -637,13 +569,8 @@ public class MainActivity extends Activity {
             return;
         }
 
-        // An interrupted (rather than answered) request comes back with empty arrays; that's
-        // not a decision, so leave the source enabled and let the row ask again next time.
         if (grantResults.length == 0) return;
 
-        // A decline switches the whole source off rather than leaving a "tap to allow" row
-        // under every future search. Settings has a switch to turn it back on, which is a
-        // deliberate enough act to be worth re-prompting for.
         boolean granted = false;
         for (int result : grantResults) {
             if (result == PackageManager.PERMISSION_GRANTED) granted = true;
@@ -660,12 +587,6 @@ public class MainActivity extends Activity {
         filter(search.getText().toString());
     }
 
-    /**
-     * Queries the file and contact providers for {@code needle} after a short typing pause.
-     * Both hit disk, so they'd stutter the list if run on every keystroke, and a slow
-     * provider can outlive the query that triggered it — the token guards against a late
-     * batch overwriting the results of whatever the user has typed since.
-     */
     private void scheduleDeviceSearch(String needle) {
         if (pendingDeviceSearch != null) searchHandler.removeCallbacks(pendingDeviceSearch);
         if (needle.isEmpty() || needle.equals(deviceQuery)) return;
@@ -686,15 +607,12 @@ public class MainActivity extends Activity {
         searchHandler.postDelayed(pendingDeviceSearch, DEVICE_SEARCH_DEBOUNCE_MS);
     }
 
-    /** First actionable row, i.e. what the keyboard's Go key opens. */
     private SearchResult firstResult() {
         for (Object row : rows) {
             if (row instanceof SearchResult) return (SearchResult) row;
         }
         return null;
     }
-
-
 
     private TextView buildRow(Typeface georgia, String label) {
         TextView row = new TextView(this);
@@ -718,9 +636,6 @@ public class MainActivity extends Activity {
     private void launchApp(ResolveInfo info) {
         String pkg = info.activityInfo.packageName;
 
-        // A time-block restriction is checked before locked/flagged: it's a deliberate
-        // scheduling decision (e.g. an allow-only Study block) that should override even
-        // a normally-unlocked app, same precedence as in AppMonitorService's reactive gate.
         TimeBlock blockingBlock = TimeBlockRules.getBlockingBlock(this, pkg);
         if (blockingBlock != null) {
             Intent gate = new Intent(this, TimeBlockGateActivity.class);
@@ -730,9 +645,6 @@ public class MainActivity extends Activity {
             return;
         }
 
-        // Locked apps are gated before they're ever started, not after: PinGateActivity
-        // only launches the real app once the PIN is confirmed, so the app's own screen
-        // is never visible without it.
         if (Config.getLockedPackages(this).contains(pkg)) {
             Intent gate = new Intent(this, PinGateActivity.class);
             gate.putExtra("package", pkg);
@@ -741,10 +653,6 @@ public class MainActivity extends Activity {
             return;
         }
 
-        // Flagged apps are gated before they're ever started too, same as locked apps:
-        // the real app's screen is never visible before the wait-time countdown (or
-        // reopen lockout) clears, instead of flickering into view before
-        // AppMonitorService's reactive overlay catches up.
         if (Config.getFlaggedPackages(this).contains(pkg)) {
             Intent gate = new Intent(this, FlaggedGateActivity.class);
             gate.putExtra("package", pkg);
@@ -753,11 +661,6 @@ public class MainActivity extends Activity {
             return;
         }
 
-        // Some apps (e.g. Messenger) declare several launcher activity aliases for
-        // icon-skin picking, only one of which is enabled at a time. Reconstructing
-        // an explicit Intent from a raw ResolveInfo can point at a disabled alias and
-        // silently fail. getLaunchIntentForPackage() defers to Android's own logic
-        // for resolving whichever one is actually active.
         Intent launchIntent = pm.getLaunchIntentForPackage(pkg);
         if (launchIntent != null) {
             startActivity(launchIntent);
@@ -769,10 +672,6 @@ public class MainActivity extends Activity {
         CharSequence label = labelFor(info);
         Typeface georgia = Fonts.current(this);
 
-        // Preinstalled system apps (e.g. Settings) can't be uninstalled — only ones the
-        // user installed, or a system app the user has since updated, actually support it.
-        // Offering "Uninstall" for the rest would just bounce off a system "can't do that"
-        // dialog, so leave it out entirely rather than show a dead-end action.
         int appFlags = info.activityInfo.applicationInfo.flags;
         boolean uninstallable = (appFlags & android.content.pm.ApplicationInfo.FLAG_SYSTEM) == 0
                 || (appFlags & android.content.pm.ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0;
@@ -810,9 +709,6 @@ public class MainActivity extends Activity {
             filter(search.getText().toString());
         }));
 
-        // Intentionally offers only forward actions (info, uninstall, flag) — no way to
-        // un-flag or unhide from here; loosening a restriction goes through Settings
-        // and its friction gate instead, so it can't be undone on impulse.
         root.addView(optionRow(georgia, "App info", v -> {
             dialog.dismiss();
             startActivity(new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
@@ -844,17 +740,6 @@ public class MainActivity extends Activity {
         }
     }
 
-    /**
-     * A tap on a file result opens it with whatever app is currently the default for that
-     * type — the fast, common-case path. This long-press menu covers the two things that
-     * path can't: picking a different app just for this once, and landing in a file
-     * manager instead of a viewer, to move, rename, or share the file from there.
-     */
-    /**
-     * @param revealInFileManager null when there's no filesystem path to reveal — a
-     *                            directory (tap already does this) or a MediaStore-backed
-     *                            result (only a content Uri, no real path)
-     */
     private void showFileOptions(String title, Runnable openWith, Runnable revealInFileManager) {
         Typeface georgia = Fonts.current(this);
 
@@ -926,7 +811,7 @@ public class MainActivity extends Activity {
             WallpaperManager.getInstance(this).setBitmap(black);
             prefs.edit().putBoolean("wallpaper_set", true).apply();
         } catch (Exception ignored) {
-            // Non-critical cosmetic step; don't block launcher startup on it.
+
         }
     }
 
@@ -935,10 +820,6 @@ public class MainActivity extends Activity {
         intent.addCategory(Intent.CATEGORY_LAUNCHER);
         List<ResolveInfo> resolved = pm.queryIntentActivities(intent, 0);
 
-        // Apps with multiple launcher aliases (icon-skin pickers, etc.) otherwise
-        // show up once per alias; keep only the first entry per package. Hidden
-        // packages are excluded here too, so they're absent from search as well.
-        // Plain itself is never shown — there's no reason to launch it from within itself.
         Set<String> hiddenPackages = Config.getHiddenPackages(this);
         List<ResolveInfo> deduped = new ArrayList<>();
         Set<String> seenPackages = new HashSet<>();
@@ -959,11 +840,8 @@ public class MainActivity extends Activity {
         return deduped;
     }
 
-    // Activity/alias-level labels can be overridden per alias (e.g. Messenger's
-    // icon-skin aliases), which can shadow unrelated apps sharing that label.
-    // The application-level label is the one shown in Settings > Apps and can't
-    // be overridden per-alias, so it's the reliable one to display and sort by.
     private CharSequence labelFor(ResolveInfo info) {
         return info.activityInfo.applicationInfo.loadLabel(pm);
     }
 }
+

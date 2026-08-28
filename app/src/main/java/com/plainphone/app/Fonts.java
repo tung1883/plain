@@ -8,7 +8,6 @@ class Fonts {
     private static Typeface georgia;
     private static Typeface ibmPlexMono;
 
-    /** The typeface every screen should use — whichever one is selected in Settings > Font. */
     static Typeface current(Context context) {
         return switch (Config.getFontChoice(context)) {
             case IBM_PLEX_MONO -> ibmPlexMono(context);
@@ -30,3 +29,4 @@ class Fonts {
         return ibmPlexMono;
     }
 }
+

@@ -15,12 +15,6 @@ import android.widget.TextView;
 
 import java.util.Random;
 
-/**
- * Shared wait + math-check friction gate, used anywhere a change should be hard
- * to make on impulse. Subclasses describe what's being confirmed and what happens
- * once the gate passes; a Back button is always available to bail out. The wait
- * length and the math check itself are both overridable per subclass.
- */
 public abstract class FrictionGateActivity extends Activity {
 
     private static final int DEFAULT_WAIT_SECONDS = 30;
@@ -34,12 +28,10 @@ public abstract class FrictionGateActivity extends Activity {
 
     protected abstract void onConfirmed();
 
-    /** Overridable so a subclass (e.g. the Settings gate) can use a user-configured wait instead. */
     protected int waitSeconds() {
         return DEFAULT_WAIT_SECONDS;
     }
 
-    /** Overridable so a subclass (e.g. the Settings gate) can skip straight to onConfirmed() after the wait. */
     protected boolean requiresMathChallenge() {
         return true;
     }
@@ -49,9 +41,6 @@ public abstract class FrictionGateActivity extends Activity {
         super.onCreate(savedInstanceState);
         georgia = Fonts.current(this);
 
-        // Nothing to wait out and nothing to answer: skip straight through rather than
-        // building and instantly tearing down a countdown screen, which would otherwise
-        // flash "Wait 0s..." for a frame.
         if (waitSeconds() <= 0 && !requiresMathChallenge()) {
             onConfirmed();
             finish();
@@ -97,7 +86,7 @@ public abstract class FrictionGateActivity extends Activity {
         content.removeAllViews();
 
         Random random = new Random();
-        int a = random.nextInt(90) + 10; // 10-99
+        int a = random.nextInt(90) + 10;
         int b = random.nextInt(90) + 10;
         mathAnswer = (long) a * b;
 
@@ -145,8 +134,7 @@ public abstract class FrictionGateActivity extends Activity {
     }
 
     private LinearLayout.LayoutParams backButtonParams() {
-        // Matches the spacing the Close button uses on the countdown overlay
-        // in AppMonitorService, so both read as the same kind of control.
+
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         params.topMargin = 48;
@@ -160,7 +148,7 @@ public abstract class FrictionGateActivity extends Activity {
                 onConfirmed();
                 finish();
             } else {
-                showMathChallenge(); // wrong answer: fresh question, no extra wait
+                showMathChallenge();
             }
         } catch (NumberFormatException e) {
             showMathChallenge();
@@ -173,3 +161,4 @@ public abstract class FrictionGateActivity extends Activity {
         handler.removeCallbacksAndMessages(null);
     }
 }
+

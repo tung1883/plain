@@ -17,11 +17,6 @@ import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
-/**
- * Asks for the app-lock PIN before opening Settings, on top of the existing
- * SettingsGateActivity friction gate — Settings holds the controls to unlock every
- * other locked app, so once a PIN exists it protects Settings too.
- */
 public class SettingsPinGateActivity extends Activity {
 
     private EditText pinInput;
@@ -128,3 +123,4 @@ public class SettingsPinGateActivity extends Activity {
         finish();
     }
 }
+

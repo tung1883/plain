@@ -13,22 +13,8 @@ import android.webkit.MimeTypeMap;
 import java.io.File;
 import java.io.FileNotFoundException;
 
-/**
- * Hands a single file to another app for viewing.
- *
- * <p>Android forbids passing a raw {@code file://} Uri between apps (it throws
- * FileUriExposedException), so opening a search result requires a content:// Uri backed by
- * a provider. AndroidX's FileProvider is the usual answer; this is a minimal stand-in so
- * the launcher keeps its zero-dependency build.
- *
- * <p>Security rests on the manifest: the provider is <b>not</b> exported and declares
- * {@code grantUriPermissions}, so no app can query it on its own — reading is possible only
- * for the one Uri handed over in an Intent carrying FLAG_GRANT_READ_URI_PERMISSION, and only
- * until that grant lapses. Access is read-only in every case.
- */
 public class PlainFileProvider extends ContentProvider {
 
-    /** content://com.plainphone.app.files/&lt;encoded absolute path&gt; */
     static Uri uriFor(String authority, File file) {
         return new Uri.Builder()
                 .scheme("content")
@@ -46,7 +32,6 @@ public class PlainFileProvider extends ContentProvider {
         String path = uri.getPath();
         if (TextUtils.isEmpty(path)) throw new FileNotFoundException("No path in " + uri);
 
-        // Uri.Builder.appendPath() prefixed the absolute path with its own separator.
         File file = new File(path);
         if (!file.isFile()) throw new FileNotFoundException("Not a file: " + path);
         return file;
@@ -54,8 +39,7 @@ public class PlainFileProvider extends ContentProvider {
 
     @Override
     public ParcelFileDescriptor openFile(Uri uri, String mode) throws FileNotFoundException {
-        // Read-only regardless of the mode asked for: this exists to let a viewer app
-        // display a file, never to let it write back through the launcher.
+
         return ParcelFileDescriptor.open(fileFrom(uri), ParcelFileDescriptor.MODE_READ_ONLY);
     }
 
@@ -68,11 +52,6 @@ public class PlainFileProvider extends ContentProvider {
         return TextUtils.isEmpty(mime) ? "application/octet-stream" : mime;
     }
 
-    /**
-     * Viewer apps routinely ask for the display name and size before opening a stream, and
-     * treat a null cursor as a broken Uri — so those two columns are answered even though
-     * nothing else about this provider is queryable.
-     */
     @Override
     public Cursor query(Uri uri, String[] projection, String selection, String[] selectionArgs,
                         String sortOrder) {
@@ -114,3 +93,4 @@ public class PlainFileProvider extends ContentProvider {
         throw new UnsupportedOperationException("Read-only provider");
     }
 }
+
