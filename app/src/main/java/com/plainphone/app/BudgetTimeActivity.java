@@ -46,3 +46,4 @@ public class BudgetTimeActivity extends StepperActivity {
         return value + "m";
     }
 }
+

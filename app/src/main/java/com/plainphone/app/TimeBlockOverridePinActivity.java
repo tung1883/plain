@@ -17,7 +17,6 @@ import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
-/** First half of the emergency override flow: PIN check, mirroring PinGateActivity's entry UI. */
 public class TimeBlockOverridePinActivity extends Activity {
 
     private String packageName;
@@ -126,3 +125,4 @@ public class TimeBlockOverridePinActivity extends Activity {
         finish();
     }
 }
+

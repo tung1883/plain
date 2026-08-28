@@ -8,18 +8,9 @@ import org.json.JSONObject;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * A user-defined web search: a name and a URL with a placeholder where the query goes,
- * e.g. "https://de.wiktionary.org/wiki/{word}". Each one becomes its own row under the Web
- * heading, so a single typed word can be sent straight to a dictionary, a wiki, or a
- * translator without opening the site first and searching there.
- */
 class WebTarget {
 
-    /** Placeholder for the query in a URL template. */
-    static final String WORD = "{word}";
-    /** Also accepted, since printf-style templates are the other common convention. */
-    private static final String LEGACY_WORD = "%s";
+    static final String WORD = "{text}";
 
     final String id;
     String name;
@@ -43,29 +34,21 @@ class WebTarget {
         return null;
     }
 
-    /** True once the template says where the query belongs — without that it's just a link. */
     static boolean hasPlaceholder(String url) {
-        return url != null && (url.contains(WORD) || url.contains(LEGACY_WORD));
+        return url != null && url.contains(WORD);
     }
 
-    /**
-     * The address to open for a query. The query is percent-encoded, so spaces and accented
-     * characters survive the trip — "Sài Gòn" has to reach the site intact rather than
-     * truncating the URL at the first space.
-     */
     String urlFor(String query) {
         String encoded = Uri.encode(query);
-        return url.replace(WORD, encoded).replace(LEGACY_WORD, encoded);
+        return url.replace(WORD, encoded);
     }
 
-    /** Falls back to the URL's host when no name was given, which is usually recognisable. */
     static String nameOrHost(String name, String url) {
         if (name != null && !name.trim().isEmpty()) return name.trim();
         try {
             String host = Uri.parse(url).getHost();
             if (host != null) return host;
         } catch (Exception ignored) {
-            // Not parseable as a Uri yet — the raw text is still a usable label.
         }
         return url;
     }
@@ -85,3 +68,4 @@ class WebTarget {
                 json.getString("url"));
     }
 }
+

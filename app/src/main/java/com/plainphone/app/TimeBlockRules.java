@@ -6,7 +6,6 @@ import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.List;
 
-/** Evaluates which time blocks are active right now and whether a package is restricted by them. */
 class TimeBlockRules {
 
     private TimeBlockRules() {}
@@ -19,9 +18,7 @@ class TimeBlockRules {
         if (block.endMinute > block.startMinute) {
             return block.runsOnDay(dayOfWeek) && minuteOfDay >= block.startMinute && minuteOfDay < block.endMinute;
         } else {
-            // Wraps past midnight: active either from start-to-midnight (today's day mask)
-            // or from midnight-to-end (yesterday's day mask, since that's the day the
-            // window actually started on).
+
             if (minuteOfDay >= block.startMinute) {
                 return block.runsOnDay(dayOfWeek);
             } else if (minuteOfDay < block.endMinute) {
@@ -32,7 +29,6 @@ class TimeBlockRules {
         }
     }
 
-    /** Epoch millis at which the currently-active window for this block ends. */
     static long activeWindowEndMillis(TimeBlock block, Calendar now) {
         Calendar end = (Calendar) now.clone();
         int minuteOfDay = now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE);
@@ -48,7 +44,6 @@ class TimeBlockRules {
         return end.getTimeInMillis();
     }
 
-    /** The end time of the window currently governing this block, whether scheduled or ad-hoc. */
     static long blockEndMillis(Context context, TimeBlock block) {
         long adhocUntil = Config.getAdhocUntil(context);
         if (block.id.equals(Config.getAdhocBlockId(context)) && adhocUntil > System.currentTimeMillis()) {
@@ -87,11 +82,9 @@ class TimeBlockRules {
         return active;
     }
 
-    /** Returns the block currently blocking this package, or null if it's allowed. */
     static TimeBlock getBlockingBlock(Context context, String packageName) {
         for (TimeBlock block : getActiveBlocks(context)) {
-            // An allow-only block with no apps picked yet isn't "block everything" —
-            // it just hasn't been finished being set up, so it shouldn't restrict anything.
+
             if (block.mode == TimeBlock.Mode.ALLOW_ONLY && block.packages.isEmpty()) continue;
 
             boolean blocked = block.mode == TimeBlock.Mode.BLACKOUT
@@ -102,3 +95,4 @@ class TimeBlockRules {
         return null;
     }
 }
+

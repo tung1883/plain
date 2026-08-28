@@ -32,12 +32,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-/**
- * App-lock management: the master PIN at the top, the list of apps it protects below,
- * each with a checkbox on the right. Checking a box locks that app immediately; unchecking
- * one loosens a restriction, so it routes through LockedAppChangeActivity's friction gate
- * instead of taking effect right away — the box only actually unchecks once that's confirmed.
- */
 public class LockedAppsActivity extends Activity {
 
     private PackageManager pm;
@@ -112,7 +106,7 @@ public class LockedAppsActivity extends Activity {
                     @Override
                     public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
                         if (isChecked) {
-                            // Locking tightens the restriction, so it applies immediately.
+
                             Set<String> locked = Config.getLockedPackages(LockedAppsActivity.this);
                             locked.add(pkg);
                             Config.setLockedPackages(LockedAppsActivity.this, locked);
@@ -120,8 +114,7 @@ public class LockedAppsActivity extends Activity {
                                 promptSetPin();
                             }
                         } else {
-                            // Unlocking loosens it, so it goes through the friction gate instead —
-                            // revert the visual uncheck until the gate is actually confirmed.
+
                             buttonView.setOnCheckedChangeListener(null);
                             buttonView.setChecked(true);
                             buttonView.setOnCheckedChangeListener(this);
@@ -150,7 +143,7 @@ public class LockedAppsActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        adapter.notifyDataSetChanged(); // reflect a change confirmed while we were away
+        adapter.notifyDataSetChanged();
     }
 
     private View buildPinHeader() {
@@ -284,3 +277,4 @@ public class LockedAppsActivity extends Activity {
         return deduped;
     }
 }
+

@@ -17,13 +17,6 @@ import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
-/**
- * Asks for the app-lock PIN before a locked app is launched, not after: the real
- * app is only started once the PIN is confirmed, so its screen is never visible
- * without it. Reached only from MainActivity.launchApp(); other launch paths
- * (widgets, notifications, deep links) still go through AppMonitorService's
- * reactive overlay gate, since there's no pre-launch hook for those.
- */
 public class PinGateActivity extends Activity {
 
     private String packageName;
@@ -37,8 +30,6 @@ public class PinGateActivity extends Activity {
         packageName = getIntent().getStringExtra("package");
         label = getIntent().getStringExtra("label");
 
-        // Keyboard should already be up when this screen appears — the user shouldn't
-        // have to know to tap the input box first.
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
 
         Typeface georgia = Fonts.current(this);
@@ -76,9 +67,7 @@ public class PinGateActivity extends Activity {
 
             @Override
             public void afterTextChanged(Editable s) {
-                // Submit the instant what's typed so far is a correct PIN, rather than
-                // waiting for a fixed length or a manual tap — the user just finishes
-                // typing and the app opens.
+
                 if (s.length() >= 4 && Config.checkLockPin(PinGateActivity.this, s.toString())) {
                     tryUnlock();
                 }
@@ -140,12 +129,6 @@ public class PinGateActivity extends Activity {
         finish();
     }
 
-    /**
-     * What to open once the gate is passed: normally the app's own launcher screen, but an
-     * Intent handed over in the OPEN_INTENT extra replaces that. Web search from the home
-     * screen sets it, so a gated browser still receives the query rather than opening on a
-     * blank start page with what was typed thrown away.
-     */
     private Intent openIntent() {
         Intent carried = carriedIntent();
         if (carried != null && carried.resolveActivity(getPackageManager()) != null) {
@@ -162,3 +145,4 @@ public class PinGateActivity extends Activity {
         return intent.getParcelableExtra(WebSearch.OPEN_INTENT);
     }
 }
+

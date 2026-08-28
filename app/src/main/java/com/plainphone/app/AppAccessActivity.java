@@ -18,12 +18,6 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
-/**
- * A full account of what Plain currently has access to on this phone — everything it can
- * see or control, in one place, rather than scattered one setting at a time. Split into
- * what needed the user's own say-so (Accessibility, usage stats, files, contacts...) and
- * what Android grants automatically at install because the risk is low enough not to ask.
- */
 public class AppAccessActivity extends Activity {
 
     private static final int REQUEST_NOTIFICATIONS = 3001;
@@ -50,7 +44,7 @@ public class AppAccessActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        render(); // most of these can only change by leaving to a system screen and back
+        render();
     }
 
     private void render() {
@@ -126,7 +120,7 @@ public class AppAccessActivity extends Activity {
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        render(); // whatever happened — granted, denied, or dismissed — reflect it
+        render();
     }
 
     private TextView sectionHeader(String label) {
@@ -140,7 +134,6 @@ public class AppAccessActivity extends Activity {
         return header;
     }
 
-    /** listener may be null for an informational row that has nothing to fix or review. */
     private View row(String label, String subtitle, View.OnClickListener listener) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.VERTICAL);
@@ -175,3 +168,4 @@ public class AppAccessActivity extends Activity {
         return row;
     }
 }
+

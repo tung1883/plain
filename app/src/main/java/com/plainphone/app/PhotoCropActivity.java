@@ -14,15 +14,6 @@ import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 
-/**
- * Pinch to zoom, drag to reposition: lets the user choose which part of a photo shows in
- * the home-screen art frame, rather than always cropping to its exact center — the same
- * kind of framing choice ArtViewerActivity's pinch/pan already offers for viewing, applied
- * here to picking rather than just looking.
- *
- * <p>Edits a live PhotoArtView instance directly (see its own docs) so the preview during
- * cropping and the final render use one shared formula, not two that could drift apart.
- */
 public class PhotoCropActivity extends Activity {
 
     private static final float MIN_ZOOM = 0.4f;
@@ -37,8 +28,7 @@ public class PhotoCropActivity extends Activity {
 
         String uriString = getIntent().getStringExtra("uri");
         Uri uri = Uri.parse(uriString);
-        // A fresh pick starts centered at the minimum zoom — an existing photo being
-        // re-cropped (via "Adjust crop") resumes from wherever it was left.
+
         boolean adjustingExisting = uriString.equals(Config.getArtPhotoUri(this));
 
         FrameLayout root = new FrameLayout(this);
@@ -54,8 +44,6 @@ public class PhotoCropActivity extends Activity {
         frame.addView(preview, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
-        // Same 4:5 proportions as the home screen's own art frame and the full-screen
-        // viewer, so a crop chosen here lines up with where it'll actually be seen.
         FrameLayout.LayoutParams frameParams = new FrameLayout.LayoutParams(640, 800);
         frameParams.gravity = Gravity.CENTER;
         root.addView(frame, frameParams);
@@ -149,3 +137,4 @@ public class PhotoCropActivity extends Activity {
         return Math.max(MIN_ZOOM, Math.min(zoom, MAX_ZOOM));
     }
 }
+

@@ -1,14 +1,7 @@
 package com.plainphone.app;
 
-/**
- * One row in the home screen's search results, whatever it came from — an installed app,
- * one of Plain's own screens, a phone settings page, a file, or a contact. Everything the
- * list needs to draw and act on a row lives here, so MainActivity's list doesn't have to
- * know which source produced any given result.
- */
 class SearchResult {
 
-    /** Result category, in the order its group is shown under its header. */
     enum Kind {
         APP("Apps"),
         PLAIN("Plain"),
@@ -30,15 +23,11 @@ class SearchResult {
 
     final Kind kind;
     final String title;
-    /** Dim second line (file location, contact number, what a settings row does); null for none. */
+
     final String subtitle;
-    /** Lower sorts first within a group; see {@link TextMatch}. */
+
     final int score;
-    /**
-     * Source object for results that need more than activation: the ResolveInfo behind an
-     * app result, so a long press can open that app's options, or the FileIndex.Entry
-     * behind an indexed file, so a long press can offer an alternate way to open it.
-     */
+
     final Object payload;
 
     private final Action action;
@@ -60,3 +49,4 @@ class SearchResult {
         action.run();
     }
 }
+

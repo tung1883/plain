@@ -31,7 +31,7 @@ public class StatsActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        render(); // reflect usage access granted (or revoked) while we were away
+        render();
     }
 
     private void render() {
@@ -130,7 +130,6 @@ public class StatsActivity extends Activity {
         content.addView(totalText(georgia, totalMillis));
     }
 
-    /** A label line over a flat black/white bar, its fill width proportional to millis/max. */
     private View buildBarRow(Typeface georgia, String caption, long millis, long max) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.VERTICAL);
@@ -195,3 +194,4 @@ public class StatsActivity extends Activity {
         return hours > 0 ? (hours + "h " + minutes + "m") : (minutes + "m");
     }
 }
+

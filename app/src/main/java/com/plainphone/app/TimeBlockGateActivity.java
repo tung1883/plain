@@ -10,12 +10,6 @@ import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
-/**
- * Shown before a time-block-restricted app is launched, not after — mirrors
- * FlaggedGateActivity/PinGateActivity's pre-launch pattern. Reached only from
- * MainActivity.launchApp(); other launch paths (widgets, notifications, deep
- * links) still go through AppMonitorService's reactive overlay gate.
- */
 public class TimeBlockGateActivity extends Activity {
 
     @Override
@@ -71,3 +65,4 @@ public class TimeBlockGateActivity extends Activity {
         setContentView(root);
     }
 }
+

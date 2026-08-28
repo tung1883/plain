@@ -71,7 +71,6 @@ public class FlaggedAppsActivity extends Activity {
                 view.setGravity(Gravity.START);
                 view.setTypeface(georgia);
 
-                // Flagged apps read as crossed out instead of using a separate checkbox.
                 boolean flagged = Config.getFlaggedPackages(FlaggedAppsActivity.this)
                         .contains(apps.get(position).activityInfo.packageName);
                 int flags = view.getPaintFlags();
@@ -83,8 +82,7 @@ public class FlaggedAppsActivity extends Activity {
         listView.setAdapter(adapter);
 
         listView.setOnItemClickListener((parent, view, rawPosition, id) -> {
-            // rawPosition counts the header view too, so it must be un-offset before
-            // indexing into apps/labels — otherwise this toggles the row above the one tapped.
+
             int position = rawPosition - listView.getHeaderViewsCount();
             if (position < 0) return;
 
@@ -92,14 +90,13 @@ public class FlaggedAppsActivity extends Activity {
             boolean currentlyFlagged = Config.getFlaggedPackages(this).contains(pkg);
 
             if (currentlyFlagged) {
-                // Removing loosens the restriction, so it goes through the friction gate.
-                // The crossed-out look only clears once the gate is actually completed.
+
                 Intent intent = new Intent(this, FlaggedAppChangeActivity.class);
                 intent.putExtra("package", pkg);
                 intent.putExtra("label", labels.get(position));
                 startActivity(intent);
             } else {
-                // Adding tightens the restriction, so it applies immediately.
+
                 Set<String> flagged = Config.getFlaggedPackages(this);
                 flagged.add(pkg);
                 Config.setFlaggedPackages(this, flagged);
@@ -111,7 +108,7 @@ public class FlaggedAppsActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        adapter.notifyDataSetChanged(); // reflect a change confirmed while we were away
+        adapter.notifyDataSetChanged();
         refreshHeader();
     }
 
@@ -221,3 +218,4 @@ public class FlaggedAppsActivity extends Activity {
         return deduped;
     }
 }
+

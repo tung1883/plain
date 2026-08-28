@@ -19,7 +19,6 @@ import android.widget.TextView;
 import java.util.Calendar;
 import java.util.List;
 
-/** Create/edit a single Time Block: name, days, mode, start/end time, app list, enable, delete. */
 public class TimeBlockEditActivity extends Activity {
 
     private static final String[] DAY_LABELS = {"S", "M", "T", "W", "T", "F", "S"};
@@ -50,7 +49,7 @@ public class TimeBlockEditActivity extends Activity {
         super.onResume();
         TimeBlock block = currentBlock();
         if (block == null) {
-            finish(); // deleted while we were away (e.g. via the friction gate)
+            finish();
             return;
         }
         render(block);
@@ -141,7 +140,7 @@ public class TimeBlockEditActivity extends Activity {
         boolean active = TimeBlockRules.isActiveNow(block, Calendar.getInstance());
         root.addView(row("Enabled: " + (block.enabled ? "On" : "Off"), v -> {
             if (block.enabled && active) {
-                // Disabling a currently-active block loosens a restriction right now.
+
                 Intent intent = new Intent(this, TimeBlockDisableActivity.class);
                 intent.putExtra("blockId", blockId);
                 startActivity(intent);
@@ -187,3 +186,4 @@ public class TimeBlockEditActivity extends Activity {
         return view;
     }
 }
+

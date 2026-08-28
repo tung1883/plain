@@ -4,7 +4,6 @@ import android.os.Bundle;
 
 import java.util.List;
 
-/** Confirms deleting a time block — friction only applies since it removes an active restriction. */
 public class TimeBlockDeleteActivity extends FrictionGateActivity {
 
     private String blockId;
@@ -32,3 +31,4 @@ public class TimeBlockDeleteActivity extends FrictionGateActivity {
         }
     }
 }
+

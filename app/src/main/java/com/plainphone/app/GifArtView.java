@@ -10,12 +10,6 @@ import android.view.View;
 import java.io.IOException;
 import java.io.InputStream;
 
-/**
- * Plays a bundled grayscale GIF (from assets/pixel_art/) scaled to fully cover the view
- * (cropping any excess, not letterboxing). Drives its own animation by continuously
- * invalidating from onDraw, so it only costs anything while actually attached and visible
- * (a GONE view never gets onDraw called).
- */
 class GifArtView extends View {
 
     private Movie movie;
@@ -47,8 +41,6 @@ class GifArtView extends View {
         int duration = movie.duration() > 0 ? movie.duration() : 1000;
         movie.setTime((int) ((now - startTime) % duration));
 
-        // Cover, not fit: scale up to the larger ratio so the GIF fills the whole view with
-        // no black bars, cropping whichever dimension overflows.
         float scale = Math.max(getWidth() / (float) movie.width(), getHeight() / (float) movie.height());
         float left = (getWidth() - movie.width() * scale) / 2f;
         float top = (getHeight() - movie.height() * scale) / 2f;
@@ -63,3 +55,4 @@ class GifArtView extends View {
         invalidate();
     }
 }
+

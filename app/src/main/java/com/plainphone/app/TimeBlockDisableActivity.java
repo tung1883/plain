@@ -4,7 +4,6 @@ import android.os.Bundle;
 
 import java.util.List;
 
-/** Confirms disabling a currently-active time block — friction only applies to loosening it. */
 public class TimeBlockDisableActivity extends FrictionGateActivity {
 
     private String blockId;
@@ -31,3 +30,4 @@ public class TimeBlockDisableActivity extends FrictionGateActivity {
         }
     }
 }
+

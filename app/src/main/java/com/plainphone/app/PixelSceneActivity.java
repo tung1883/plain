@@ -20,8 +20,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.BooleanSupplier;
 
-/** Lets the user preview and pick which pixel-art scene — or their own photo — shows on
- *  the home screen, or turn it off. */
 public class PixelSceneActivity extends Activity {
 
     private static final int REQUEST_PICK_PHOTO = 9001;
@@ -50,9 +48,7 @@ public class PixelSceneActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        // Returning from PhotoCropActivity (a new photo, or an adjusted crop) needs a
-        // fresh PhotoArtView built from whatever Config now holds — simplest to just
-        // rebuild the whole list rather than track exactly what changed.
+
         render();
     }
 
@@ -80,8 +76,7 @@ public class PixelSceneActivity extends Activity {
                         Config.setPhotoArtSelected(this, true);
                         Config.setPixelArtEnabled(this, true);
                     });
-            // A tap picks it as the active source, same as any GIF row; a long press is
-            // where the photo-specific actions live, so the two never compete for the tap.
+
             photoRow.setOnLongClickListener(v -> {
                 showPhotoOptions(photoUri);
                 return true;
@@ -120,8 +115,7 @@ public class PixelSceneActivity extends Activity {
         }
 
         Uri uri = data.getData();
-        // Without this, read access only lasts until this process dies — the photo would
-        // stop loading the next time the home screen builds after a reboot or app restart.
+
         getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
 
         Intent crop = new Intent(this, PhotoCropActivity.class);
@@ -235,3 +229,4 @@ public class PixelSceneActivity extends Activity {
         }
     }
 }
+

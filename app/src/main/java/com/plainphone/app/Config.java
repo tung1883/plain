@@ -11,7 +11,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-/** Persisted, user-editable settings: wait time, auto-close budget, flagged/hidden/locked apps, lock PIN. */
 class Config {
 
     private static final String PREFS = "config";
@@ -19,7 +18,7 @@ class Config {
     private static final Set<String> DEFAULT_FLAGGED = new HashSet<>();
     static {
         DEFAULT_FLAGGED.add("com.instagram.android");
-        DEFAULT_FLAGGED.add("com.zhiliaoapp.musically"); // TikTok
+        DEFAULT_FLAGGED.add("com.zhiliaoapp.musically");
         DEFAULT_FLAGGED.add("com.google.android.youtube");
         DEFAULT_FLAGGED.add("com.twitter.android");
         DEFAULT_FLAGGED.add("com.whatsapp");
@@ -73,7 +72,6 @@ class Config {
         prefs(context).edit().putBoolean("lockout_enabled", enabled).apply();
     }
 
-    /** Epoch millis until which a flagged app is barred from reopening after an auto-close, keyed per package. */
     static long getLockoutUntil(Context context, String packageName) {
         return prefs(context).getLong("lockout_until_" + packageName, 0L);
     }
@@ -82,7 +80,6 @@ class Config {
         prefs(context).edit().putLong("lockout_until_" + packageName, untilEpochMillis).apply();
     }
 
-/** User-defined web searches, shown as extra rows under the Web heading. */
     static List<WebTarget> getWebTargets(Context context) {
         String stored = prefs(context).getString("web_targets", null);
         List<WebTarget> targets = new ArrayList<>();
@@ -105,17 +102,11 @@ class Config {
                 arr.put(target.toJson());
             }
         } catch (JSONException e) {
-            return; // Nothing sensible to write; leave the stored list untouched.
+            return;
         }
         prefs(context).edit().putString("web_targets", arr.toString()).apply();
     }
 
-    /**
-     * Whether home-screen search may include files and contacts. Both default on, but are
-     * switched off automatically the first time their permission prompt is declined, so a
-     * "tap to allow" row doesn't keep reappearing under every search. Settings is where
-     * they're switched back on.
-     */
     static boolean isFileSearchEnabled(Context context) {
         return prefs(context).getBoolean("file_search_enabled", true);
     }
@@ -132,11 +123,6 @@ class Config {
         prefs(context).edit().putBoolean("contact_search_enabled", enabled).apply();
     }
 
-    /**
-     * URL template for web search, with %s standing in for the encoded query. Stored rather
-     * than hardcoded so the engine can be swapped without a rebuild — e.g.
-     * "https://duckduckgo.com/?q=%s".
-     */
     static String getSearchEngine(Context context) {
         return prefs(context).getString("search_engine", "https://www.google.com/search?q=%s");
     }
@@ -145,7 +131,6 @@ class Config {
         prefs(context).edit().putString("search_engine", urlTemplate).apply();
     }
 
-    /** Whether the "Search the web" row appears at the bottom of results. */
     static boolean isWebSearchEnabled(Context context) {
         return prefs(context).getBoolean("web_search_enabled", true);
     }
@@ -154,11 +139,6 @@ class Config {
         prefs(context).edit().putBoolean("web_search_enabled", enabled).apply();
     }
 
-    /**
-     * Search result sections the user has collapsed, stored by Kind name. Persisted because
-     * it's a lasting preference about what's worth seeing — someone who never wants file
-     * results shouldn't have to re-hide them on every search.
-     */
     static Set<String> getCollapsedSections(Context context) {
         Set<String> stored = prefs(context).getStringSet("collapsed_sections", null);
         return stored != null ? new HashSet<>(stored) : new HashSet<>();
@@ -195,11 +175,6 @@ class Config {
         prefs(context).edit().putStringSet("locked_packages", packages).apply();
     }
 
-    /**
-     * Ordered list of pinned package names, in the order they were pinned (most recent last).
-     * Stored as a JSON array (unlike the other package sets) because pin order matters for
-     * display, and SharedPreferences string sets don't preserve insertion order.
-     */
     static List<String> getPinnedPackages(Context context) {
         String stored = prefs(context).getString("pinned_packages", null);
         List<String> packages = new ArrayList<>();
@@ -265,7 +240,6 @@ class Config {
         prefs(context).edit().remove("adhoc_block_id").remove("adhoc_until").apply();
     }
 
-    /** Epoch millis until which a time block's restriction is lifted early via the emergency override. */
     static long getOverrideUntil(Context context, String blockId) {
         return prefs(context).getLong("override_until_" + blockId, 0L);
     }
@@ -283,12 +257,6 @@ class Config {
         }
     }
 
-    /**
-     * Whether the home screen's art frame currently shows the user's own photo instead of
-     * a bundled GIF scene. Kept separate from isPixelArtEnabled — that's the on/off switch
-     * for the frame entirely, this is which of the two sources fills it when it's on, so
-     * picking a GIF and picking a photo don't have to erase each other's state.
-     */
     static boolean isPhotoArtSelected(Context context) {
         return "photo".equals(prefs(context).getString("art_source", "gif"));
     }
@@ -297,7 +265,6 @@ class Config {
         prefs(context).edit().putString("art_source", selected ? "photo" : "gif").apply();
     }
 
-    /** content:// Uri of the user's chosen photo, or null if none has been picked yet. */
     static String getArtPhotoUri(Context context) {
         return prefs(context).getString("art_photo_uri", null);
     }
@@ -306,14 +273,6 @@ class Config {
         prefs(context).edit().putString("art_photo_uri", uriString).apply();
     }
 
-    /**
-     * Which part of the photo shows, chosen in PhotoCropActivity: focusX/focusY are the
-     * bitmap point (0..1 each) centered in the frame, zoom is how far past the minimum
-     * "cover the frame" scale the user pinched in. Stored this way rather than as a pixel
-     * crop rectangle because it stays meaningful regardless of the frame's actual size —
-     * the home screen's frame and the full-screen viewer's are different sizes, and both
-     * read the same three numbers.
-     */
     static float getArtPhotoFocusX(Context context) {
         return prefs(context).getFloat("art_photo_focus_x", 0.5f);
     }
@@ -391,7 +350,7 @@ class Config {
             byte[] hashed = digest.digest(pin.getBytes(java.nio.charset.StandardCharsets.UTF_8));
             return android.util.Base64.encodeToString(hashed, android.util.Base64.NO_WRAP);
         } catch (java.security.NoSuchAlgorithmException e) {
-            throw new RuntimeException(e); // SHA-256 is guaranteed present on Android
+            throw new RuntimeException(e);
         }
     }
 
@@ -399,3 +358,4 @@ class Config {
         return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
     }
 }
+

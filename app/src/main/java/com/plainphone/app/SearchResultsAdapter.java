@@ -15,22 +15,15 @@ import android.widget.TextView;
 
 import java.util.List;
 
-/**
- * Draws the home list as a single scrolling column of results broken up by group headers
- * ("Apps", "Files", ...). Headers are ordinary rows in the same list rather than a nested
- * structure, which is what keeps position-to-result lookup trivial; tapping one collapses
- * or expands its section.
- */
 class SearchResultsAdapter extends BaseAdapter {
 
     private static final int TYPE_HEADER = 0;
     private static final int TYPE_RESULT = 1;
 
-    /** A section heading, and the state the tap target needs. */
     static class Header {
         final SearchResult.Kind kind;
         final boolean collapsed;
-        /** How many results are hidden; shown only while collapsed, as a hint they exist. */
+
         final int hiddenCount;
 
         Header(SearchResult.Kind kind, boolean collapsed, int hiddenCount) {
@@ -41,7 +34,7 @@ class SearchResultsAdapter extends BaseAdapter {
     }
 
     private final Context context;
-    /** Each entry is either a Header or a SearchResult row. */
+
     private final List<Object> rows;
     private Typeface typeface;
 
@@ -66,13 +59,11 @@ class SearchResultsAdapter extends BaseAdapter {
         return position;
     }
 
-    /** The result at this position, or null if it's a header. */
     SearchResult resultAt(int position) {
         Object row = rows.get(position);
         return row instanceof SearchResult ? (SearchResult) row : null;
     }
 
-    /** The header at this position, or null if it's a result. */
     Header headerAt(int position) {
         Object row = rows.get(position);
         return row instanceof Header ? (Header) row : null;
@@ -88,7 +79,6 @@ class SearchResultsAdapter extends BaseAdapter {
         return rows.get(position) instanceof SearchResult ? TYPE_RESULT : TYPE_HEADER;
     }
 
-    /** Headers are tappable too now — both row kinds do something when clicked. */
     @Override
     public boolean areAllItemsEnabled() {
         return true;
@@ -118,8 +108,6 @@ class SearchResultsAdapter extends BaseAdapter {
         label.setText(text);
         label.setTypeface(typeface);
 
-        // "+" reads as "there's more here", "−" as "put this away" — both are guaranteed
-        // glyphs in any font, unlike the chevrons this would otherwise use.
         toggle.setText(header.collapsed ? "+" : "−");
         toggle.setTypeface(typeface);
         return view;
@@ -131,7 +119,7 @@ class SearchResultsAdapter extends BaseAdapter {
         view.setGravity(Gravity.CENTER_VERTICAL);
         view.setBackground(rowBackground());
         view.setPadding(48, 36, 48, 12);
-        // Marks this as a header view, so a recycled result row is never mistaken for one.
+
         view.setTag(Boolean.TRUE);
 
         TextView label = new TextView(context);
@@ -169,8 +157,7 @@ class SearchResultsAdapter extends BaseAdapter {
             subtitle.setTypeface(typeface);
             subtitle.setVisibility(View.VISIBLE);
         }
-        // Padding tightens when a subtitle is present so a two-line row doesn't tower
-        // over the single-line app rows it sits next to.
+
         view.setPadding(48, result.subtitle == null ? 40 : 28, 48,
                 result.subtitle == null ? 40 : 28);
         return view;
@@ -213,3 +200,4 @@ class SearchResultsAdapter extends BaseAdapter {
         return drawable;
     }
 }
+

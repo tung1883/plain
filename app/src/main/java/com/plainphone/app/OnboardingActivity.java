@@ -44,8 +44,7 @@ public class OnboardingActivity extends Activity {
     @Override
     protected void onSaveInstanceState(Bundle outState) {
         super.onSaveInstanceState(outState);
-        // Without this, leaving to Settings (Home app / Accessibility / App info) and coming
-        // back destroys and recreates this Activity, silently resetting to step 0.
+
         outState.putInt(STEP_KEY, step);
     }
 
@@ -138,3 +137,4 @@ public class OnboardingActivity extends Activity {
         finish();
     }
 }
+

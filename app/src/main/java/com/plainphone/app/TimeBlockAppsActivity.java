@@ -25,7 +25,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-/** Picks which apps belong to a single Time Block's list (blackout or allow-only, depending on its mode). */
 public class TimeBlockAppsActivity extends Activity {
 
     private String blockId;
@@ -124,3 +123,4 @@ public class TimeBlockAppsActivity extends Activity {
         return deduped;
     }
 }
+

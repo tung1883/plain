@@ -9,10 +9,6 @@ import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
-/**
- * Shared "+/- stepper with Save" screen used to edit a single numeric setting.
- * Subclasses describe the range/step and how to read/write the value.
- */
 public abstract class StepperActivity extends Activity {
 
     private int value;
@@ -109,3 +105,4 @@ public abstract class StepperActivity extends Activity {
         valueText.setText(format(value));
     }
 }
+

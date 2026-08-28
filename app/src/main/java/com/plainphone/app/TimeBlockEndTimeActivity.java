@@ -62,3 +62,4 @@ public class TimeBlockEndTimeActivity extends StepperActivity {
         return TimeBlock.formatTime(value % (24 * 60));
     }
 }
+

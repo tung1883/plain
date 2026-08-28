@@ -12,14 +12,6 @@ import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
-/**
- * Wait-time countdown (and reopen-lockout screen, if that app is still cooling down)
- * for a flagged app, shown before the real app is launched — not after, so there's no
- * flicker of the app underneath while AppMonitorService's reactive overlay catches up.
- * Reached only from MainActivity.launchApp(); other launch paths (widgets, notifications,
- * deep links) still go through AppMonitorService's reactive gate, since there's no
- * pre-launch hook for those.
- */
 public class FlaggedGateActivity extends Activity {
 
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -98,12 +90,6 @@ public class FlaggedGateActivity extends Activity {
         finish();
     }
 
-    /**
-     * What to open once the gate is passed: normally the app's own launcher screen, but an
-     * Intent handed over in the OPEN_INTENT extra replaces that. Web search from the home
-     * screen sets it, so a gated browser still receives the query rather than opening on a
-     * blank start page with what was typed thrown away.
-     */
     private Intent openIntent() {
         Intent carried = carriedIntent();
         if (carried != null && carried.resolveActivity(getPackageManager()) != null) {
@@ -120,7 +106,6 @@ public class FlaggedGateActivity extends Activity {
         return intent.getParcelableExtra(WebSearch.OPEN_INTENT);
     }
 
-
     private static String formatDuration(long millis) {
         long totalSeconds = (millis + 999) / 1000;
         long minutes = totalSeconds / 60;
@@ -134,3 +119,4 @@ public class FlaggedGateActivity extends Activity {
         handler.removeCallbacksAndMessages(null);
     }
 }
+

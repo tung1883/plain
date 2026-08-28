@@ -1,6 +1,5 @@
 package com.plainphone.app;
 
-/** A bundled grayscale GIF scene for the home screen, loaded from assets/pixel_art/. */
 enum GifScene {
     CITY("City", "city.gif"),
     PARK("Park", "park.gif"),
@@ -19,3 +18,4 @@ enum GifScene {
         this.assetFileName = assetFileName;
     }
 }
+
