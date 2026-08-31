@@ -75,6 +75,7 @@ public class FontActivity extends Activity {
             case GEORGIA -> Fonts.georgia(this);
             case IBM_PLEX_MONO -> Fonts.ibmPlexMono(this);
             case EXCALIFONT -> Fonts.excalifont(this);
+            case CASCADIA_MONO -> Fonts.cascadiaMono(this);
         };
     }
 

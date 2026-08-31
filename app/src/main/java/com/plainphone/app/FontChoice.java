@@ -3,7 +3,8 @@ package com.plainphone.app;
 enum FontChoice {
     GEORGIA("Georgia"),
     IBM_PLEX_MONO("IBM Plex Mono"),
-    EXCALIFONT("Excalifont");
+    EXCALIFONT("Excalifont"),
+    CASCADIA_MONO("Cascadia Mono");
 
     final String label;
 
