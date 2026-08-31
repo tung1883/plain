@@ -51,6 +51,7 @@ public class FlaggedGateActivity extends Activity {
         root.addView(close, closeParams);
 
         setContentView(root);
+        UiKit.hideSystemBars(this);
 
         long lockoutUntil = Config.isLockoutEnabled(this) ? Config.getLockoutUntil(this, packageName) : 0L;
         if (lockoutUntil > System.currentTimeMillis()) {
@@ -76,7 +77,7 @@ public class FlaggedGateActivity extends Activity {
             openApp();
             return;
         }
-        text.setText("Wait " + secondsLeft + "s before opening " + label);
+        text.setText("Wait " + secondsLeft + "s...");
         pending = () -> showCountdown(secondsLeft - 1);
         handler.postDelayed(pending, 1000);
     }
@@ -111,6 +112,12 @@ public class FlaggedGateActivity extends Activity {
         long minutes = totalSeconds / 60;
         long seconds = totalSeconds % 60;
         return String.format(java.util.Locale.US, "%dm %02ds", minutes, seconds);
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) UiKit.hideSystemBars(this);
     }
 
     @Override

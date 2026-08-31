@@ -57,6 +57,7 @@ public class AppMonitorService extends AccessibilityService {
         return false;
     }
 
+    /** The lock gate was satisfied by PinGateActivity — don't re-prompt when the app returns. */
     static void skipGateFor(String packageName) {
         AppMonitorService service = instance;
         if (service != null) {
@@ -194,38 +195,87 @@ public class AppMonitorService extends AccessibilityService {
         }
 
         if (TimeBlockRules.getBlockingBlock(this, packageName) != null) {
-            if (SystemClock.elapsedRealtime() - homeReachedAt < HOME_COOLDOWN_MILLIS) {
-                return;
-            }
+            if (SystemClock.elapsedRealtime() - homeReachedAt < HOME_COOLDOWN_MILLIS) return;
             cancelPendingTeardown();
             if (!packageName.equals(currentGatedPackage)) {
                 startGate(packageName, GateKind.TIME_BLOCK);
             }
-        } else if (Config.getLockedPackages(this).contains(packageName)
-                && !Config.isAppRecentlyUnlocked(this, packageName)) {
-            if (SystemClock.elapsedRealtime() - homeReachedAt < HOME_COOLDOWN_MILLIS) {
-                return;
-            }
-            cancelPendingTeardown();
-            if (!packageName.equals(currentGatedPackage)) {
-                startGate(packageName, GateKind.PIN);
-            }
-        } else if (Config.getLockedPackages(this).contains(packageName)) {
-            Config.markAppUnlocked(this, packageName);
+            return;
+        }
+
+        boolean locked = Config.getLockedPackages(this).contains(packageName);
+        boolean flagged = Config.getFlaggedPackages(this).contains(packageName);
+
+        if (!locked && !flagged) {
             if (currentGatedPackage != null) schedulePendingTeardown();
-        } else if (Config.getFlaggedPackages(this).contains(packageName)) {
-            if (SystemClock.elapsedRealtime() - homeReachedAt < HOME_COOLDOWN_MILLIS) {
+            return;
+        }
+
+        if (SystemClock.elapsedRealtime() - homeReachedAt < HOME_COOLDOWN_MILLIS) return;
+        cancelPendingTeardown();
+
+        // A gate for this app is already on screen / its timer running — let it finish.
+        if (packageName.equals(currentGatedPackage)) return;
+
+        enforce(packageName);
+    }
+
+    /**
+     * Apply the two independent gates to a freshly-foregrounded app. They don't know
+     * about each other: the <b>lock gate</b> asks for a PIN unless the app is inside
+     * its unlock grace window; the <b>flag gate</b> shows the reopen-lockout or the
+     * wait countdown and then arms the auto-close budget. An app that is both passes
+     * the lock gate first — {@link #showPinEntry}'s success path re-runs enforce so
+     * the flag gate follows.
+     */
+    private void enforce(String packageName) {
+        if (Config.getLockedPackages(this).contains(packageName)) {
+            if (!Config.isAppRecentlyUnlocked(this, packageName)) {
+                launchGate(packageName, PinGateActivity.class);
                 return;
             }
-            cancelPendingTeardown();
-            if (!packageName.equals(currentGatedPackage)) {
-                boolean lockedOut = Config.isLockoutEnabled(this)
-                        && Config.getLockoutUntil(this, packageName) > System.currentTimeMillis();
-                startGate(packageName, lockedOut ? GateKind.LOCKOUT : GateKind.COUNTDOWN);
-            }
-        } else if (currentGatedPackage != null) {
+            Config.markAppUnlocked(this, packageName);   // refresh grace while in use
+        }
+
+        if (Config.getFlaggedPackages(this).contains(packageName)) {
+            launchGate(packageName, FlaggedGateActivity.class);
+            return;
+        }
+
+        // Locked only and already unlocked — nothing to show. Drop a gate left over
+        // from a different app.
+        if (currentGatedPackage != null && !currentGatedPackage.equals(packageName)) {
             schedulePendingTeardown();
         }
+    }
+
+    /**
+     * Send the just-opened app to the background and put the gate screen up in its
+     * place, so the app is never reachable until the gate is passed — the same as
+     * opening a locked/flagged app from Plain's own list. On success the gate
+     * activity relaunches the app (and calls back through {@link #skipGateFor} /
+     * {@link #skipFlaggedGateFor}).
+     */
+    private void launchGate(String packageName, Class<?> gateClass) {
+        endSession();
+        cancelCountdown();
+        cancelBudgetTimer();
+        removeOverlay();
+        currentGatedPackage = packageName;
+        sessionPackage = packageName;
+        sessionStartMillis = SystemClock.elapsedRealtime();
+        UsageStore.recordOpen(this, packageName);
+
+        // Home first so the gated app drops out of view, then the gate on top of the
+        // launcher. performGlobalAction is async, so let it settle before startActivity
+        // or the gate can flash up and then be covered by the home transition.
+        performGlobalAction(GLOBAL_ACTION_HOME);
+
+        Intent gate = new Intent(this, gateClass);
+        gate.putExtra("package", packageName);
+        gate.putExtra("label", AllAppsUsage.label(getPackageManager(), packageName));
+        gate.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        handler.postDelayed(() -> startActivity(gate), 250);
     }
 
     private void startGate(String packageName, GateKind kind) {
@@ -246,11 +296,7 @@ public class AppMonitorService extends AccessibilityService {
         sessionPackage = packageName;
         sessionStartMillis = SystemClock.elapsedRealtime();
         UsageStore.recordOpen(this, packageName);
-        if (kind == GateKind.PIN) {
-            showPinEntry(packageName);
-        } else {
-            showCountdown(Config.getWaitSeconds(this), packageName);
-        }
+        showCountdown(Config.getWaitSeconds(this), packageName);
     }
 
     private void showLockout(String packageName) {
@@ -391,16 +437,6 @@ public class AppMonitorService extends AccessibilityService {
             handler.removeCallbacks(countdownRunnable);
             countdownRunnable = null;
         }
-    }
-
-    private void showPinEntry(String packageName) {
-        if (!packageName.equals(currentGatedPackage)) return;
-        Intent gate = new Intent(this, PinGateActivity.class);
-        gate.putExtra("package", packageName);
-        gate.putExtra("label", AllAppsUsage.label(getPackageManager(), packageName));
-        gate.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        startActivity(gate);
-        closeGatedApp();
     }
 
     private void addOverlay() {

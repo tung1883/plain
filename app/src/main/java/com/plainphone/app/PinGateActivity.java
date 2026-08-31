@@ -24,11 +24,18 @@ public class PinGateActivity extends Activity {
                 if (pin.length() >= 4 && Config.checkLockPin(PinGateActivity.this, pin)) {
                     submitted = true;
                     Config.markAppUnlocked(PinGateActivity.this, packageName);
-                    Intent launchIntent = openIntent();
-                    if (launchIntent != null) {
-                        AppMonitorService.skipGateFor(packageName);
-                        startActivity(launchIntent);
+                    AppMonitorService.skipGateFor(packageName);
+                    Intent next;
+                    if (Config.getFlaggedPackages(PinGateActivity.this).contains(packageName)) {
+                        // Also flagged — hand off to the wait gate instead of the app.
+                        next = new Intent(PinGateActivity.this, FlaggedGateActivity.class);
+                        next.putExtra("package", packageName);
+                        next.putExtra("label", label);
+                        next.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    } else {
+                        next = openIntent();
                     }
+                    if (next != null) startActivity(next);
                     finish();
                 } else if (pin.length() >= 6) {
                     pad.reject();
