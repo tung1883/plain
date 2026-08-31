@@ -74,6 +74,7 @@ public class FontActivity extends Activity {
         return switch (font) {
             case GEORGIA -> Fonts.georgia(this);
             case IBM_PLEX_MONO -> Fonts.ibmPlexMono(this);
+            case EXCALIFONT -> Fonts.excalifont(this);
         };
     }
 
