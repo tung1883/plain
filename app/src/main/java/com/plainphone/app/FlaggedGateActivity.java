@@ -83,6 +83,12 @@ public class FlaggedGateActivity extends Activity {
     }
 
     private void openApp() {
+        long lockoutUntil = Config.isLockoutEnabled(this)
+                ? Config.getLockoutUntil(this, packageName) : 0L;
+        if (lockoutUntil > System.currentTimeMillis()) {
+            showLockout(lockoutUntil);
+            return;
+        }
         Intent launchIntent = openIntent();
         if (launchIntent != null) {
             AppMonitorService.skipFlaggedGateFor(packageName);
