@@ -70,6 +70,13 @@ public class MainActivity extends Activity {
     private LinearLayout modeToggle;
     private HomeMode homeMode = HomeMode.APPS;
 
+    private StatsActivity.Range statsRange = StatsActivity.Range.WEEK;
+    private StatsActivity.Range statsLoadedRange;
+    private boolean statsLoading;
+    private List<UsageStore.Entry> statsFlagged = new ArrayList<>();
+    private List<AllAppsUsage.Entry> statsAll = new ArrayList<>();
+    private boolean statsHasAccess;
+
     private static final int REQUEST_NOTES_UNLOCK = 4301;
     private static final int REQUEST_PICK_NOTES_FOLDER = 4302;
     private static final int REQUEST_PICK_TODO_FILE = 4303;
@@ -321,9 +328,9 @@ public class MainActivity extends Activity {
         menuColumn.addView(screenOffRow, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        TextView statsRow = buildRow(georgia, "Stats");
-        statsRow.setOnClickListener(v -> startActivity(new Intent(this, StatsActivity.class)));
-        menuColumn.addView(statsRow, new LinearLayout.LayoutParams(
+        TextView lockAllRow = buildRow(georgia, "Lock all");
+        lockAllRow.setOnClickListener(v -> lockAll());
+        menuColumn.addView(lockAllRow, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
         TextView settingsRow = buildRow(georgia, "Settings");
@@ -511,6 +518,15 @@ public class MainActivity extends Activity {
         if (!Lock.SEARCH.gateActive(this)) scheduleDeviceSearch(currentQuery);
     }
 
+    private void lockAll() {
+        Lock.lockAll(this);
+        search.setText("");
+        filter("");
+        android.widget.Toast.makeText(this,
+                Config.isPinSet(this) ? "Locked" : "Locked — set an App-lock PIN to take effect",
+                android.widget.Toast.LENGTH_SHORT).show();
+    }
+
     private void renderRows() {
         rows.clear();
         String needle = currentQuery;
@@ -533,6 +549,8 @@ public class MainActivity extends Activity {
                 }
             } else if (homeMode == HomeMode.TODOS) {
                 renderTodoSection();
+            } else if (homeMode == HomeMode.STATS) {
+                renderStatsInlineSection();
             } else if (Lock.APPS.gateActive(this)) {
                 rows.add(new SearchResult(SearchResult.Kind.APP, "App list is locked",
                         "Tap to unlock", -1, () -> startActivityForResult(
@@ -723,6 +741,71 @@ public class MainActivity extends Activity {
             params.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.85);
             dialog.getWindow().setAttributes(params);
         }
+    }
+
+    private void renderStatsInlineSection() {
+        rows.add(new SearchResult(SearchResult.Kind.STAT, "Range: " + statsRange.label,
+                "Tap to change", -1, () -> {
+            StatsActivity.Range[] v = StatsActivity.Range.values();
+            statsRange = v[(statsRange.ordinal() + 1) % v.length];
+            statsLoadedRange = null;
+            renderRows();
+        }));
+
+        if (statsLoadedRange != statsRange) {
+            if (!statsLoading) loadStatsInline();
+            rows.add(new SearchResult(SearchResult.Kind.STAT, "Loading…", null, -1, () -> {}));
+            return;
+        }
+
+        rows.add(new SearchResult(SearchResult.Kind.STAT,
+                "Flagged apps — " + statsRange.label, null, -1, () -> {}));
+        if (statsFlagged.isEmpty()) {
+            rows.add(new SearchResult(SearchResult.Kind.STAT, "(no usage)", null, -1, () -> {}));
+        } else {
+            for (UsageStore.Entry e : statsFlagged) {
+                rows.add(new SearchResult(SearchResult.Kind.STAT, e.label,
+                        StatsActivity.formatDuration(e.millis) + " · "
+                                + e.opens + (e.opens == 1 ? " open" : " opens"), -1, () -> {}));
+            }
+        }
+
+        rows.add(new SearchResult(SearchResult.Kind.STAT,
+                "All apps — " + statsRange.label, null, -1, () -> {}));
+        if (!statsHasAccess) {
+            rows.add(new SearchResult(SearchResult.Kind.STAT, "Grant usage access",
+                    "Tap to allow", -1, () -> startActivity(
+                    new Intent(android.provider.Settings.ACTION_USAGE_ACCESS_SETTINGS))));
+        } else if (statsAll.isEmpty()) {
+            rows.add(new SearchResult(SearchResult.Kind.STAT, "(no usage)", null, -1, () -> {}));
+        } else {
+            for (AllAppsUsage.Entry a : statsAll) {
+                rows.add(new SearchResult(SearchResult.Kind.STAT, a.label,
+                        StatsActivity.formatDuration(a.thisWeekMillis), -1, () -> {}));
+            }
+        }
+    }
+
+    private void loadStatsInline() {
+        statsLoading = true;
+        final StatsActivity.Range r = statsRange;
+        new Thread(() -> {
+            java.util.Set<String> flagged = Config.getFlaggedPackages(this);
+            List<UsageStore.Entry> f = UsageStore.rangeUsage(this, flagged, r.startOffset, 0);
+            boolean access = AllAppsUsage.hasUsageAccess(this);
+            List<AllAppsUsage.Entry> a = access
+                    ? AllAppsUsage.topApps(this, 12, StatsActivity.rangeStartMillis(r),
+                            System.currentTimeMillis())
+                    : new ArrayList<>();
+            runOnUiThread(() -> {
+                statsFlagged = f;
+                statsAll = a;
+                statsHasAccess = access;
+                statsLoadedRange = r;
+                statsLoading = false;
+                if (homeMode == HomeMode.STATS) renderRows();
+            });
+        }).start();
     }
 
     private void renderTodoSection() {

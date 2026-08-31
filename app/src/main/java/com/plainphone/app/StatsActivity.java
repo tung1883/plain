@@ -23,7 +23,7 @@ public class StatsActivity extends Activity {
 
     private static final int BAR_HEIGHT = 20;
 
-    private enum Range {
+    enum Range {
         TODAY("Today", 0, "EEE"),
         WEEK("7 days", -6, "EEE"),
         MONTH("1 month", -29, "d/M");
@@ -57,6 +57,14 @@ public class StatsActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        String requested = getIntent().getStringExtra("range");
+        if (requested != null) {
+            try {
+                range = Range.valueOf(requested);
+            } catch (IllegalArgumentException ignored) {
+            }
+        }
+
         scroll = new ScrollView(this);
         scroll.setBackgroundColor(Color.BLACK);
         setContentView(scroll);
@@ -157,7 +165,7 @@ public class StatsActivity extends Activity {
         }
     }
 
-    private long rangeStartMillis(Range r) {
+    static long rangeStartMillis(Range r) {
         Calendar cal = Calendar.getInstance();
         cal.add(Calendar.DAY_OF_YEAR, r.startOffset);
         cal.set(Calendar.HOUR_OF_DAY, 0);
@@ -337,7 +345,7 @@ public class StatsActivity extends Activity {
         return view;
     }
 
-    private static String formatDuration(long millis) {
+    static String formatDuration(long millis) {
         long totalMinutes = millis / 60000;
         long hours = totalMinutes / 60;
         long minutes = totalMinutes % 60;

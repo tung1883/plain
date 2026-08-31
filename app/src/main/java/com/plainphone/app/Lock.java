@@ -37,6 +37,14 @@ enum Lock {
         return valueOf(intent.getStringExtra(EXTRA_LOCK));
     }
 
+    /** Turn every area's lock on and expire any active grace window. */
+    static void lockAll(Context context) {
+        for (Lock lock : values()) {
+            lock.setLocked(context, true);
+            Config.setUnlockUntil(context, lock.area, 0L);
+        }
+    }
+
     boolean isLocked(Context context) {
         return Config.isLocked(context, area);
     }

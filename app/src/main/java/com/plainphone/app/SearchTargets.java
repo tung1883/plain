@@ -131,6 +131,19 @@ class SearchTargets {
                     screenOff, AppMonitorService::lockScreen));
         }
 
+        int lockAll = TextMatch.score("Lock all",
+                new String[]{"lock", "pin", "secure", "privacy", "hide"}, query);
+        if (lockAll != TextMatch.NO_MATCH) {
+            results.add(new SearchResult(SearchResult.Kind.PLAIN, "Lock all",
+                    "Lock Notes, To-do, apps and search", lockAll, () -> {
+                Lock.lockAll(host);
+                android.widget.Toast.makeText(host,
+                        Config.isPinSet(host) ? "Locked"
+                                : "Locked — set an App-lock PIN to take effect",
+                        android.widget.Toast.LENGTH_SHORT).show();
+            }));
+        }
+
         for (PlainTarget target : PLAIN) {
             int score = TextMatch.score(target.title, target.keywords, query);
             if (score == TextMatch.NO_MATCH) continue;
