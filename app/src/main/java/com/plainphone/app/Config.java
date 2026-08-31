@@ -289,6 +289,11 @@ class Config {
         }
     }
 
+    static void clearAppUnlock(Context context, String packageName) {
+        if (packageName == null) return;
+        prefs(context).edit().remove("app_unlock_until_" + packageName).apply();
+    }
+
     static String getNotesExportTree(Context context) {
         return prefs(context).getString("notes_export_tree", null);
     }
