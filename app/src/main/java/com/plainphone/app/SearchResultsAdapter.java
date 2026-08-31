@@ -150,6 +150,14 @@ class SearchResultsAdapter extends BaseAdapter {
 
         title.setText(result.title);
         title.setTypeface(typeface);
+        int baseFlags = title.getPaintFlags() & ~android.graphics.Paint.STRIKE_THRU_TEXT_FLAG;
+        if (result.strike) {
+            title.setPaintFlags(baseFlags | android.graphics.Paint.STRIKE_THRU_TEXT_FLAG);
+            title.setTextColor(Color.GRAY);
+        } else {
+            title.setPaintFlags(baseFlags);
+            title.setTextColor(Color.WHITE);
+        }
         if (result.subtitle == null) {
             subtitle.setVisibility(View.GONE);
         } else {

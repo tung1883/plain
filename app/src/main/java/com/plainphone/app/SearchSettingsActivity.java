@@ -65,6 +65,10 @@ public class SearchSettingsActivity extends Activity {
                 "My web searches" + (webTargets > 0 ? " (" + webTargets + ")" : ""),
                 v -> startActivity(new android.content.Intent(this, WebTargetsActivity.class)))));
 
+        entries.add(new Entry("Lock search", row(
+                "Lock search: " + (Lock.SEARCH.isLocked(this) ? "On" : "Off"),
+                v -> Lock.SEARCH.toggleLock(this, this::render))));
+
         boolean contactSearch = Config.isContactSearchEnabled(this);
         entries.add(new Entry("Search contacts", row(
                 "Search contacts: " + (contactSearch ? "On" : "Off"), v -> {

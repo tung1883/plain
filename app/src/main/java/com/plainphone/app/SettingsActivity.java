@@ -25,7 +25,7 @@ public class SettingsActivity extends Activity {
     static final String EXTRA_DESTINATION = "destination";
 
     private static final List<String> SECTION_ORDER =
-            Arrays.asList("Appearance", "Notes", "Restrictions", "Search", "Permissions");
+            Arrays.asList("Appearance", "Notes", "To-do", "Apps", "Search", "Permissions");
 
     private LinearLayout root;
     private Typeface georgia;
@@ -94,20 +94,27 @@ entries.add(new Entry("Appearance", "Home screen art", row("Home screen art",
         entries.add(new Entry("Notes", "Notes", row("Notes",
                 v -> startActivity(new Intent(this, NoteSettingsActivity.class)))));
 
-        entries.add(new Entry("Restrictions", "App lock", row("App lock",
+        entries.add(new Entry("To-do", "To-do", row("To-do",
+                v -> startActivity(new Intent(this, TodoSettingsActivity.class)))));
+
+        entries.add(new Entry("Apps", "Lock app list", row(
+                "Lock app list: " + (Lock.APPS.isLocked(this) ? "On" : "Off"),
+                v -> Lock.APPS.toggleLock(this, this::render))));
+
+        entries.add(new Entry("Apps", "App lock", row("App lock",
                 v -> startActivity(new Intent(this, LockedAppsActivity.class)))));
 
-        entries.add(new Entry("Restrictions", "Flagged apps", row("Flagged apps",
+        entries.add(new Entry("Apps", "Flagged apps", row("Flagged apps",
                 v -> startActivity(new Intent(this, FlaggedAppsActivity.class)))));
 
-        entries.add(new Entry("Restrictions", "Hide apps from app list", row("Hide apps from app list",
+        entries.add(new Entry("Apps", "Hide apps from app list", row("Hide apps from app list",
                 v -> startActivity(new Intent(this, HiddenAppsActivity.class)))));
 
-        entries.add(new Entry("Restrictions", "Settings wait time", row(
+        entries.add(new Entry("Apps", "Settings wait time", row(
                 "Settings wait time: " + Config.getSettingsWaitSeconds(this) + "s",
                 v -> startActivity(new Intent(this, SettingsWaitTimeActivity.class)))));
 
-        entries.add(new Entry("Restrictions", "Time Blocks", row("Time Blocks",
+        entries.add(new Entry("Apps", "Time Blocks", row("Time Blocks",
                 v -> startActivity(new Intent(this, TimeBlocksActivity.class)))));
 
         entries.add(new Entry("Search", "Search", row("Search",
