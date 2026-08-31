@@ -8,12 +8,14 @@ class Fonts {
     private static Typeface georgia;
     private static Typeface ibmPlexMono;
     private static Typeface excalifont;
+    private static Typeface cascadiaMono;
 
     static Typeface current(Context context) {
         return switch (Config.getFontChoice(context)) {
             case IBM_PLEX_MONO -> ibmPlexMono(context);
             case GEORGIA -> georgia(context);
             case EXCALIFONT -> excalifont(context);
+            case CASCADIA_MONO -> cascadiaMono(context);
         };
     }
 
@@ -36,6 +38,13 @@ class Fonts {
             excalifont = Typeface.createFromAsset(context.getAssets(), "fonts/excalifont.ttf");
         }
         return excalifont;
+    }
+
+    static synchronized Typeface cascadiaMono(Context context) {
+        if (cascadiaMono == null) {
+            cascadiaMono = Typeface.createFromAsset(context.getAssets(), "fonts/cascadiamono.ttf");
+        }
+        return cascadiaMono;
     }
 }
 
