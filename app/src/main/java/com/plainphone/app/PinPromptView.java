@@ -73,7 +73,7 @@ class PinPromptView extends FrameLayout {
         display.setTextColor(Color.WHITE);
         display.setTextSize(24);
         display.setTypeface(font);
-        display.setGravity(Gravity.CENTER);
+        display.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
         display.setLetterSpacing(0.3f);
         display.setMinWidth(dp(180));
         display.setMinHeight(dp(56));
