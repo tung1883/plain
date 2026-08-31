@@ -69,6 +69,10 @@ public class MainActivity extends Activity {
     private SwipeSwitcher swipeSwitcher;
     private LinearLayout modeToggle;
     private HomeMode homeMode = HomeMode.APPS;
+    private boolean notesUnlocked;
+
+    private static final int REQUEST_NOTES_UNLOCK = 4301;
+    private static final int REQUEST_PICK_NOTES_FOLDER = 4302;
     private FrameLayout artFrame;
     private boolean showingHomeReminder = false;
     private boolean homeUiBuilt = false;
@@ -79,6 +83,19 @@ public class MainActivity extends Activity {
         super.onNewIntent(intent);
 
         recreate();
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (!homeUiBuilt) return;
+        if (requestCode == REQUEST_NOTES_UNLOCK && resultCode == RESULT_OK) {
+            notesUnlocked = true;
+            filter(search.getText().toString());
+        } else if (requestCode == REQUEST_PICK_NOTES_FOLDER && resultCode == RESULT_OK) {
+            Notes.saveFolderPick(this, data);
+            filter(search.getText().toString());
+        }
     }
 
     @Override
@@ -261,6 +278,7 @@ public class MainActivity extends Activity {
         rows = new ArrayList<>();
         collapsedSections = Config.getCollapsedSections(this);
         homeMode = Config.getHomeMode(this);
+        notesUnlocked = false;
         homeUiBuilt = true;
         builtWithFont = Config.getFontChoice(this);
 
@@ -403,7 +421,7 @@ public class MainActivity extends Activity {
                 return true;
             }
             if (result.payload instanceof Note) {
-                confirmDeleteNote((Note) result.payload);
+                showNoteOptions((Note) result.payload);
                 return true;
             }
             if (result.payload instanceof FileIndex.Entry) {
@@ -481,8 +499,21 @@ public class MainActivity extends Activity {
 
         if (needle.isEmpty()) {
             if (homeMode == HomeMode.NOTES) {
-                rows.add(newNoteRow());
-                rows.addAll(noteBrowseResults());
+                if (notesGateActive()) {
+                    rows.add(new SearchResult(SearchResult.Kind.NOTE, "Notes are locked",
+                            "Tap to unlock", -1, () -> startActivityForResult(
+                            new Intent(this, NotePinGateActivity.class), REQUEST_NOTES_UNLOCK)));
+                } else {
+                    rows.add(newNoteRow());
+                    rows.add(new SearchResult(SearchResult.Kind.NOTE,
+                            "Export folder: " + Notes.exportFolderLabel(this), null, -1,
+                            () -> Notes.showFolderOptions(this, REQUEST_PICK_NOTES_FOLDER,
+                                    () -> filter(search.getText().toString()))));
+                    rows.add(new SearchResult(SearchResult.Kind.NOTE,
+                            "Locked: " + (Config.getNotesLocked(this) ? "On" : "Off"), null, -1,
+                            () -> Notes.toggleLock(this, () -> filter(search.getText().toString()))));
+                    rows.addAll(noteBrowseResults());
+                }
             } else {
                 addGroup(SearchResult.Kind.APP, appResults(currentSearch), false);
             }
@@ -568,7 +599,12 @@ public class MainActivity extends Activity {
         return results;
     }
 
+    private boolean notesGateActive() {
+        return Config.getNotesLocked(this) && !notesUnlocked && Config.isPinSet(this);
+    }
+
     private List<SearchResult> noteResults(String needle) {
+        if (notesGateActive()) return new ArrayList<>();
         List<SearchResult> results = new ArrayList<>();
         for (Note note : Config.getNotes(this)) {
             int score = TextMatch.score(note.text, currentSearch);
@@ -595,28 +631,30 @@ public class MainActivity extends Activity {
         startActivity(intent);
     }
 
-    private void confirmDeleteNote(Note note) {
+    private void openNoteExport(String id) {
+        Intent intent = new Intent(this, NoteEditActivity.class);
+        intent.putExtra("noteId", id);
+        intent.putExtra("autoExport", true);
+        startActivity(intent);
+    }
+
+    private void showNoteOptions(Note note) {
         Typeface georgia = Fonts.current(this);
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackground(popupBackground());
-        root.setPadding(48, 40, 48, 24);
+        root.setPadding(0, 8, 0, 8);
 
         TextView title = new TextView(this);
-        title.setText("Delete this note?");
+        title.setText(note.title());
         title.setTextColor(Color.WHITE);
         title.setTextSize(18);
         title.setTypeface(georgia);
+        title.setSingleLine(true);
+        title.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        title.setPadding(48, 32, 48, 24);
         root.addView(title);
-
-        TextView body = new TextView(this);
-        body.setText(note.title());
-        body.setTextColor(Color.GRAY);
-        body.setTextSize(14);
-        body.setTypeface(georgia);
-        body.setPadding(0, 16, 0, 8);
-        root.addView(body);
 
         android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
                 .setView(root)
@@ -625,16 +663,13 @@ public class MainActivity extends Activity {
             dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
         }
 
-        root.addView(optionRow(georgia, "Cancel", v -> dialog.dismiss()));
+        root.addView(optionRow(georgia, "Export", v -> {
+            dialog.dismiss();
+            openNoteExport(note.id);
+        }));
         root.addView(optionRow(georgia, "Delete", v -> {
             dialog.dismiss();
-            List<Note> notes = Config.getNotes(this);
-            java.util.Iterator<Note> it = notes.iterator();
-            while (it.hasNext()) {
-                if (it.next().id.equals(note.id)) it.remove();
-            }
-            Config.setNotes(this, notes);
-            filter(search.getText().toString());
+            Notes.confirmDelete(this, note, () -> filter(search.getText().toString()));
         }));
 
         dialog.show();

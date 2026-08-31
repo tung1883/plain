@@ -70,6 +70,8 @@ class SearchTargets {
                     "usage access", "grant"),
             new PlainTarget("Font", "Change the launcher typeface", FontActivity.class, true,
                     "typeface", "typography", "serif", "text"),
+            new PlainTarget("Notes", "Default export folder and lock", NoteSettingsActivity.class,
+                    true, "notes", "export", "folder", "lock", "pin"),
     };
 
     private static final SystemTarget[] SYSTEM = {
