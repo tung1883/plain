@@ -270,6 +270,16 @@ class Config {
                 < prefs(context).getLong("app_unlock_until_" + packageName, 0L);
     }
 
+    /** Expire every per-app unlock grace window, so locked apps re-prompt at once. */
+    static void clearAppUnlocks(Context context) {
+        SharedPreferences prefs = prefs(context);
+        SharedPreferences.Editor editor = prefs.edit();
+        for (String key : prefs.getAll().keySet()) {
+            if (key.startsWith("app_unlock_until_")) editor.remove(key);
+        }
+        editor.apply();
+    }
+
     static void markAppUnlocked(Context context, String packageName) {
         if (packageName == null) return;
         long until = System.currentTimeMillis() + UNLOCK_GRACE_MS;
