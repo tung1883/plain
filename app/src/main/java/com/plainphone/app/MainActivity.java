@@ -515,6 +515,10 @@ public class MainActivity extends Activity {
         rows.clear();
         String needle = currentQuery;
 
+        if (modeToggle != null) {
+            modeToggle.setVisibility(needle.isEmpty() ? View.VISIBLE : View.GONE);
+        }
+
         if (needle.isEmpty()) {
             if (homeMode == HomeMode.NOTES) {
                 if (Lock.NOTES.gateActive(this)) {
