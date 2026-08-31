@@ -244,6 +244,26 @@ class Config {
         prefs(context).edit().putString("notes", arr.toString()).apply();
     }
 
+    static boolean getNotesLocked(Context context) {
+        return prefs(context).getBoolean("notes_locked", false);
+    }
+
+    static void setNotesLocked(Context context, boolean locked) {
+        prefs(context).edit().putBoolean("notes_locked", locked).apply();
+    }
+
+    static String getNotesExportTree(Context context) {
+        return prefs(context).getString("notes_export_tree", null);
+    }
+
+    static void setNotesExportTree(Context context, String uriString) {
+        if (uriString == null) {
+            prefs(context).edit().remove("notes_export_tree").apply();
+        } else {
+            prefs(context).edit().putString("notes_export_tree", uriString).apply();
+        }
+    }
+
     static String getAdhocBlockId(Context context) {
         return prefs(context).getString("adhoc_block_id", null);
     }

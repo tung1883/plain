@@ -25,7 +25,7 @@ public class SettingsActivity extends Activity {
     static final String EXTRA_DESTINATION = "destination";
 
     private static final List<String> SECTION_ORDER =
-            Arrays.asList("Appearance", "Restrictions", "Search", "Permissions");
+            Arrays.asList("Appearance", "Notes", "Restrictions", "Search", "Permissions");
 
     private LinearLayout root;
     private Typeface georgia;
@@ -90,6 +90,9 @@ public class SettingsActivity extends Activity {
 
 entries.add(new Entry("Appearance", "Home screen art", row("Home screen art",
                 v -> startActivity(new Intent(this, PixelSceneActivity.class)))));
+
+        entries.add(new Entry("Notes", "Notes", row("Notes",
+                v -> startActivity(new Intent(this, NoteSettingsActivity.class)))));
 
         entries.add(new Entry("Restrictions", "App lock", row("App lock",
                 v -> startActivity(new Intent(this, LockedAppsActivity.class)))));

@@ -173,6 +173,22 @@
         <activity
             android:name=".NoteEditActivity"
             android:exported="false"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
+            android:name=".NoteSettingsActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
+            android:name=".NotePinGateActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
+            android:name=".NoteLockChangeActivity"
+            android:exported="false"
             android:theme="@style/Theme.PlainPhone" />
 
         <activity
