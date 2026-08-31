@@ -7,11 +7,13 @@ class Fonts {
 
     private static Typeface georgia;
     private static Typeface ibmPlexMono;
+    private static Typeface excalifont;
 
     static Typeface current(Context context) {
         return switch (Config.getFontChoice(context)) {
             case IBM_PLEX_MONO -> ibmPlexMono(context);
             case GEORGIA -> georgia(context);
+            case EXCALIFONT -> excalifont(context);
         };
     }
 
@@ -27,6 +29,13 @@ class Fonts {
             ibmPlexMono = Typeface.createFromAsset(context.getAssets(), "fonts/ibmplexmono.ttf");
         }
         return ibmPlexMono;
+    }
+
+    static synchronized Typeface excalifont(Context context) {
+        if (excalifont == null) {
+            excalifont = Typeface.createFromAsset(context.getAssets(), "fonts/excalifont.ttf");
+        }
+        return excalifont;
     }
 }
 
