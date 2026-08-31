@@ -78,13 +78,17 @@ public class AppMonitorService extends AccessibilityService {
             service.cancelPendingTeardown();
             service.endSession();
             service.cancelCountdown();
-            service.cancelBudgetTimer();
             service.currentGatedPackage = packageName;
             service.currentGateKind = GateKind.COUNTDOWN;
             service.sessionPackage = packageName;
             service.sessionStartMillis = SystemClock.elapsedRealtime();
             UsageStore.recordOpen(service, packageName);
-            if (Config.isBudgetEnabled(service)) {
+            // Arm the auto-close budget once and let it keep running across leaving
+            // and re-entering the app — a re-open shows the wait screen again but
+            // does not hand out a fresh budget.
+            if (Config.isBudgetEnabled(service)
+                    && (service.budgetRunnable == null
+                        || !packageName.equals(service.budgetPackage))) {
                 service.startBudgetTimer(packageName);
             }
         }
@@ -120,6 +124,7 @@ public class AppMonitorService extends AccessibilityService {
     private View overlayRoot = null;
     private TextView countdownText = null;
     private Runnable budgetRunnable = null;
+    private String budgetPackage = null;
     private Runnable warningRunnable = null;
     private Runnable pendingTeardown = null;
     private Runnable countdownRunnable = null;
@@ -182,7 +187,8 @@ public class AppMonitorService extends AccessibilityService {
                 boolean wasGated = currentGatedPackage != null;
                 cancelPendingTeardown();
                 cancelCountdown();
-                cancelBudgetTimer();
+                // Leave budgetRunnable alone — a flagged app's auto-close budget keeps
+                // ticking while you're away and is not reset when you go back to it.
                 currentGatedPackage = null;
                 currentGateKind = null;
                 removeOverlay();
@@ -499,6 +505,7 @@ public class AppMonitorService extends AccessibilityService {
 
     private void startBudgetTimer(String packageName) {
         cancelBudgetTimer();
+        budgetPackage = packageName;
         long budgetMillis = Config.getBudgetMinutes(this) * 60 * 1000L;
 
         long warningDelay = budgetMillis - WARNING_LEAD_MILLIS;
@@ -512,11 +519,15 @@ public class AppMonitorService extends AccessibilityService {
         }
 
         budgetRunnable = () -> {
+            budgetRunnable = null;
+            budgetPackage = null;
+            // The budget is spent — apply the reopen lockout even if the user stepped
+            // away just before it expired.
+            if (Config.isLockoutEnabled(this)) {
+                Config.setLockoutUntil(this, packageName,
+                        System.currentTimeMillis() + Config.getLockoutMinutes(this) * 60 * 1000L);
+            }
             if (packageName.equals(lastForegroundPackage)) {
-                if (Config.isLockoutEnabled(this)) {
-                    Config.setLockoutUntil(this, packageName,
-                            System.currentTimeMillis() + Config.getLockoutMinutes(this) * 60 * 1000L);
-                }
                 performGlobalAction(GLOBAL_ACTION_HOME);
             }
         };
@@ -528,6 +539,7 @@ public class AppMonitorService extends AccessibilityService {
             handler.removeCallbacks(budgetRunnable);
             budgetRunnable = null;
         }
+        budgetPackage = null;
         if (warningRunnable != null) {
             handler.removeCallbacks(warningRunnable);
             warningRunnable = null;
@@ -539,7 +551,7 @@ public class AppMonitorService extends AccessibilityService {
         pendingTeardown = () -> {
             pendingTeardown = null;
             cancelCountdown();
-            cancelBudgetTimer();
+            // Keep budgetRunnable alive — see the flag-budget note in onAccessibilityEvent.
             currentGatedPackage = null;
             currentGateKind = null;
             removeOverlay();
