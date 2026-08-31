@@ -78,6 +78,7 @@ public class SettingsActivity extends Activity {
     }
 
     private void render() {
+        georgia = Fonts.current(this);
         root.removeAllViews();
 
         List<Entry> entries = new ArrayList<>();

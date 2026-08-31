@@ -56,6 +56,7 @@ public class SearchSettingsActivity extends Activity {
     }
 
     private void render() {
+        georgia = Fonts.current(this);
         root.removeAllViews();
 
         List<Entry> entries = new ArrayList<>();
