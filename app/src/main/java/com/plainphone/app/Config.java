@@ -221,6 +221,29 @@ class Config {
         prefs(context).edit().putString("time_blocks", arr.toString()).apply();
     }
 
+    static List<Note> getNotes(Context context) {
+        String stored = prefs(context).getString("notes", null);
+        List<Note> notes = new ArrayList<>();
+        if (stored == null) return notes;
+        try {
+            JSONArray arr = new JSONArray(stored);
+            for (int i = 0; i < arr.length(); i++) {
+                notes.add(Note.fromJson(arr.getJSONObject(i)));
+            }
+        } catch (JSONException e) {
+            return new ArrayList<>();
+        }
+        return notes;
+    }
+
+    static void setNotes(Context context, List<Note> notes) {
+        JSONArray arr = new JSONArray();
+        for (Note note : notes) {
+            arr.put(note.toJson());
+        }
+        prefs(context).edit().putString("notes", arr.toString()).apply();
+    }
+
     static String getAdhocBlockId(Context context) {
         return prefs(context).getString("adhoc_block_id", null);
     }
@@ -316,6 +339,19 @@ class Config {
 
     static void setFontChoice(Context context, FontChoice font) {
         prefs(context).edit().putString("font_choice", font.name()).apply();
+    }
+
+    static HomeMode getHomeMode(Context context) {
+        String stored = prefs(context).getString("home_mode", HomeMode.APPS.name());
+        try {
+            return HomeMode.valueOf(stored);
+        } catch (IllegalArgumentException e) {
+            return HomeMode.APPS;
+        }
+    }
+
+    static void setHomeMode(Context context, HomeMode mode) {
+        prefs(context).edit().putString("home_mode", mode.name()).apply();
     }
 
     static boolean isPinSet(Context context) {

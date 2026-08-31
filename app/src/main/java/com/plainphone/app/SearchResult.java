@@ -4,6 +4,7 @@ class SearchResult {
 
     enum Kind {
         APP("Apps"),
+        NOTE("Notes"),
         PLAIN("Plain"),
         SYSTEM("Phone settings"),
         WEB("Web"),
