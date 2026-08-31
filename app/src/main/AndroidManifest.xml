@@ -171,6 +171,11 @@
             android:theme="@style/Theme.PlainPhone" />
 
         <activity
+            android:name=".NoteEditActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
             android:name=".TimeBlocksActivity"
             android:exported="false"
             android:theme="@style/Theme.PlainPhone" />

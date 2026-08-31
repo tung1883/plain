@@ -65,6 +65,10 @@ public class MainActivity extends Activity {
     private Runnable pendingDeviceSearch;
     private int deviceSearchToken;
     private TextView timeBlockRow;
+    private ListView listView;
+    private SwipeSwitcher swipeSwitcher;
+    private LinearLayout modeToggle;
+    private HomeMode homeMode = HomeMode.APPS;
     private FrameLayout artFrame;
     private boolean showingHomeReminder = false;
     private boolean homeUiBuilt = false;
@@ -113,6 +117,8 @@ public class MainActivity extends Activity {
                 return;
             }
 
+            listView.setTranslationX(0f);
+            listView.setAlpha(1f);
             refreshApps();
 
             WebSearch.forget();
@@ -254,6 +260,7 @@ public class MainActivity extends Activity {
         allApps = loaded;
         rows = new ArrayList<>();
         collapsedSections = Config.getCollapsedSections(this);
+        homeMode = Config.getHomeMode(this);
         homeUiBuilt = true;
         builtWithFont = Config.getFontChoice(this);
 
@@ -329,11 +336,44 @@ public class MainActivity extends Activity {
 
         root.addView(divider());
 
-        ListView listView = new ListView(this);
+        modeToggle = buildModeToggle(georgia);
+        root.addView(modeToggle, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        listView = new ListView(this);
         listView.setBackgroundColor(Color.BLACK);
         listView.setDivider(null);
         listView.setDividerHeight(0);
-        root.addView(listView, new LinearLayout.LayoutParams(
+        listView.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        listView.setSelector(new ColorDrawable(Color.TRANSPARENT));
+        listView.setCacheColorHint(Color.BLACK);
+        listView.setScrollingCacheEnabled(false);
+
+        swipeSwitcher = new SwipeSwitcher(this);
+        swipeSwitcher.addView(listView, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        swipeSwitcher.setHandler(new SwipeSwitcher.Handler() {
+            @Override
+            public boolean canGo(int dir) {
+                return sectionAt(dir) != null;
+            }
+
+            @Override
+            public void switchSection(int dir) {
+                HomeMode target = sectionAt(dir);
+                if (target == null) return;
+                homeMode = target;
+                Config.setHomeMode(MainActivity.this, target);
+                refreshModeToggle();
+                if (search.getText().length() > 0) {
+                    search.setText("");
+                } else {
+                    renderRows();
+                }
+                listView.setSelectionAfterHeaderView();
+            }
+        });
+        root.addView(swipeSwitcher, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
 
         setContentView(root);
@@ -360,6 +400,10 @@ public class MainActivity extends Activity {
 
             if (result.payload instanceof ResolveInfo) {
                 showAppOptions((ResolveInfo) result.payload);
+                return true;
+            }
+            if (result.payload instanceof Note) {
+                confirmDeleteNote((Note) result.payload);
                 return true;
             }
             if (result.payload instanceof FileIndex.Entry) {
@@ -435,9 +479,15 @@ public class MainActivity extends Activity {
         rows.clear();
         String needle = currentQuery;
 
-        addGroup(SearchResult.Kind.APP, appResults(currentSearch), !needle.isEmpty());
-        if (!needle.isEmpty()) {
-
+        if (needle.isEmpty()) {
+            if (homeMode == HomeMode.NOTES) {
+                rows.add(newNoteRow());
+                rows.addAll(noteBrowseResults());
+            } else {
+                addGroup(SearchResult.Kind.APP, appResults(currentSearch), false);
+            }
+        } else {
+            addGroup(SearchResult.Kind.APP, appResults(currentSearch), true);
             for (SearchResult.Kind kind : SearchResult.Kind.values()) {
                 if (kind == SearchResult.Kind.APP) continue;
                 addGroup(kind, resultsFor(kind, needle), true);
@@ -449,6 +499,7 @@ public class MainActivity extends Activity {
 
     private List<SearchResult> resultsFor(SearchResult.Kind kind, String needle) {
         switch (kind) {
+            case NOTE: return noteResults(needle);
             case PLAIN: return SearchTargets.plain(this, currentSearch);
             case SYSTEM: return SearchTargets.system(this, currentSearch);
             case WEB: return webResults();
@@ -503,6 +554,140 @@ public class MainActivity extends Activity {
                     () -> launchApp(info), info));
         }
         return results;
+    }
+
+    private List<SearchResult> noteBrowseResults() {
+        List<Note> notes = Config.getNotes(this);
+        Collections.sort(notes, (a, b) -> Long.compare(b.updatedAt, a.updatedAt));
+        List<SearchResult> results = new ArrayList<>();
+        for (int i = 0; i < notes.size(); i++) {
+            Note note = notes.get(i);
+            results.add(new SearchResult(SearchResult.Kind.NOTE, note.title(), note.preview(), i,
+                    () -> openNote(note.id), note));
+        }
+        return results;
+    }
+
+    private List<SearchResult> noteResults(String needle) {
+        List<SearchResult> results = new ArrayList<>();
+        for (Note note : Config.getNotes(this)) {
+            int score = TextMatch.score(note.text, currentSearch);
+            if (score == TextMatch.NO_MATCH) continue;
+            results.add(new SearchResult(SearchResult.Kind.NOTE, note.title(), note.preview(), score,
+                    () -> openNote(note.id), note));
+        }
+        return results;
+    }
+
+    private SearchResult newNoteRow() {
+        return new SearchResult(SearchResult.Kind.NOTE, "+ New note", null, -1, () -> {
+            Note note = Note.create();
+            List<Note> all = Config.getNotes(this);
+            all.add(note);
+            Config.setNotes(this, all);
+            openNote(note.id);
+        });
+    }
+
+    private void openNote(String id) {
+        Intent intent = new Intent(this, NoteEditActivity.class);
+        intent.putExtra("noteId", id);
+        startActivity(intent);
+    }
+
+    private void confirmDeleteNote(Note note) {
+        Typeface georgia = Fonts.current(this);
+
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackground(popupBackground());
+        root.setPadding(48, 40, 48, 24);
+
+        TextView title = new TextView(this);
+        title.setText("Delete this note?");
+        title.setTextColor(Color.WHITE);
+        title.setTextSize(18);
+        title.setTypeface(georgia);
+        root.addView(title);
+
+        TextView body = new TextView(this);
+        body.setText(note.title());
+        body.setTextColor(Color.GRAY);
+        body.setTextSize(14);
+        body.setTypeface(georgia);
+        body.setPadding(0, 16, 0, 8);
+        root.addView(body);
+
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
+                .setView(root)
+                .create();
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        }
+
+        root.addView(optionRow(georgia, "Cancel", v -> dialog.dismiss()));
+        root.addView(optionRow(georgia, "Delete", v -> {
+            dialog.dismiss();
+            List<Note> notes = Config.getNotes(this);
+            java.util.Iterator<Note> it = notes.iterator();
+            while (it.hasNext()) {
+                if (it.next().id.equals(note.id)) it.remove();
+            }
+            Config.setNotes(this, notes);
+            filter(search.getText().toString());
+        }));
+
+        dialog.show();
+        if (dialog.getWindow() != null) {
+            android.view.WindowManager.LayoutParams params = dialog.getWindow().getAttributes();
+            params.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.85);
+            dialog.getWindow().setAttributes(params);
+        }
+    }
+
+    private LinearLayout buildModeToggle(Typeface georgia) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setPadding(48, 28, 48, 20);
+
+        HomeMode[] modes = HomeMode.values();
+        for (HomeMode mode : modes) {
+            TextView tab = new TextView(this);
+            tab.setText(mode.label.toUpperCase());
+            tab.setTypeface(georgia);
+            tab.setTextSize(13);
+            tab.setLetterSpacing(0.15f);
+            tab.setPadding(0, 8, 56, 8);
+            tab.setOnClickListener(v -> switchMode(mode));
+            row.addView(tab, new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        }
+        refreshTabColors(row);
+        return row;
+    }
+
+    private void refreshModeToggle() {
+        if (modeToggle != null) refreshTabColors(modeToggle);
+    }
+
+    private HomeMode sectionAt(int dir) {
+        int next = homeMode.ordinal() + dir;
+        HomeMode[] modes = HomeMode.values();
+        return (next >= 0 && next < modes.length) ? modes[next] : null;
+    }
+
+    /** Tab tap: animated slide to the target section. */
+    private void switchMode(HomeMode target) {
+        if (homeMode == target) return;
+        swipeSwitcher.performSwitch(target.ordinal() > homeMode.ordinal() ? 1 : -1);
+    }
+
+    private void refreshTabColors(LinearLayout row) {
+        HomeMode[] modes = HomeMode.values();
+        for (int i = 0; i < row.getChildCount() && i < modes.length; i++) {
+            TextView tab = (TextView) row.getChildAt(i);
+            tab.setTextColor(modes[i] == homeMode ? Color.WHITE : Color.DKGRAY);
+        }
     }
 
     private List<SearchResult> fileResults(String needle) {
