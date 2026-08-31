@@ -178,9 +178,18 @@ public class AppMonitorService extends AccessibilityService {
             return;
         }
 
+        String previousPackage = lastForegroundPackage;
         lastForegroundPackage = packageName;
 
         if (packageName.equals(getPackageName())) {
+
+            // Back at the home screen — a locked app the user just left re-locks now,
+            // instead of coasting on its unlock grace window.
+            if (className.equals(getPackageName() + ".MainActivity")
+                    && previousPackage != null
+                    && Config.getLockedPackages(this).contains(previousPackage)) {
+                Config.clearAppUnlock(this, previousPackage);
+            }
 
             if (className.startsWith(getPackageName() + ".")) {
 
