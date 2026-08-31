@@ -51,6 +51,8 @@ public class MainActivity extends Activity {
     private List<Object> rows;
     private SearchResultsAdapter adapter;
     private EditText search;
+    private Drawable searchIcon;
+    private Drawable clearIcon;
 
     private Set<String> collapsedSections;
 
@@ -315,6 +317,24 @@ public class MainActivity extends Activity {
         search.setImeOptions(EditorInfo.IME_ACTION_GO);
         search.setPadding(48, 32, 48, 32);
         search.setTypeface(georgia);
+        search.setCompoundDrawablePadding(24);
+
+        int iconPx = (int) (16 * getResources().getDisplayMetrics().density);
+        searchIcon = getResources().getDrawable(R.drawable.ic_search, getTheme());
+        clearIcon = MiniIcons.cross(iconPx, Color.WHITE);
+        updateSearchAffordance();
+        search.setOnTouchListener((v, ev) -> {
+            if (ev.getAction() == android.view.MotionEvent.ACTION_UP
+                    && search.getText().length() > 0) {
+                int hit = clearIcon.getBounds().width() + search.getPaddingRight();
+                if (ev.getX() >= search.getWidth() - hit) {
+                    search.setText("");
+                    return true;
+                }
+            }
+            return false;
+        });
+
         root.addView(search, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
@@ -482,6 +502,7 @@ public class MainActivity extends Activity {
 
             @Override
             public void onTextChanged(CharSequence s, int start, int before, int count) {
+                updateSearchAffordance();
                 filter(s.toString());
             }
 
@@ -523,6 +544,11 @@ public class MainActivity extends Activity {
 
         renderRows();
         if (!Lock.SEARCH.gateActive(this)) scheduleDeviceSearch(currentQuery);
+    }
+
+    private void updateSearchAffordance() {
+        Drawable end = search.getText().length() == 0 ? searchIcon : clearIcon;
+        search.setCompoundDrawablesWithIntrinsicBounds(null, null, end, null);
     }
 
     private void lockAll() {
