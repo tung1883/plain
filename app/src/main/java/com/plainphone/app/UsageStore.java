@@ -21,6 +21,7 @@ class UsageStore {
     private static final SimpleDateFormat DAY_FORMAT = new SimpleDateFormat("yyyyMMdd", Locale.US);
 
     static class Entry {
+        String packageName;
         String label;
         long millis;
         int opens;
@@ -88,6 +89,7 @@ class UsageStore {
         List<Entry> entries = new ArrayList<>();
         for (String pkg : involved) {
             Entry entry = new Entry();
+            entry.packageName = pkg;
             entry.label = friendlyName(context, pkg);
             entry.millis = millisTotals.getOrDefault(pkg, 0L);
             entry.opens = openTotals.getOrDefault(pkg, 0);
@@ -97,7 +99,7 @@ class UsageStore {
         return entries;
     }
 
-    private static String friendlyName(Context context, String pkg) {
+    static String friendlyName(Context context, String pkg) {
         switch (pkg) {
             case "com.instagram.android": return "Instagram";
             case "com.zhiliaoapp.musically": return "TikTok";

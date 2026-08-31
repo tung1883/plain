@@ -70,12 +70,8 @@ public class MainActivity extends Activity {
     private LinearLayout modeToggle;
     private HomeMode homeMode = HomeMode.APPS;
 
-    private StatsActivity.Range statsRange = StatsActivity.Range.WEEK;
-    private StatsActivity.Range statsLoadedRange;
-    private boolean statsLoading;
-    private List<UsageStore.Entry> statsFlagged = new ArrayList<>();
-    private List<AllAppsUsage.Entry> statsAll = new ArrayList<>();
-    private boolean statsHasAccess;
+    private StatsPanel statsPanel;
+    private boolean statsPanelShown;
 
     private static final int REQUEST_NOTES_UNLOCK = 4301;
     private static final int REQUEST_PICK_NOTES_FOLDER = 4302;
@@ -157,6 +153,7 @@ public class MainActivity extends Activity {
 
             listView.setTranslationX(0f);
             listView.setAlpha(1f);
+            statsPanelShown = false;
             refreshApps();
 
             WebSearch.forget();
@@ -171,6 +168,7 @@ public class MainActivity extends Activity {
 
         searchHandler.removeCallbacksAndMessages(null);
         FileIndex.setListener(null);
+        if (statsPanel != null) statsPanel.shutdown();
     }
 
     private void refreshTimeBlockRow() {
@@ -387,8 +385,17 @@ public class MainActivity extends Activity {
         listView.setCacheColorHint(Color.BLACK);
         listView.setScrollingCacheEnabled(false);
 
+        statsPanel = new StatsPanel(this);
+        statsPanel.view().setVisibility(View.GONE);
+
+        FrameLayout swipeContent = new FrameLayout(this);
+        swipeContent.addView(listView, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        swipeContent.addView(statsPanel.view(), new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+
         swipeSwitcher = new SwipeSwitcher(this);
-        swipeSwitcher.addView(listView, new FrameLayout.LayoutParams(
+        swipeSwitcher.addView(swipeContent, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         swipeSwitcher.setHandler(new SwipeSwitcher.Handler() {
             @Override
@@ -535,6 +542,22 @@ public class MainActivity extends Activity {
             modeToggle.setVisibility(needle.isEmpty() ? View.VISIBLE : View.GONE);
         }
 
+        boolean showStats = homeMode == HomeMode.STATS && needle.isEmpty();
+        if (statsPanel != null) {
+            statsPanel.view().setVisibility(showStats ? View.VISIBLE : View.GONE);
+            listView.setVisibility(showStats ? View.GONE : View.VISIBLE);
+            if (showStats && !statsPanelShown) {
+                statsPanelShown = true;
+                statsPanel.render();
+            } else if (!showStats) {
+                statsPanelShown = false;
+            }
+        }
+        if (showStats) {
+            adapter.notifyDataSetChanged();
+            return;
+        }
+
         if (needle.isEmpty()) {
             if (homeMode == HomeMode.NOTES) {
                 if (Lock.NOTES.gateActive(this)) {
@@ -549,8 +572,6 @@ public class MainActivity extends Activity {
                 }
             } else if (homeMode == HomeMode.TODOS) {
                 renderTodoSection();
-            } else if (homeMode == HomeMode.STATS) {
-                renderStatsInlineSection();
             } else if (Lock.APPS.gateActive(this)) {
                 rows.add(new SearchResult(SearchResult.Kind.APP, "App list is locked",
                         "Tap to unlock", -1, () -> startActivityForResult(
@@ -741,71 +762,6 @@ public class MainActivity extends Activity {
             params.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.85);
             dialog.getWindow().setAttributes(params);
         }
-    }
-
-    private void renderStatsInlineSection() {
-        rows.add(new SearchResult(SearchResult.Kind.STAT, "Range: " + statsRange.label,
-                "Tap to change", -1, () -> {
-            StatsActivity.Range[] v = StatsActivity.Range.values();
-            statsRange = v[(statsRange.ordinal() + 1) % v.length];
-            statsLoadedRange = null;
-            renderRows();
-        }));
-
-        if (statsLoadedRange != statsRange) {
-            if (!statsLoading) loadStatsInline();
-            rows.add(new SearchResult(SearchResult.Kind.STAT, "Loading…", null, -1, () -> {}));
-            return;
-        }
-
-        rows.add(new SearchResult(SearchResult.Kind.STAT,
-                "Flagged apps — " + statsRange.label, null, -1, () -> {}));
-        if (statsFlagged.isEmpty()) {
-            rows.add(new SearchResult(SearchResult.Kind.STAT, "(no usage)", null, -1, () -> {}));
-        } else {
-            for (UsageStore.Entry e : statsFlagged) {
-                rows.add(new SearchResult(SearchResult.Kind.STAT, e.label,
-                        StatsActivity.formatDuration(e.millis) + " · "
-                                + e.opens + (e.opens == 1 ? " open" : " opens"), -1, () -> {}));
-            }
-        }
-
-        rows.add(new SearchResult(SearchResult.Kind.STAT,
-                "All apps — " + statsRange.label, null, -1, () -> {}));
-        if (!statsHasAccess) {
-            rows.add(new SearchResult(SearchResult.Kind.STAT, "Grant usage access",
-                    "Tap to allow", -1, () -> startActivity(
-                    new Intent(android.provider.Settings.ACTION_USAGE_ACCESS_SETTINGS))));
-        } else if (statsAll.isEmpty()) {
-            rows.add(new SearchResult(SearchResult.Kind.STAT, "(no usage)", null, -1, () -> {}));
-        } else {
-            for (AllAppsUsage.Entry a : statsAll) {
-                rows.add(new SearchResult(SearchResult.Kind.STAT, a.label,
-                        StatsActivity.formatDuration(a.thisWeekMillis), -1, () -> {}));
-            }
-        }
-    }
-
-    private void loadStatsInline() {
-        statsLoading = true;
-        final StatsActivity.Range r = statsRange;
-        new Thread(() -> {
-            java.util.Set<String> flagged = Config.getFlaggedPackages(this);
-            List<UsageStore.Entry> f = UsageStore.rangeUsage(this, flagged, r.startOffset, 0);
-            boolean access = AllAppsUsage.hasUsageAccess(this);
-            List<AllAppsUsage.Entry> a = access
-                    ? AllAppsUsage.topApps(this, 12, StatsActivity.rangeStartMillis(r),
-                            System.currentTimeMillis())
-                    : new ArrayList<>();
-            runOnUiThread(() -> {
-                statsFlagged = f;
-                statsAll = a;
-                statsHasAccess = access;
-                statsLoadedRange = r;
-                statsLoading = false;
-                if (homeMode == HomeMode.STATS) renderRows();
-            });
-        }).start();
     }
 
     private void renderTodoSection() {
