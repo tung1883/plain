@@ -269,6 +269,21 @@ class Notes {
         }
     }
 
+    /** Minimum time a Notes unlock stays valid, refreshed while notes are in use. */
+    private static final long UNLOCK_GRACE_MS = 30_000L;
+
+    static boolean isUnlocked(Context context) {
+        return System.currentTimeMillis() < Config.getNotesUnlockUntil(context);
+    }
+
+    /** Call on a successful PIN entry, and while notes are actively shown. */
+    static void keepUnlocked(Context context) {
+        long until = System.currentTimeMillis() + UNLOCK_GRACE_MS;
+        if (until - Config.getNotesUnlockUntil(context) > 5_000L) {
+            Config.setNotesUnlockUntil(context, until);
+        }
+    }
+
     /** Shared lock toggle for the settings screen and the home Notes rows. */
     static void toggleLock(Activity host, Runnable after) {
         if (Config.getNotesLocked(host)) {
@@ -278,6 +293,7 @@ class Notes {
                     Toast.LENGTH_LONG).show();
         } else {
             Config.setNotesLocked(host, true);
+            Config.setNotesUnlockUntil(host, 0L);
             if (after != null) after.run();
         }
     }

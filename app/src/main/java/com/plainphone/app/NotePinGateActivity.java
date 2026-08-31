@@ -115,6 +115,7 @@ public class NotePinGateActivity extends Activity {
         }
 
         submitted = true;
+        Notes.keepUnlocked(this);
         setResult(RESULT_OK);
         finish();
     }
