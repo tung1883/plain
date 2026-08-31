@@ -44,6 +44,7 @@ public class NoteSettingsActivity extends Activity {
     }
 
     private void render() {
+        georgia = Fonts.current(this);
         root.removeAllViews();
 
         root.addView(row("Export folder: " + Notes.exportFolderLabel(this),

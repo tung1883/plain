@@ -45,6 +45,7 @@ public class TodoSettingsActivity extends Activity {
     private static final int REQUEST_PICK_TODO_FILE = 4311;
 
     private void render() {
+        georgia = Fonts.current(this);
         root.removeAllViews();
 
         root.addView(sectionHeader("Lock"));
