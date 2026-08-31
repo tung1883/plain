@@ -118,7 +118,6 @@ public class AppMonitorService extends AccessibilityService {
     private GateKind currentGateKind = null;
     private View overlayRoot = null;
     private TextView countdownText = null;
-    private EditText pinInput = null;
     private Runnable budgetRunnable = null;
     private Runnable warningRunnable = null;
     private Runnable pendingTeardown = null;
@@ -396,127 +395,12 @@ public class AppMonitorService extends AccessibilityService {
 
     private void showPinEntry(String packageName) {
         if (!packageName.equals(currentGatedPackage)) return;
-        if (overlayRoot == null) {
-            addPinOverlay(packageName);
-        }
-    }
-
-    private void addPinOverlay(String packageName) {
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setGravity(Gravity.CENTER);
-        root.setBackgroundColor(Color.BLACK);
-        root.setPadding(48, 48, 48, 48);
-
-        Typeface georgia = Fonts.current(this);
-
-        TextView title = new TextView(this);
-        title.setTextColor(Color.WHITE);
-        title.setTextSize(24);
-        title.setGravity(Gravity.CENTER);
-        title.setTypeface(georgia);
-        title.setText("Enter PIN");
-        root.addView(title);
-
-        LinearLayout inputRow = new LinearLayout(this);
-        inputRow.setOrientation(LinearLayout.HORIZONTAL);
-        inputRow.setGravity(Gravity.CENTER);
-
-        EditText input = new EditText(this);
-        input.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
-        input.setFilters(new InputFilter[]{new InputFilter.LengthFilter(6)});
-        input.setGravity(Gravity.CENTER);
-        input.setImeOptions(EditorInfo.IME_ACTION_DONE);
-        UiKit.style(this, input);
-        input.setOnEditorActionListener((v, actionId, event) -> {
-            if (actionId == EditorInfo.IME_ACTION_DONE) {
-                submitPin(packageName, input.getText().toString());
-                return true;
-            }
-            return false;
-        });
-        input.addTextChangedListener(new TextWatcher() {
-            @Override
-            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-
-            @Override
-            public void onTextChanged(CharSequence s, int start, int before, int count) {}
-
-            @Override
-            public void afterTextChanged(Editable s) {
-
-                if (s.length() >= 4 && Config.checkLockPin(AppMonitorService.this, s.toString())) {
-                    submitPin(packageName, s.toString());
-                }
-            }
-        });
-        inputRow.addView(input, new LinearLayout.LayoutParams(0,
-                LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-
-        Button unlockButton = new Button(this);
-        unlockButton.setText("Unlock");
-        UiKit.style(this, unlockButton);
-        unlockButton.setOnClickListener(v -> submitPin(packageName, input.getText().toString()));
-        LinearLayout.LayoutParams unlockParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        unlockParams.leftMargin = 24;
-        inputRow.addView(unlockButton, unlockParams);
-
-        LinearLayout.LayoutParams inputRowParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        inputRowParams.topMargin = 48;
-        root.addView(inputRow, inputRowParams);
-
-        Button closeButton = new Button(this);
-        closeButton.setText("Close");
-        UiKit.style(this, closeButton);
-        closeButton.setOnClickListener(v -> closeGatedApp());
-        LinearLayout.LayoutParams closeParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        closeParams.topMargin = 24;
-        root.addView(closeButton, closeParams);
-
-        root.setFocusableInTouchMode(true);
-        root.setOnKeyListener((v, keyCode, event) -> {
-            if (keyCode == KeyEvent.KEYCODE_BACK && event.getAction() == KeyEvent.ACTION_UP) {
-                closeGatedApp();
-                return true;
-            }
-            return false;
-        });
-
-        WindowManager.LayoutParams params = new WindowManager.LayoutParams(
-                WindowManager.LayoutParams.MATCH_PARENT,
-                WindowManager.LayoutParams.MATCH_PARENT,
-                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-                0,
-                PixelFormat.OPAQUE);
-
-        params.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE;
-
-        WindowManager wm = (WindowManager) getSystemService(WINDOW_SERVICE);
-        wm.addView(root, params);
-        overlayRoot = root;
-        pinInput = input;
-        root.requestFocus();
-        input.requestFocus();
-        input.post(() -> {
-            InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
-            if (imm != null) {
-                imm.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT);
-            }
-        });
-    }
-
-    private void submitPin(String packageName, String pin) {
-        if (Config.checkLockPin(this, pin)) {
-            Config.markAppUnlocked(this, packageName);
-            removeOverlay();
-
-        } else if (pinInput != null) {
-            pinInput.setText("");
-            pinInput.requestFocus();
-        }
+        Intent gate = new Intent(this, PinGateActivity.class);
+        gate.putExtra("package", packageName);
+        gate.putExtra("label", AllAppsUsage.label(getPackageManager(), packageName));
+        gate.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        startActivity(gate);
+        closeGatedApp();
     }
 
     private void addOverlay() {
@@ -562,7 +446,6 @@ public class AppMonitorService extends AccessibilityService {
             wm.removeView(overlayRoot);
             overlayRoot = null;
             countdownText = null;
-            pinInput = null;
         }
     }
 
