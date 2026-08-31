@@ -26,6 +26,33 @@ class UsageStore {
         int opens;
     }
 
+    static class DayTotal {
+        String label;
+        long millis;
+    }
+
+    /** Per-day total usage across the given packages, oldest day first. */
+    static List<DayTotal> dailyTotals(Context context, Set<String> packages,
+                                     int startOffset, int endOffset, String labelPattern) {
+        SharedPreferences prefs = prefs(context);
+        SimpleDateFormat weekday = new SimpleDateFormat(labelPattern, Locale.US);
+        List<DayTotal> out = new ArrayList<>();
+        for (int offset = startOffset; offset <= endOffset; offset++) {
+            Calendar cal = Calendar.getInstance();
+            cal.add(Calendar.DAY_OF_YEAR, offset);
+            String day = DAY_FORMAT.format(cal.getTime());
+            long millis = 0L;
+            for (String pkg : packages) {
+                millis += prefs.getLong("millis_" + day + "_" + pkg, 0L);
+            }
+            DayTotal dt = new DayTotal();
+            dt.label = weekday.format(cal.getTime());
+            dt.millis = millis;
+            out.add(dt);
+        }
+        return out;
+    }
+
     static void recordOpen(Context context, String packageName) {
         String key = "opens_" + today() + "_" + packageName;
         SharedPreferences prefs = prefs(context);
@@ -61,7 +88,7 @@ class UsageStore {
         List<Entry> entries = new ArrayList<>();
         for (String pkg : involved) {
             Entry entry = new Entry();
-            entry.label = friendlyName(pkg);
+            entry.label = friendlyName(context, pkg);
             entry.millis = millisTotals.getOrDefault(pkg, 0L);
             entry.opens = openTotals.getOrDefault(pkg, 0);
             entries.add(entry);
@@ -70,15 +97,15 @@ class UsageStore {
         return entries;
     }
 
-    private static String friendlyName(String pkg) {
+    private static String friendlyName(Context context, String pkg) {
         switch (pkg) {
             case "com.instagram.android": return "Instagram";
             case "com.zhiliaoapp.musically": return "TikTok";
             case "com.google.android.youtube": return "YouTube";
             case "com.twitter.android": return "Twitter";
             case "com.whatsapp": return "WhatsApp";
-            default: return pkg;
         }
+        return AllAppsUsage.label(context.getPackageManager(), pkg);
     }
 
     private static SharedPreferences prefs(Context context) {
