@@ -6,7 +6,6 @@ class SearchResult {
         APP("Apps"),
         NOTE("Notes"),
         TODO("To-do"),
-        STAT("Stats"),
         PLAIN("Plain"),
         SYSTEM("Phone settings"),
         WEB("Web"),

@@ -15,6 +15,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 class AllAppsUsage {
 
@@ -69,9 +70,29 @@ class AllAppsUsage {
         return list;
     }
 
+    /** System foreground time for the given packages over a window, by package. */
+    static Map<String, Long> foregroundMillis(Context context, Set<String> packages,
+                                              long startMillis, long endMillis) {
+        UsageStatsManager usm =
+                (UsageStatsManager) context.getSystemService(Context.USAGE_STATS_SERVICE);
+        Map<String, Long> all = aggregate(usm, startMillis, endMillis);
+        Map<String, Long> out = new HashMap<>();
+        for (String pkg : packages) {
+            Long v = all.get(pkg);
+            if (v != null && v > 0) out.put(pkg, v);
+        }
+        return out;
+    }
+
     /** Total foreground time across all apps, one bucket per day, oldest first. */
     static List<UsageStore.DayTotal> dailyTotals(Context context, int startOffset, int endOffset,
                                                  String labelPattern) {
+        return dailyTotals(context, null, startOffset, endOffset, labelPattern);
+    }
+
+    /** As {@link #dailyTotals(Context, int, int, String)}, limited to {@code packages} (null = all). */
+    static List<UsageStore.DayTotal> dailyTotals(Context context, Set<String> packages,
+                                                 int startOffset, int endOffset, String labelPattern) {
         UsageStatsManager usm =
                 (UsageStatsManager) context.getSystemService(Context.USAGE_STATS_SERVICE);
         SimpleDateFormat fmt = new SimpleDateFormat(labelPattern, Locale.US);
@@ -95,6 +116,7 @@ class AllAppsUsage {
             for (UsageStats s : stats) {
                 long fg = s.getTotalTimeInForeground();
                 if (fg <= 0) continue;
+                if (packages != null && !packages.contains(s.getPackageName())) continue;
                 int idx = (int) ((s.getFirstTimeStamp() - rangeStart) / dayMs);
                 if (idx >= 0 && idx < days) buckets[idx] += fg;
             }
