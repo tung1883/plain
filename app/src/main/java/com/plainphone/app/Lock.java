@@ -13,10 +13,10 @@ import android.widget.Toast;
  * name they are launched with.
  */
 enum Lock {
-    NOTES("notes", "Unlocking Notes", "Enter PIN to open Notes"),
-    TODOS("todos", "Unlocking To-do", "Enter PIN to open To-do"),
-    APPS("apps", "Unlocking the app list", "Enter PIN to open the app list"),
-    SEARCH("search", "Unlocking search", "Enter PIN to search");
+    NOTES("notes", "Unlocking Notes"),
+    TODOS("todos", "Unlocking To-do"),
+    APPS("apps", "Unlocking the app list"),
+    SEARCH("search", "Unlocking search");
 
     static final String EXTRA_LOCK = "lock";
 
@@ -25,12 +25,10 @@ enum Lock {
 
     final String area;
     final String frictionLabel;
-    final String pinPrompt;
 
-    Lock(String area, String frictionLabel, String pinPrompt) {
+    Lock(String area, String frictionLabel) {
         this.area = area;
         this.frictionLabel = frictionLabel;
-        this.pinPrompt = pinPrompt;
     }
 
     static Lock from(Intent intent) {
