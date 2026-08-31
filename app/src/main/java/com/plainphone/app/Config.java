@@ -252,6 +252,31 @@ class Config {
         prefs(context).edit().putBoolean("notes_locked", locked).apply();
     }
 
+    static long getNotesUnlockUntil(Context context) {
+        return prefs(context).getLong("notes_unlock_until", 0L);
+    }
+
+    static void setNotesUnlockUntil(Context context, long millis) {
+        prefs(context).edit().putLong("notes_unlock_until", millis).apply();
+    }
+
+    /** Grace window during which a PIN-unlocked app / feature won't re-prompt. */
+    static final long UNLOCK_GRACE_MS = 30_000L;
+
+    static boolean isAppRecentlyUnlocked(Context context, String packageName) {
+        return System.currentTimeMillis()
+                < prefs(context).getLong("app_unlock_until_" + packageName, 0L);
+    }
+
+    static void markAppUnlocked(Context context, String packageName) {
+        if (packageName == null) return;
+        long until = System.currentTimeMillis() + UNLOCK_GRACE_MS;
+        String key = "app_unlock_until_" + packageName;
+        if (until - prefs(context).getLong(key, 0L) > 5_000L) {
+            prefs(context).edit().putLong(key, until).apply();
+        }
+    }
+
     static String getNotesExportTree(Context context) {
         return prefs(context).getString("notes_export_tree", null);
     }

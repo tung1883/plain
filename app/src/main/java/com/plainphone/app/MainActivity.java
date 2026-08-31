@@ -69,7 +69,6 @@ public class MainActivity extends Activity {
     private SwipeSwitcher swipeSwitcher;
     private LinearLayout modeToggle;
     private HomeMode homeMode = HomeMode.APPS;
-    private boolean notesUnlocked;
 
     private static final int REQUEST_NOTES_UNLOCK = 4301;
     private static final int REQUEST_PICK_NOTES_FOLDER = 4302;
@@ -90,7 +89,6 @@ public class MainActivity extends Activity {
         super.onActivityResult(requestCode, resultCode, data);
         if (!homeUiBuilt) return;
         if (requestCode == REQUEST_NOTES_UNLOCK && resultCode == RESULT_OK) {
-            notesUnlocked = true;
             filter(search.getText().toString());
         } else if (requestCode == REQUEST_PICK_NOTES_FOLDER && resultCode == RESULT_OK) {
             Notes.saveFolderPick(this, data);
@@ -278,7 +276,6 @@ public class MainActivity extends Activity {
         rows = new ArrayList<>();
         collapsedSections = Config.getCollapsedSections(this);
         homeMode = Config.getHomeMode(this);
-        notesUnlocked = false;
         homeUiBuilt = true;
         builtWithFont = Config.getFontChoice(this);
 
@@ -504,6 +501,7 @@ public class MainActivity extends Activity {
                             "Tap to unlock", -1, () -> startActivityForResult(
                             new Intent(this, NotePinGateActivity.class), REQUEST_NOTES_UNLOCK)));
                 } else {
+                    if (Config.getNotesLocked(this)) Notes.keepUnlocked(this);
                     rows.add(newNoteRow());
                     rows.add(new SearchResult(SearchResult.Kind.NOTE,
                             "Export folder: " + Notes.exportFolderLabel(this), null, -1,
@@ -600,7 +598,7 @@ public class MainActivity extends Activity {
     }
 
     private boolean notesGateActive() {
-        return Config.getNotesLocked(this) && !notesUnlocked && Config.isPinSet(this);
+        return Config.getNotesLocked(this) && !Notes.isUnlocked(this) && Config.isPinSet(this);
     }
 
     private List<SearchResult> noteResults(String needle) {
@@ -626,6 +624,7 @@ public class MainActivity extends Activity {
     }
 
     private void openNote(String id) {
+        if (Config.getNotesLocked(this)) Notes.keepUnlocked(this);
         Intent intent = new Intent(this, NoteEditActivity.class);
         intent.putExtra("noteId", id);
         startActivity(intent);
@@ -865,7 +864,8 @@ public class MainActivity extends Activity {
             return;
         }
 
-        if (Config.getLockedPackages(this).contains(pkg)) {
+        if (Config.getLockedPackages(this).contains(pkg)
+                && !Config.isAppRecentlyUnlocked(this, pkg)) {
             Intent gate = new Intent(this, PinGateActivity.class);
             gate.putExtra("package", pkg);
             gate.putExtra("label", labelFor(info).toString());
@@ -879,6 +879,10 @@ public class MainActivity extends Activity {
             gate.putExtra("label", labelFor(info).toString());
             startActivity(gate);
             return;
+        }
+
+        if (Config.getLockedPackages(this).contains(pkg)) {
+            Config.markAppUnlocked(this, pkg);
         }
 
         Intent launchIntent = pm.getLaunchIntentForPackage(pkg);

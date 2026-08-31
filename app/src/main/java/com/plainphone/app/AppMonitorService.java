@@ -202,7 +202,8 @@ public class AppMonitorService extends AccessibilityService {
             if (!packageName.equals(currentGatedPackage)) {
                 startGate(packageName, GateKind.TIME_BLOCK);
             }
-        } else if (Config.getLockedPackages(this).contains(packageName)) {
+        } else if (Config.getLockedPackages(this).contains(packageName)
+                && !Config.isAppRecentlyUnlocked(this, packageName)) {
             if (SystemClock.elapsedRealtime() - homeReachedAt < HOME_COOLDOWN_MILLIS) {
                 return;
             }
@@ -210,6 +211,9 @@ public class AppMonitorService extends AccessibilityService {
             if (!packageName.equals(currentGatedPackage)) {
                 startGate(packageName, GateKind.PIN);
             }
+        } else if (Config.getLockedPackages(this).contains(packageName)) {
+            Config.markAppUnlocked(this, packageName);
+            if (currentGatedPackage != null) schedulePendingTeardown();
         } else if (Config.getFlaggedPackages(this).contains(packageName)) {
             if (SystemClock.elapsedRealtime() - homeReachedAt < HOME_COOLDOWN_MILLIS) {
                 return;
@@ -506,6 +510,7 @@ public class AppMonitorService extends AccessibilityService {
 
     private void submitPin(String packageName, String pin) {
         if (Config.checkLockPin(this, pin)) {
+            Config.markAppUnlocked(this, packageName);
             removeOverlay();
 
         } else if (pinInput != null) {

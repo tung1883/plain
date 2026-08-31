@@ -121,6 +121,7 @@ public class PinGateActivity extends Activity {
         }
 
         submitted = true;
+        Config.markAppUnlocked(this, packageName);
         Intent launchIntent = openIntent();
         if (launchIntent != null) {
             AppMonitorService.skipGateFor(packageName);
