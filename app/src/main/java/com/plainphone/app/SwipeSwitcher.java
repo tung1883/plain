@@ -131,6 +131,26 @@ class SwipeSwitcher extends FrameLayout {
         commit(dir);
     }
 
+    /** Tab tap on a non-adjacent section: one slide in `dir`, landing `steps` away. */
+    void performJump(int dir, int steps) {
+        if (animating || handler == null || steps < 1) return;
+        if (steps == 1) {
+            performSwitch(dir);
+            return;
+        }
+        View content = content();
+        if (content == null || !handler.canGo(dir)) return;
+        animating = true;
+        float width = Math.max(getWidth(), 1);
+        content.animate().translationX(-dir * width).setDuration(OUT_MS).setInterpolator(DECEL)
+                .withEndAction(() -> {
+                    for (int i = 0; i < steps; i++) handler.switchSection(dir);
+                    content.setTranslationX(dir * width);
+                    content.animate().translationX(0f).setDuration(IN_MS).setInterpolator(DECEL)
+                            .withEndAction(() -> animating = false).start();
+                }).start();
+    }
+
     private void commit(int dir) {
         View content = content();
         if (content == null) return;

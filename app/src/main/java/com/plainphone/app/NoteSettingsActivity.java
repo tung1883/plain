@@ -49,8 +49,8 @@ public class NoteSettingsActivity extends Activity {
         root.addView(row("Export folder: " + Notes.exportFolderLabel(this),
                 v -> Notes.showFolderOptions(this, REQUEST_PICK_FOLDER, this::render)));
 
-        root.addView(row("Locked: " + (Config.getNotesLocked(this) ? "On" : "Off"),
-                v -> Notes.toggleLock(this, this::render)));
+        root.addView(row("Locked: " + (Lock.NOTES.isLocked(this) ? "On" : "Off"),
+                v -> Lock.NOTES.toggleLock(this, this::render)));
     }
 
     @Override

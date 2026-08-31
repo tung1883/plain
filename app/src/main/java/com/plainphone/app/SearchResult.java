@@ -5,6 +5,7 @@ class SearchResult {
     enum Kind {
         APP("Apps"),
         NOTE("Notes"),
+        TODO("To-do"),
         PLAIN("Plain"),
         SYSTEM("Phone settings"),
         WEB("Web"),
@@ -31,6 +32,9 @@ class SearchResult {
 
     final Object payload;
 
+    /** Render the title struck through and greyed — used for completed to-dos. */
+    boolean strike;
+
     private final Action action;
 
     SearchResult(Kind kind, String title, String subtitle, int score, Action action) {
@@ -44,6 +48,11 @@ class SearchResult {
         this.score = score;
         this.action = action;
         this.payload = payload;
+    }
+
+    SearchResult withStrike(boolean value) {
+        this.strike = value;
+        return this;
     }
 
     void activate() {

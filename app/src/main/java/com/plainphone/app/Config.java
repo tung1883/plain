@@ -244,20 +244,22 @@ class Config {
         prefs(context).edit().putString("notes", arr.toString()).apply();
     }
 
-    static boolean getNotesLocked(Context context) {
-        return prefs(context).getBoolean("notes_locked", false);
+    // --- feature locks (see Lock enum): keys "<area>_locked" / "<area>_unlock_until" ---
+
+    static boolean isLocked(Context context, String area) {
+        return prefs(context).getBoolean(area + "_locked", false);
     }
 
-    static void setNotesLocked(Context context, boolean locked) {
-        prefs(context).edit().putBoolean("notes_locked", locked).apply();
+    static void setLocked(Context context, String area, boolean locked) {
+        prefs(context).edit().putBoolean(area + "_locked", locked).apply();
     }
 
-    static long getNotesUnlockUntil(Context context) {
-        return prefs(context).getLong("notes_unlock_until", 0L);
+    static long getUnlockUntil(Context context, String area) {
+        return prefs(context).getLong(area + "_unlock_until", 0L);
     }
 
-    static void setNotesUnlockUntil(Context context, long millis) {
-        prefs(context).edit().putLong("notes_unlock_until", millis).apply();
+    static void setUnlockUntil(Context context, String area, long millis) {
+        prefs(context).edit().putLong(area + "_unlock_until", millis).apply();
     }
 
     /** Grace window during which a PIN-unlocked app / feature won't re-prompt. */
@@ -287,6 +289,58 @@ class Config {
         } else {
             prefs(context).edit().putString("notes_export_tree", uriString).apply();
         }
+    }
+
+    static String getTodosText(Context context) {
+        return prefs(context).getString("todos", "");
+    }
+
+    static void setTodosText(Context context, String text) {
+        prefs(context).edit().putString("todos", text).apply();
+    }
+
+    static String getTodosDoneText(Context context) {
+        return prefs(context).getString("todos_done", "");
+    }
+
+    static void setTodosDoneText(Context context, String text) {
+        prefs(context).edit().putString("todos_done", text).apply();
+    }
+
+    static String getTodoFileUri(Context context) {
+        return prefs(context).getString("todo_file_uri", null);
+    }
+
+    static void setTodoFileUri(Context context, String uriString) {
+        if (uriString == null) {
+            prefs(context).edit().remove("todo_file_uri").apply();
+        } else {
+            prefs(context).edit().putString("todo_file_uri", uriString).apply();
+        }
+    }
+
+    static boolean isNotesHomeSettingsExpanded(Context context) {
+        return prefs(context).getBoolean("notes_home_settings_expanded", false);
+    }
+
+    static void setNotesHomeSettingsExpanded(Context context, boolean expanded) {
+        prefs(context).edit().putBoolean("notes_home_settings_expanded", expanded).apply();
+    }
+
+    static boolean isTodoHomeSettingsExpanded(Context context) {
+        return prefs(context).getBoolean("todos_home_settings_expanded", false);
+    }
+
+    static void setTodoHomeSettingsExpanded(Context context, boolean expanded) {
+        prefs(context).edit().putBoolean("todos_home_settings_expanded", expanded).apply();
+    }
+
+    static boolean isTodosShowCompleted(Context context) {
+        return prefs(context).getBoolean("todos_show_completed", true);
+    }
+
+    static void setTodosShowCompleted(Context context, boolean show) {
+        prefs(context).edit().putBoolean("todos_show_completed", show).apply();
     }
 
     static String getAdhocBlockId(Context context) {

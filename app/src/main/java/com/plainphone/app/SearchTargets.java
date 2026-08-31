@@ -72,6 +72,8 @@ class SearchTargets {
                     "typeface", "typography", "serif", "text"),
             new PlainTarget("Notes", "Default export folder and lock", NoteSettingsActivity.class,
                     true, "notes", "export", "folder", "lock", "pin"),
+            new PlainTarget("To-do", "Task list settings", TodoSettingsActivity.class,
+                    true, "todo", "tasks", "todo.txt", "checklist"),
     };
 
     private static final SystemTarget[] SYSTEM = {

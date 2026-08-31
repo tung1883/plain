@@ -72,6 +72,10 @@ public class MainActivity extends Activity {
 
     private static final int REQUEST_NOTES_UNLOCK = 4301;
     private static final int REQUEST_PICK_NOTES_FOLDER = 4302;
+    private static final int REQUEST_PICK_TODO_FILE = 4303;
+    private static final int REQUEST_TODOS_UNLOCK = 4304;
+    private static final int REQUEST_APPS_UNLOCK = 4305;
+    private static final int REQUEST_SEARCH_UNLOCK = 4306;
     private FrameLayout artFrame;
     private boolean showingHomeReminder = false;
     private boolean homeUiBuilt = false;
@@ -90,8 +94,20 @@ public class MainActivity extends Activity {
         if (!homeUiBuilt) return;
         if (requestCode == REQUEST_NOTES_UNLOCK && resultCode == RESULT_OK) {
             filter(search.getText().toString());
+        } else if (requestCode == REQUEST_TODOS_UNLOCK && resultCode == RESULT_OK) {
+            filter(search.getText().toString());
+        } else if (requestCode == REQUEST_APPS_UNLOCK && resultCode == RESULT_OK) {
+            filter(search.getText().toString());
+        } else if (requestCode == REQUEST_SEARCH_UNLOCK && resultCode == RESULT_OK) {
+            filter(search.getText().toString());
         } else if (requestCode == REQUEST_PICK_NOTES_FOLDER && resultCode == RESULT_OK) {
             Notes.saveFolderPick(this, data);
+            filter(search.getText().toString());
+        } else if (requestCode == REQUEST_PICK_TODO_FILE && resultCode == RESULT_OK) {
+            String message = Todos.handleFilePick(this, data);
+            if (message != null) {
+                android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_SHORT).show();
+            }
             filter(search.getText().toString());
         }
     }
@@ -421,6 +437,11 @@ public class MainActivity extends Activity {
                 showNoteOptions((Note) result.payload);
                 return true;
             }
+            if (result.payload instanceof Todos.Item) {
+                Todos.Item item = (Todos.Item) result.payload;
+                showTodoOptions(item.index, item.todo);
+                return true;
+            }
             if (result.payload instanceof FileIndex.Entry) {
                 FileIndex.Entry entry = (FileIndex.Entry) result.payload;
 
@@ -487,7 +508,7 @@ public class MainActivity extends Activity {
         currentQuery = currentSearch.folded;
 
         renderRows();
-        scheduleDeviceSearch(currentQuery);
+        if (!Lock.SEARCH.gateActive(this)) scheduleDeviceSearch(currentQuery);
     }
 
     private void renderRows() {
@@ -496,26 +517,32 @@ public class MainActivity extends Activity {
 
         if (needle.isEmpty()) {
             if (homeMode == HomeMode.NOTES) {
-                if (notesGateActive()) {
+                if (Lock.NOTES.gateActive(this)) {
                     rows.add(new SearchResult(SearchResult.Kind.NOTE, "Notes are locked",
                             "Tap to unlock", -1, () -> startActivityForResult(
-                            new Intent(this, NotePinGateActivity.class), REQUEST_NOTES_UNLOCK)));
+                            Lock.NOTES.pinGate(this), REQUEST_NOTES_UNLOCK)));
                 } else {
-                    if (Config.getNotesLocked(this)) Notes.keepUnlocked(this);
+                    if (Lock.NOTES.isLocked(this)) Lock.NOTES.keepUnlocked(this);
+                    renderNoteSettingsGroup();
                     rows.add(newNoteRow());
-                    rows.add(new SearchResult(SearchResult.Kind.NOTE,
-                            "Export folder: " + Notes.exportFolderLabel(this), null, -1,
-                            () -> Notes.showFolderOptions(this, REQUEST_PICK_NOTES_FOLDER,
-                                    () -> filter(search.getText().toString()))));
-                    rows.add(new SearchResult(SearchResult.Kind.NOTE,
-                            "Locked: " + (Config.getNotesLocked(this) ? "On" : "Off"), null, -1,
-                            () -> Notes.toggleLock(this, () -> filter(search.getText().toString()))));
                     rows.addAll(noteBrowseResults());
                 }
+            } else if (homeMode == HomeMode.TODOS) {
+                renderTodoSection();
+            } else if (Lock.APPS.gateActive(this)) {
+                rows.add(new SearchResult(SearchResult.Kind.APP, "App list is locked",
+                        "Tap to unlock", -1, () -> startActivityForResult(
+                        Lock.APPS.pinGate(this), REQUEST_APPS_UNLOCK)));
             } else {
+                if (Lock.APPS.isLocked(this)) Lock.APPS.keepUnlocked(this);
                 addGroup(SearchResult.Kind.APP, appResults(currentSearch), false);
             }
+        } else if (Lock.SEARCH.gateActive(this)) {
+            rows.add(new SearchResult(SearchResult.Kind.APP, "Search is locked",
+                    "Tap to unlock", -1, () -> startActivityForResult(
+                    Lock.SEARCH.pinGate(this), REQUEST_SEARCH_UNLOCK)));
         } else {
+            if (Lock.SEARCH.isLocked(this)) Lock.SEARCH.keepUnlocked(this);
             addGroup(SearchResult.Kind.APP, appResults(currentSearch), true);
             for (SearchResult.Kind kind : SearchResult.Kind.values()) {
                 if (kind == SearchResult.Kind.APP) continue;
@@ -529,6 +556,7 @@ public class MainActivity extends Activity {
     private List<SearchResult> resultsFor(SearchResult.Kind kind, String needle) {
         switch (kind) {
             case NOTE: return noteResults(needle);
+            case TODO: return todoResults(needle);
             case PLAIN: return SearchTargets.plain(this, currentSearch);
             case SYSTEM: return SearchTargets.system(this, currentSearch);
             case WEB: return webResults();
@@ -597,12 +625,8 @@ public class MainActivity extends Activity {
         return results;
     }
 
-    private boolean notesGateActive() {
-        return Config.getNotesLocked(this) && !Notes.isUnlocked(this) && Config.isPinSet(this);
-    }
-
     private List<SearchResult> noteResults(String needle) {
-        if (notesGateActive()) return new ArrayList<>();
+        if (Lock.NOTES.gateActive(this)) return new ArrayList<>();
         List<SearchResult> results = new ArrayList<>();
         for (Note note : Config.getNotes(this)) {
             int score = TextMatch.score(note.text, currentSearch);
@@ -623,8 +647,26 @@ public class MainActivity extends Activity {
         });
     }
 
+    private void renderNoteSettingsGroup() {
+        boolean expanded = Config.isNotesHomeSettingsExpanded(this);
+        rows.add(new SearchResult(SearchResult.Kind.NOTE,
+                (expanded ? "▾  " : "▸  ") + "Notes settings", null, -1, () -> {
+            Config.setNotesHomeSettingsExpanded(this, !expanded);
+            filter(search.getText().toString());
+        }));
+        if (!expanded) return;
+
+        rows.add(new SearchResult(SearchResult.Kind.NOTE,
+                "Export folder: " + Notes.exportFolderLabel(this), null, -1,
+                () -> Notes.showFolderOptions(this, REQUEST_PICK_NOTES_FOLDER,
+                        () -> filter(search.getText().toString()))));
+        rows.add(new SearchResult(SearchResult.Kind.NOTE,
+                "Locked: " + (Lock.NOTES.isLocked(this) ? "On" : "Off"), null, -1,
+                () -> Lock.NOTES.toggleLock(this, () -> filter(search.getText().toString()))));
+    }
+
     private void openNote(String id) {
-        if (Config.getNotesLocked(this)) Notes.keepUnlocked(this);
+        if (Lock.NOTES.isLocked(this)) Lock.NOTES.keepUnlocked(this);
         Intent intent = new Intent(this, NoteEditActivity.class);
         intent.putExtra("noteId", id);
         startActivity(intent);
@@ -679,6 +721,249 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void renderTodoSection() {
+        if (Lock.TODOS.gateActive(this)) {
+            rows.add(new SearchResult(SearchResult.Kind.TODO, "To-do is locked",
+                    "Tap to unlock", -1, () -> startActivityForResult(
+                    Lock.TODOS.pinGate(this), REQUEST_TODOS_UNLOCK)));
+            return;
+        }
+        if (Lock.TODOS.isLocked(this)) Lock.TODOS.keepUnlocked(this);
+
+        boolean expanded = Config.isTodoHomeSettingsExpanded(this);
+        rows.add(new SearchResult(SearchResult.Kind.TODO,
+                (expanded ? "▾  " : "▸  ") + "To-do settings", null, -1, () -> {
+            Config.setTodoHomeSettingsExpanded(this, !expanded);
+            filter(search.getText().toString());
+        }));
+        if (expanded) {
+            rows.add(new SearchResult(SearchResult.Kind.TODO,
+                    "Locked: " + (Lock.TODOS.isLocked(this) ? "On" : "Off"), null, -1,
+                    () -> Lock.TODOS.toggleLock(this, () -> filter(search.getText().toString()))));
+            rows.add(new SearchResult(SearchResult.Kind.TODO,
+                    "Show completed: " + (Config.isTodosShowCompleted(this) ? "On" : "Off"), null, -1,
+                    () -> {
+                        Config.setTodosShowCompleted(this, !Config.isTodosShowCompleted(this));
+                        filter(search.getText().toString());
+                    }));
+            int done = Todos.completedCount(this);
+            rows.add(new SearchResult(SearchResult.Kind.TODO,
+                    "Archive completed (" + done + ")", null, -1, () -> {
+                if (done == 0) {
+                    android.widget.Toast.makeText(this, "Nothing to archive",
+                            android.widget.Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                confirmArchiveTodos(done);
+            }));
+            rows.add(new SearchResult(SearchResult.Kind.TODO, "Edit as text", null, -1,
+                    () -> startActivity(new Intent(this, TodoListEditActivity.class))));
+            rows.add(new SearchResult(SearchResult.Kind.TODO,
+                    "Todo file: " + Todos.fileLabel(this), null, -1,
+                    () -> Todos.showFileOptions(this, REQUEST_PICK_TODO_FILE,
+                            () -> filter(search.getText().toString()))));
+            rows.add(new SearchResult(SearchResult.Kind.TODO, "Guide", null, -1,
+                    () -> startActivity(new Intent(this, TodoGuideActivity.class))));
+        }
+
+        rows.add(new SearchResult(SearchResult.Kind.TODO, "+ New task", null, -1,
+                this::promptNewTask));
+
+        List<Todos.Item> items = Todos.sortedForView(Todos.load(this),
+                Config.isTodosShowCompleted(this));
+        for (int i = 0; i < items.size(); i++) {
+            rows.add(todoRow(items.get(i), i));
+        }
+    }
+
+    private void confirmArchiveTodos(int done) {
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("Archive " + done + " completed task" + (done == 1 ? "" : "s") + "?")
+                .setMessage("They move out of the list into the done archive.")
+                .setPositiveButton("Archive", (d, w) -> {
+                    Todos.archiveCompleted(this);
+                    filter(search.getText().toString());
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private SearchResult todoRow(Todos.Item item, int rank) {
+        Todo todo = item.todo;
+        int index = item.index;
+        SearchResult result = new SearchResult(SearchResult.Kind.TODO,
+                todoTitle(todo), todoSubtitle(todo), rank, () -> {
+            Todos.toggleDone(this, index);
+            filter(search.getText().toString());
+        }, item);
+        return result.withStrike(todo.done);
+    }
+
+    private String todoTitle(Todo todo) {
+        String text = todo.displayText();
+        if (todo.priority != 0 && !todo.done) text = "(" + todo.priority + ") " + text;
+        return text;
+    }
+
+    private String todoSubtitle(Todo todo) {
+        List<String> tags = new ArrayList<>();
+        for (String p : todo.projects()) tags.add("+" + p);
+        for (String c : todo.contexts()) tags.add("@" + c);
+        if (!tags.isEmpty()) return android.text.TextUtils.join(" ", tags);
+        String due = todo.dueDate();
+        return due != null ? "due " + due : null;
+    }
+
+    private List<SearchResult> todoResults(String needle) {
+        List<SearchResult> results = new ArrayList<>();
+        if (Lock.TODOS.gateActive(this)) return results;
+        List<Todo> todos = Todos.load(this);
+        boolean showCompleted = Config.isTodosShowCompleted(this);
+        for (int i = 0; i < todos.size(); i++) {
+            Todo todo = todos.get(i);
+            if (todo.done && !showCompleted) continue;
+            int score = TextMatch.score(todo.description, currentSearch);
+            if (score == TextMatch.NO_MATCH) continue;
+            results.add(todoRow(new Todos.Item(todo, i), score));
+        }
+        return results;
+    }
+
+    private void promptNewTask() {
+        Typeface georgia = Fonts.current(this);
+
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackground(popupBackground());
+        root.setPadding(0, 32, 0, 8);
+
+        TextView title = new TextView(this);
+        title.setText("New task");
+        title.setTextColor(Color.WHITE);
+        title.setTextSize(18);
+        title.setTypeface(georgia);
+        title.setPadding(48, 0, 48, 16);
+        root.addView(title);
+
+        EditText input = new EditText(this);
+        input.setBackground(null);
+        input.setTextColor(Color.WHITE);
+        input.setHintTextColor(Color.GRAY);
+        input.setHint("Buy milk +groceries");
+        input.setTypeface(georgia);
+        input.setTextSize(18);
+        input.setSingleLine(true);
+        input.setImeOptions(EditorInfo.IME_ACTION_DONE);
+        input.setInputType(android.text.InputType.TYPE_CLASS_TEXT
+                | android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        input.setPadding(48, 8, 48, 24);
+        root.addView(input);
+
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
+                .setView(root)
+                .create();
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        }
+
+        Runnable add = () -> {
+            String text = input.getText().toString().trim();
+            if (text.isEmpty()) {
+                dialog.dismiss();
+                return;
+            }
+            Todos.quickAdd(this, text);
+            dialog.dismiss();
+            filter(search.getText().toString());
+        };
+
+        input.setOnEditorActionListener((v, actionId, event) -> {
+            if (actionId != EditorInfo.IME_ACTION_DONE) return false;
+            add.run();
+            return true;
+        });
+
+        root.addView(optionRow(georgia, "Add", v -> add.run()));
+        root.addView(optionRow(georgia, "Cancel", v -> dialog.dismiss()));
+
+        dialog.show();
+        if (dialog.getWindow() != null) {
+            android.view.WindowManager.LayoutParams params = dialog.getWindow().getAttributes();
+            params.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.85);
+            dialog.getWindow().setAttributes(params);
+        }
+    }
+
+    private void showTodoOptions(int index, Todo todo) {
+        Typeface georgia = Fonts.current(this);
+
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackground(popupBackground());
+        root.setPadding(0, 8, 0, 8);
+
+        TextView title = new TextView(this);
+        title.setText(todo.displayText());
+        title.setTextColor(Color.WHITE);
+        title.setTextSize(18);
+        title.setTypeface(georgia);
+        title.setSingleLine(true);
+        title.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        title.setPadding(48, 32, 48, 24);
+        root.addView(title);
+
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
+                .setView(root)
+                .create();
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        }
+
+        root.addView(optionRow(georgia, "Edit as text", v -> {
+            dialog.dismiss();
+            startActivity(new Intent(this, TodoListEditActivity.class));
+        }));
+        root.addView(optionRow(georgia, "Priority: " + (todo.priority == 0 ? "none" : todo.priority)
+                + " → " + nextPriorityLabel(todo.priority), v -> {
+            dialog.dismiss();
+            Todos.setPriority(this, index, nextPriority(todo.priority));
+            filter(search.getText().toString());
+        }));
+        root.addView(optionRow(georgia, "Delete", v -> {
+            dialog.dismiss();
+            Todos.delete(this, index);
+            filter(search.getText().toString());
+        }));
+        if (Todos.completedCount(this) > 0) {
+            root.addView(optionRow(georgia, "Archive completed", v -> {
+                dialog.dismiss();
+                Todos.archiveCompleted(this);
+                filter(search.getText().toString());
+            }));
+        }
+
+        dialog.show();
+        if (dialog.getWindow() != null) {
+            android.view.WindowManager.LayoutParams params = dialog.getWindow().getAttributes();
+            params.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.85);
+            dialog.getWindow().setAttributes(params);
+        }
+    }
+
+    private static char nextPriority(char current) {
+        switch (current) {
+            case 0: return 'A';
+            case 'A': return 'B';
+            case 'B': return 'C';
+            default: return 0;
+        }
+    }
+
+    private static String nextPriorityLabel(char current) {
+        char next = nextPriority(current);
+        return next == 0 ? "none" : String.valueOf(next);
+    }
+
     private LinearLayout buildModeToggle(Typeface georgia) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
@@ -713,7 +998,8 @@ public class MainActivity extends Activity {
     /** Tab tap: animated slide to the target section. */
     private void switchMode(HomeMode target) {
         if (homeMode == target) return;
-        swipeSwitcher.performSwitch(target.ordinal() > homeMode.ordinal() ? 1 : -1);
+        int diff = target.ordinal() - homeMode.ordinal();
+        swipeSwitcher.performJump(diff > 0 ? 1 : -1, Math.abs(diff));
     }
 
     private void refreshTabColors(LinearLayout row) {

@@ -182,12 +182,28 @@
             android:theme="@style/Theme.PlainPhone" />
 
         <activity
-            android:name=".NotePinGateActivity"
+            android:name=".LockPinGateActivity"
             android:exported="false"
             android:theme="@style/Theme.PlainPhone" />
 
         <activity
-            android:name=".NoteLockChangeActivity"
+            android:name=".LockChangeActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
+            android:name=".TodoListEditActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
+            android:name=".TodoSettingsActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
+            android:name=".TodoGuideActivity"
             android:exported="false"
             android:theme="@style/Theme.PlainPhone" />
 

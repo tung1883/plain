@@ -16,14 +16,17 @@ import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
-public class NotePinGateActivity extends Activity {
+/** PIN entry that unlocks a {@link Lock} for its grace window. Named by {@code EXTRA_LOCK}. */
+public class LockPinGateActivity extends Activity {
 
+    private Lock lock;
     private EditText pinInput;
     private boolean submitted = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        lock = Lock.from(getIntent());
 
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
 
@@ -40,7 +43,7 @@ public class NotePinGateActivity extends Activity {
         title.setTextSize(20);
         title.setTypeface(georgia);
         title.setGravity(Gravity.CENTER);
-        title.setText("Enter PIN to open Notes");
+        title.setText(lock.pinPrompt);
         root.addView(title);
 
         LinearLayout inputRow = new LinearLayout(this);
@@ -62,7 +65,7 @@ public class NotePinGateActivity extends Activity {
 
             @Override
             public void afterTextChanged(Editable s) {
-                if (s.length() >= 4 && Config.checkLockPin(NotePinGateActivity.this, s.toString())) {
+                if (s.length() >= 4 && Config.checkLockPin(LockPinGateActivity.this, s.toString())) {
                     tryUnlock();
                 }
             }
@@ -115,7 +118,7 @@ public class NotePinGateActivity extends Activity {
         }
 
         submitted = true;
-        Notes.keepUnlocked(this);
+        lock.keepUnlocked(this);
         setResult(RESULT_OK);
         finish();
     }

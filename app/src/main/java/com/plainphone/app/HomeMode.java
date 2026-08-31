@@ -2,7 +2,8 @@ package com.plainphone.app;
 
 enum HomeMode {
     APPS("Apps"),
-    NOTES("Notes");
+    NOTES("Notes"),
+    TODOS("To-do");
 
     final String label;
 
