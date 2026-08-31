@@ -637,8 +637,10 @@ public class MainActivity extends Activity {
     }
 
     private List<SearchResult> appResults(TextMatch.Query query) {
-        List<String> pinnedOrder = Config.getPinnedPackages(this);
         List<SearchResult> results = new ArrayList<>();
+        if (Lock.APPS.gateActive(this)) return results;
+
+        List<String> pinnedOrder = Config.getPinnedPackages(this);
 
         for (ResolveInfo info : allApps) {
             String label = labelFor(info).toString();
