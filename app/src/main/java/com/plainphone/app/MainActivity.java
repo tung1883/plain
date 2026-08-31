@@ -283,7 +283,7 @@ public class MainActivity extends Activity {
         menuColumn.addView(screenOffRow, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        TextView statsRow = buildRow(georgia, "Usage");
+        TextView statsRow = buildRow(georgia, "Stats");
         statsRow.setOnClickListener(v -> startActivity(new Intent(this, StatsActivity.class)));
         menuColumn.addView(statsRow, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
