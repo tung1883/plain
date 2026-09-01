@@ -12,7 +12,8 @@ import android.widget.FrameLayout;
 /**
  * Holds one child (the list) and lets a horizontal drag move it with the finger,
  * committing to the next/previous section on release. Vertical drags pass straight
- * through to the child so it scrolls normally.
+ * through to the child so it scrolls normally. A new gesture can interrupt the
+ * commit animation, so several sections can be swiped through in quick succession.
  */
 class SwipeSwitcher extends FrameLayout {
 
@@ -25,9 +26,9 @@ class SwipeSwitcher extends FrameLayout {
     }
 
     private static final DecelerateInterpolator DECEL = new DecelerateInterpolator();
-    private static final int OUT_MS = 140;
-    private static final int IN_MS = 200;
-    private static final int SNAP_MS = 160;
+    private static final int OUT_MS = 110;
+    private static final int IN_MS = 170;
+    private static final int SNAP_MS = 150;
     private static final float COMMIT_FRACTION = 0.15f;
 
     private final int slop;
@@ -37,6 +38,9 @@ class SwipeSwitcher extends FrameLayout {
     private float downX, downY, dragDx;
     private boolean dragging;
     private boolean animating;
+
+    /** Applies the (still pending) section swap if the animation is cut short. */
+    private Runnable pendingSwap;
 
     SwipeSwitcher(Context context) {
         super(context);
@@ -56,9 +60,10 @@ class SwipeSwitcher extends FrameLayout {
 
     @Override
     public boolean onInterceptTouchEvent(MotionEvent ev) {
-        if (animating || handler == null) return false;
+        if (handler == null) return false;
         switch (ev.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
+                if (animating) endAnimation();
                 downX = ev.getX();
                 downY = ev.getY();
                 dragging = false;
@@ -72,6 +77,7 @@ class SwipeSwitcher extends FrameLayout {
                 float dx = ev.getX() - downX;
                 float dy = ev.getY() - downY;
                 if (Math.abs(dx) > slop && Math.abs(dx) > Math.abs(dy) * 1.3f) {
+                    if (animating) endAnimation();
                     dragging = true;
                     return true;
                 }
@@ -114,7 +120,7 @@ class SwipeSwitcher extends FrameLayout {
                         && Math.abs(dragDx) > slop;
                 if (handler.canGo(dir)
                         && (flung || Math.abs(dragDx) > width * COMMIT_FRACTION)) {
-                    commit(dir);
+                    commit(dir, 1);
                 } else {
                     content.animate().translationX(0f).setDuration(SNAP_MS)
                             .setInterpolator(DECEL).start();
@@ -127,41 +133,42 @@ class SwipeSwitcher extends FrameLayout {
 
     /** Programmatic switch (tab tap): full slide in `dir`. */
     void performSwitch(int dir) {
-        if (animating || handler == null || !handler.canGo(dir)) return;
-        commit(dir);
+        if (handler == null || !handler.canGo(dir)) return;
+        if (animating) endAnimation();
+        commit(dir, 1);
     }
 
     /** Tab tap on a non-adjacent section: one slide in `dir`, landing `steps` away. */
     void performJump(int dir, int steps) {
-        if (animating || handler == null || steps < 1) return;
-        if (steps == 1) {
-            performSwitch(dir);
-            return;
-        }
+        if (handler == null || steps < 1 || !handler.canGo(dir)) return;
+        if (animating) endAnimation();
+        commit(dir, steps);
+    }
+
+    private void commit(int dir, int steps) {
         View content = content();
-        if (content == null || !handler.canGo(dir)) return;
+        if (content == null) return;
         animating = true;
         float width = Math.max(getWidth(), 1);
+        pendingSwap = () -> {
+            for (int i = 0; i < steps; i++) handler.switchSection(dir);
+            pendingSwap = null;
+        };
         content.animate().translationX(-dir * width).setDuration(OUT_MS).setInterpolator(DECEL)
                 .withEndAction(() -> {
-                    for (int i = 0; i < steps; i++) handler.switchSection(dir);
+                    if (pendingSwap != null) pendingSwap.run();
                     content.setTranslationX(dir * width);
                     content.animate().translationX(0f).setDuration(IN_MS).setInterpolator(DECEL)
                             .withEndAction(() -> animating = false).start();
                 }).start();
     }
 
-    private void commit(int dir) {
+    /** Snap the commit animation to its finished state so a new gesture can start. */
+    private void endAnimation() {
         View content = content();
-        if (content == null) return;
-        animating = true;
-        float width = Math.max(getWidth(), 1);
-        content.animate().translationX(-dir * width).setDuration(OUT_MS).setInterpolator(DECEL)
-                .withEndAction(() -> {
-                    handler.switchSection(dir);
-                    content.setTranslationX(dir * width);
-                    content.animate().translationX(0f).setDuration(IN_MS).setInterpolator(DECEL)
-                            .withEndAction(() -> animating = false).start();
-                }).start();
+        if (content != null) content.animate().cancel();
+        if (pendingSwap != null) pendingSwap.run();
+        if (content != null) content.setTranslationX(0f);
+        animating = false;
     }
 }
