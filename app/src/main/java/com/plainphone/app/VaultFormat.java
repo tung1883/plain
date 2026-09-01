@@ -107,17 +107,7 @@ final class VaultFormat {
         try {
             return VaultCrypto.unwrap(VaultCrypto.aesKey(passRaw), header.wrappedMasterKey);
         } catch (javax.crypto.AEADBadTagException e) {
-            // Fall back to the platform PBKDF2 in case the hand-rolled password
-            // encoding disagreed (a non-ASCII password on some devices).
-            VaultCrypto.zeroize(passRaw);
-            byte[] jce = VaultCrypto.deriveKeyJce(passphrase, header.salt, header.iterations);
-            try {
-                return VaultCrypto.unwrap(VaultCrypto.aesKey(jce), header.wrappedMasterKey);
-            } catch (javax.crypto.AEADBadTagException e2) {
-                throw new WrongPassphrase();
-            } finally {
-                VaultCrypto.zeroize(jce);
-            }
+            throw new WrongPassphrase();
         } finally {
             VaultCrypto.zeroize(passRaw);
         }
