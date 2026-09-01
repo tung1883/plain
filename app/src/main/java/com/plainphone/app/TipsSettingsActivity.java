@@ -8,6 +8,7 @@ import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.StateListDrawable;
+import android.net.Uri;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
@@ -18,7 +19,16 @@ import android.widget.ScrollView;
 import android.widget.Toast;
 import android.widget.TextView;
 
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
+
 public class TipsSettingsActivity extends Activity {
+
+    private static final int REQUEST_IMPORT_TIPS = 5401;
+    private static final int REQUEST_IMPORT_QUOTES = 5402;
 
     private LinearLayout root;
     private Typeface font;
@@ -55,6 +65,7 @@ public class TipsSettingsActivity extends Activity {
         }));
         root.addView(row("Edit tips", v ->
                 startActivity(TipsListEditActivity.forQuotes(this, false))));
+        root.addView(row("Import tips from file", v -> pickImportFile(REQUEST_IMPORT_TIPS)));
         root.addView(row("Reset tips to default", v -> confirmReset(false)));
 
         root.addView(sectionHeader("Quotes"));
@@ -64,12 +75,70 @@ public class TipsSettingsActivity extends Activity {
         }));
         root.addView(row("Edit quotes", v ->
                 startActivity(TipsListEditActivity.forQuotes(this, true))));
+        root.addView(row("Import quotes from file", v -> pickImportFile(REQUEST_IMPORT_QUOTES)));
         root.addView(row("Reset quotes to default", v -> confirmReset(true)));
 
         root.addView(sectionHeader("Rotation"));
         int rotate = Config.getTipRotateMinutes(this);
         root.addView(row("Change every: " + (rotate <= 0 ? "On tap only" : rotate + " min"),
                 v -> startActivity(new Intent(this, TipRotateActivity.class))));
+    }
+
+    private void pickImportFile(int requestCode) {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("text/plain");
+        startActivityForResult(intent, requestCode);
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
+        if (requestCode != REQUEST_IMPORT_TIPS && requestCode != REQUEST_IMPORT_QUOTES) return;
+
+        String fileText = readFile(data.getData());
+        if (fileText == null) {
+            Toast.makeText(this, "Couldn't read that file", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        List<String> imported = new ArrayList<>();
+        for (String line : fileText.split("\n")) {
+            String trimmed = line.trim();
+            if (!trimmed.isEmpty()) imported.add(trimmed);
+        }
+        if (imported.isEmpty()) {
+            Toast.makeText(this, "No lines found in that file", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        boolean quotes = requestCode == REQUEST_IMPORT_QUOTES;
+        List<String> combined = new ArrayList<>(quotes ? Tips.quotes(this) : Tips.tips(this));
+        combined.addAll(imported);
+        String joined = String.join("\n", combined);
+        if (quotes) {
+            Config.setQuotesText(this, joined);
+        } else {
+            Config.setTipsText(this, joined);
+        }
+        Toast.makeText(this, "Added " + imported.size() + " "
+                + (quotes ? "quote" : "tip") + (imported.size() == 1 ? "" : "s"),
+                Toast.LENGTH_SHORT).show();
+        render();
+    }
+
+    private String readFile(Uri uri) {
+        try (InputStream in = getContentResolver().openInputStream(uri)) {
+            if (in == null) return null;
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buf = new byte[4096];
+            int n;
+            while ((n = in.read(buf)) != -1) out.write(buf, 0, n);
+            return out.toString(StandardCharsets.UTF_8.name());
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private void confirmReset(boolean quotes) {
