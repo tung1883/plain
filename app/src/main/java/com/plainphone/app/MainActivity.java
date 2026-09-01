@@ -167,8 +167,16 @@ public class MainActivity extends Activity {
             WebSearch.forget();
             applyPixelArtSelection();
             refreshTimeBlockRow();
+            Tips.maybeAutoAdvance(this);
             refreshTipRow();
+            scheduleTipRotation();
         }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        tipHandler.removeCallbacks(tipRotate);
     }
 
     @Override
@@ -176,8 +184,27 @@ public class MainActivity extends Activity {
         super.onDestroy();
 
         searchHandler.removeCallbacksAndMessages(null);
+        tipHandler.removeCallbacks(tipRotate);
         FileIndex.setListener(null);
         if (statsPanel != null) statsPanel.shutdown();
+    }
+
+    private final Handler tipHandler = new Handler(Looper.getMainLooper());
+    private final Runnable tipRotate = new Runnable() {
+        @Override
+        public void run() {
+            int minutes = Config.getTipRotateMinutes(MainActivity.this);
+            if (minutes <= 0) return;
+            Tips.advance(MainActivity.this);
+            refreshTipRow();
+            tipHandler.postDelayed(this, minutes * 60_000L);
+        }
+    };
+
+    private void scheduleTipRotation() {
+        tipHandler.removeCallbacks(tipRotate);
+        int minutes = Config.getTipRotateMinutes(this);
+        if (minutes > 0) tipHandler.postDelayed(tipRotate, minutes * 60_000L);
     }
 
     private void refreshTimeBlockRow() {
@@ -350,6 +377,7 @@ public class MainActivity extends Activity {
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
         Tips.advance(this);
         refreshTipRow();
+        scheduleTipRotation();
 
         LinearLayout menuColumn = new LinearLayout(this);
         menuColumn.setOrientation(LinearLayout.VERTICAL);

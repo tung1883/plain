@@ -215,6 +215,11 @@
             android:theme="@style/Theme.PlainPhone" />
 
         <activity
+            android:name=".TipRotateActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
             android:name=".TipsListEditActivity"
             android:exported="false"
             android:windowSoftInputMode="adjustResize"

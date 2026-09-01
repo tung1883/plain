@@ -87,6 +87,30 @@ class Tips {
 
     static void advance(Context context) {
         Config.setTipIndex(context, Config.getTipIndex(context) + 1);
+        Config.setTipLastAdvance(context, System.currentTimeMillis());
+    }
+
+    /**
+     * Roll the strip forward by however many rotation intervals have elapsed since
+     * the last advance. Returns true if the shown entry changed. No-op when
+     * rotation is off ({@code tip_rotate_minutes == 0}).
+     */
+    static boolean maybeAutoAdvance(Context context) {
+        int minutes = Config.getTipRotateMinutes(context);
+        if (minutes <= 0) return false;
+        long now = System.currentTimeMillis();
+        long last = Config.getTipLastAdvance(context);
+        if (last <= 0L || last > now) {
+            Config.setTipLastAdvance(context, now);
+            return false;
+        }
+        long intervalMs = minutes * 60_000L;
+        long elapsed = now - last;
+        if (elapsed < intervalMs) return false;
+        int steps = (int) Math.min(elapsed / intervalMs, 10_000);
+        Config.setTipIndex(context, Config.getTipIndex(context) + steps);
+        Config.setTipLastAdvance(context, last + steps * intervalMs);
+        return true;
     }
 
     private static List<String> lines(String stored, String fallback) {
