@@ -1319,6 +1319,8 @@ public class MainActivity extends Activity {
         tipBody.setTextSize(15);
         tipBody.setLineSpacing(6f, 1f);
         tipBody.setTypeface(georgia);
+        tipBody.setLines(2);
+        tipBody.setEllipsize(android.text.TextUtils.TruncateAt.END);
         row.addView(tipBody);
 
         return row;

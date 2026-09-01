@@ -92,7 +92,7 @@ public class SettingsActivity extends Activity {
 entries.add(new Entry("Appearance", "Home screen art", row("Home screen art",
                 v -> startActivity(new Intent(this, PixelSceneActivity.class)))));
 
-        entries.add(new Entry("Appearance", "Home tips", row("Home tips",
+        entries.add(new Entry("Appearance", "Tips and quotes", row("Tips and quotes",
                 v -> startActivity(new Intent(this, TipsSettingsActivity.class)))));
 
         entries.add(new Entry("Notes", "Notes", row("Notes",
