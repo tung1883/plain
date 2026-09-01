@@ -152,6 +152,8 @@ public class VaultActivity extends Activity {
         crumb.setTextSize(13);
         crumb.setLetterSpacing(0.1f);
         crumb.setTypeface(font);
+        crumb.setSingleLine(true);
+        crumb.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
         crumb.setPadding(48, 36, 24, 12);
         bar.addView(crumb, new LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));

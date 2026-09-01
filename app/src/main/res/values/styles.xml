@@ -3,5 +3,12 @@
     <style name="Theme.PlainPhone" parent="android:Theme.Black.NoTitleBar">
         <item name="android:windowBackground">@android:color/black</item>
         <item name="android:textColor">@android:color/white</item>
+        <!-- Kill the legacy holo-green accent: text cursor, selection handles,
+             checkboxes, progress bars all follow these. -->
+        <item name="android:colorAccent">@android:color/white</item>
+        <item name="android:colorControlActivated">@android:color/white</item>
+        <item name="android:colorControlNormal">@android:color/white</item>
+        <item name="android:colorControlHighlight">#33FFFFFF</item>
+        <item name="android:textColorHighlight">#55FFFFFF</item>
     </style>
 </resources>

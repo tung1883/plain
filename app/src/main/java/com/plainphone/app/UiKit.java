@@ -1,14 +1,32 @@
 package com.plainphone.app;
 
 import android.content.Context;
+import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.StateListDrawable;
+import android.view.ContextThemeWrapper;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.ProgressBar;
 
 class UiKit {
+
+    /**
+     * A white circular indeterminate spinner that actually animates. Built against
+     * the Material theme so it uses the thin rotating-arc drawable rather than the
+     * flat holo asset the app's legacy {@code Theme.Black} would hand out; tinted
+     * white via {@code indeterminateTintList} (a colour filter freezes it).
+     */
+    static ProgressBar spinner(Context context) {
+        ProgressBar bar = new ProgressBar(
+                new ContextThemeWrapper(context, android.R.style.Theme_Material),
+                null, android.R.attr.progressBarStyleLarge);
+        bar.setIndeterminate(true);
+        bar.setIndeterminateTintList(ColorStateList.valueOf(Color.WHITE));
+        return bar;
+    }
 
     private static final int IMMERSIVE_FLAGS =
             View.SYSTEM_UI_FLAG_LAYOUT_STABLE
