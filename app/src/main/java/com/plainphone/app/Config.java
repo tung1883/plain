@@ -443,11 +443,11 @@ class Config {
     }
 
     static FontChoice getFontChoice(Context context) {
-        String stored = prefs(context).getString("font_choice", FontChoice.GEORGIA.name());
+        String stored = prefs(context).getString("font_choice", FontChoice.CASCADIA_MONO.name());
         try {
             return FontChoice.valueOf(stored);
         } catch (IllegalArgumentException e) {
-            return FontChoice.GEORGIA;
+            return FontChoice.IBM_PLEX_MONO;
         }
     }
 
