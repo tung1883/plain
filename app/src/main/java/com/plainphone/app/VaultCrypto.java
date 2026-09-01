@@ -98,12 +98,17 @@ final class VaultCrypto {
             mac.init(new SecretKeySpec(pw, "HmacSHA256"));
 
             mac.update(salt);
-            byte[] u = mac.doFinal(new byte[]{0, 0, 0, 1});   // U1 = PRF(P, S || INT(1))
+            byte[] u = new byte[32];
+            byte[] next = new byte[32];
+            mac.update(new byte[]{0, 0, 0, 1});
+            mac.doFinal(u, 0);                                 // U1 = PRF(P, S || INT(1))
             byte[] t = u.clone();
             for (int i = 1; i < iterations; i++) {
-                u = mac.doFinal(u);                            // Mac resets to keyed state
+                mac.update(u);
+                mac.doFinal(next, 0);                          // Ui = PRF(P, Ui-1), no alloc
+                byte[] swap = u; u = next; next = swap;
                 for (int k = 0; k < t.length; k++) t[k] ^= u[k];
-                if (progress != null && (i & 0x1FFF) == 0) progress.onProgress(i, iterations);
+                if (progress != null && (i & 0x3FFF) == 0) progress.onProgress(i, iterations);
             }
             if (progress != null) progress.onProgress(iterations, iterations);
             return t;
