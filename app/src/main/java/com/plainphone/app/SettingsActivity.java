@@ -25,7 +25,7 @@ public class SettingsActivity extends Activity {
     static final String EXTRA_DESTINATION = "destination";
 
     private static final List<String> SECTION_ORDER =
-            Arrays.asList("Appearance", "Notes", "To-do", "Apps", "Search", "Permissions");
+            Arrays.asList("Appearance", "Notes", "To-do", "Vault", "Apps", "Search", "Permissions");
 
     private LinearLayout root;
     private Typeface georgia;
@@ -100,6 +100,9 @@ entries.add(new Entry("Appearance", "Home screen art", row("Home screen art",
 
         entries.add(new Entry("To-do", "To-do", row("To-do",
                 v -> startActivity(new Intent(this, TodoSettingsActivity.class)))));
+
+        entries.add(new Entry("Vault", "Vault", row("Vault",
+                v -> startActivity(new Intent(this, VaultSettingsActivity.class)))));
 
         entries.add(new Entry("Apps", "Lock app list", row(
                 "Lock app list: " + (Lock.APPS.isLocked(this) ? "On" : "Off"),
