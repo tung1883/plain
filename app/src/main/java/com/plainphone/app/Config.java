@@ -306,6 +306,55 @@ class Config {
         }
     }
 
+    static boolean isTipsEnabled(Context context) {
+        return prefs(context).getBoolean("tips_enabled", true);
+    }
+
+    static void setTipsEnabled(Context context, boolean enabled) {
+        prefs(context).edit().putBoolean("tips_enabled", enabled).apply();
+    }
+
+    static boolean isQuotesEnabled(Context context) {
+        return prefs(context).getBoolean("quotes_enabled", true);
+    }
+
+    static void setQuotesEnabled(Context context, boolean enabled) {
+        prefs(context).edit().putBoolean("quotes_enabled", enabled).apply();
+    }
+
+    static int getTipIndex(Context context) {
+        return prefs(context).getInt("tip_index", 0);
+    }
+
+    static void setTipIndex(Context context, int index) {
+        prefs(context).edit().putInt("tip_index", index).apply();
+    }
+
+    /** Null / absent → use the built-in defaults (see Tips). */
+    static String getTipsText(Context context) {
+        return prefs(context).getString("tips_text", null);
+    }
+
+    static void setTipsText(Context context, String text) {
+        if (text == null) {
+            prefs(context).edit().remove("tips_text").apply();
+        } else {
+            prefs(context).edit().putString("tips_text", text).apply();
+        }
+    }
+
+    static String getQuotesText(Context context) {
+        return prefs(context).getString("quotes_text", null);
+    }
+
+    static void setQuotesText(Context context, String text) {
+        if (text == null) {
+            prefs(context).edit().remove("quotes_text").apply();
+        } else {
+            prefs(context).edit().putString("quotes_text", text).apply();
+        }
+    }
+
     static String getTodosText(Context context) {
         return prefs(context).getString("todos", "");
     }
