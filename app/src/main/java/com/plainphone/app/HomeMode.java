@@ -4,7 +4,8 @@ enum HomeMode {
     APPS("Apps"),
     NOTES("Notes"),
     TODOS("To-do"),
-    STATS("Stats");
+    STATS("Stats"),
+    VAULT("Vault");
 
     final String label;
 

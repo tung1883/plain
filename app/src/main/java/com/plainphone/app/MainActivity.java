@@ -613,6 +613,8 @@ public class MainActivity extends Activity {
                 }
             } else if (homeMode == HomeMode.TODOS) {
                 renderTodoSection();
+            } else if (homeMode == HomeMode.VAULT) {
+                renderVaultSection();
             } else if (Lock.APPS.gateActive(this)) {
                 rows.add(new SearchResult(SearchResult.Kind.APP, "App list is locked",
                         "Tap to unlock", -1, () -> startActivityForResult(
@@ -804,6 +806,22 @@ public class MainActivity extends Activity {
             android.view.WindowManager.LayoutParams params = dialog.getWindow().getAttributes();
             params.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.85);
             dialog.getWindow().setAttributes(params);
+        }
+    }
+
+    private void renderVaultSection() {
+        boolean created = VaultFormat.exists(VaultSession.vaultRoot(this));
+        boolean unlocked = VaultSession.get().isUnlocked();
+        String state = !created ? "Tap to set up"
+                : unlocked ? "Unlocked — tap to browse" : "Locked — tap to unlock";
+        rows.add(new SearchResult(SearchResult.Kind.PLAIN, "File vault", state, -1,
+                () -> startActivity(new Intent(this, VaultActivity.class))));
+        if (created && unlocked) {
+            rows.add(new SearchResult(SearchResult.Kind.PLAIN, "Lock vault now", null, -1, () -> {
+                VaultUnlockService.stop(this);
+                VaultSession.get().lock(this);
+                filter(search.getText().toString());
+            }));
         }
     }
 
