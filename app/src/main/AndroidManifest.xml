@@ -297,6 +297,11 @@
             android:exported="false"
             android:theme="@style/Theme.PlainPhone" />
 
+        <activity
+            android:name=".VaultChangePasswordActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
         <service
             android:name=".VaultUnlockService"
             android:exported="false"

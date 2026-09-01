@@ -42,6 +42,10 @@ enum Lock {
             Config.setUnlockUntil(context, lock.area, 0L);
         }
         Config.clearAppUnlocks(context);
+        if (VaultSession.get().isUnlocked()) {
+            VaultUnlockService.stop(context);
+            VaultSession.get().lock(context.getApplicationContext());
+        }
     }
 
     boolean isLocked(Context context) {

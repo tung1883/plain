@@ -1,0 +1,13 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html", "x": 0, "y": 0, "w": 390, "h": 844, "title": "A · Tree with rails (recommended)" },
+    { "file": "DrillDown.dc.html", "x": 530, "y": 0, "w": 390, "h": 844, "title": "B · Drill-in picker" },
+    { "file": "FlatIndent.dc.html", "x": 1060, "y": 0, "w": 390, "h": 844, "title": "C · Flat indent" }
+  ],
+  "annotations": [
+    { "id": "note-a", "x": 0, "y": -150, "w": 390, "text": "A — Real tree. 1px drawn rails (not ASCII), elbow connectors, folder glyph. Current folder greyed + labelled; folders inside a moved item greyed and unpickable. Selected destination: inset fill + 2px left bar. Whole vault visible, scrolls. Bottom bar commits." },
+    { "id": "note-b", "x": 530, "y": -170, "w": 390, "text": "B — No tree at all. A path breadcrumb + one folder level at a time, same drill-in gesture as the vault browser itself. Tap a row to go deeper, chevron shows it has children, one button moves into the folder you're standing in. Simplest to build and to use one-handed; you lose the whole-tree overview." },
+    { "id": "note-c", "x": 1060, "y": -150, "w": 390, "text": "C — Indentation only, no rails. Cheaper than A, still shows structure. Same greyed/selected treatment. Reads a little flat once nesting gets deep." }
+  ],
+  "launch": { "view": "canvas" }
+}

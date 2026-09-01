@@ -652,6 +652,7 @@ public class MainActivity extends Activity {
             case WEB: return webResults();
             case FILE: return fileResults(needle);
             case CONTACT: return contactResults(needle);
+            case VAULT: return vaultResults(needle);
             default: return new ArrayList<>();
         }
     }
@@ -1228,6 +1229,28 @@ public class MainActivity extends Activity {
                     DeviceSearch.REQUEST_CONTACTS));
         }
         return needle.equals(deviceQuery) ? deviceContacts : new ArrayList<>();
+    }
+
+    private List<SearchResult> vaultResults(String needle) {
+        List<SearchResult> results = new ArrayList<>();
+        if (needle.isEmpty() || !VaultSession.get().isUnlocked()
+                || !VaultFormat.exists(VaultSession.vaultRoot(this))) {
+            return results;
+        }
+        for (VaultStore.Entry entry : VaultStore.searchAll(this, needle)) {
+            int score = TextMatch.score(entry.name, currentSearch);
+            if (score == TextMatch.NO_MATCH) continue;
+            String docId = entry.docId;
+            boolean isDir = entry.isDir;
+            results.add(new SearchResult(SearchResult.Kind.VAULT, entry.name,
+                    isDir ? "folder" : entry.mimeType, score, () -> {
+                Intent intent = new Intent(this, VaultActivity.class);
+                intent.putExtra("startDocId", isDir ? docId
+                        : docId.substring(0, docId.lastIndexOf('/')));
+                startActivity(intent);
+            }));
+        }
+        return results;
     }
 
     private List<SearchResult> webResults() {

@@ -1,7 +1,11 @@
 package com.plainphone.app;
 
+import android.content.res.AssetFileDescriptor;
 import android.database.Cursor;
 import android.database.MatrixCursor;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Point;
 import android.os.CancellationSignal;
 import android.os.Handler;
 import android.os.HandlerThread;
@@ -12,6 +16,7 @@ import android.provider.DocumentsProvider;
 
 import java.io.File;
 import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.UUID;
 
@@ -149,6 +154,42 @@ public class VaultDocumentsProvider extends DocumentsProvider {
         }
     }
 
+    @Override
+    public AssetFileDescriptor openDocumentThumbnail(String documentId, Point sizeHint,
+                                                     CancellationSignal signal)
+            throws FileNotFoundException {
+        requireUnlocked();
+        int target = Math.max(sizeHint.x, sizeHint.y);
+        if (target <= 0) target = 256;
+        try {
+            byte[] plain = VaultStore.decryptToMemory(getContext(), documentId);
+            BitmapFactory.Options bounds = new BitmapFactory.Options();
+            bounds.inJustDecodeBounds = true;
+            BitmapFactory.decodeByteArray(plain, 0, plain.length, bounds);
+            int sample = 1;
+            int longest = Math.max(bounds.outWidth, bounds.outHeight);
+            while (longest / sample > target * 2) sample *= 2;
+            BitmapFactory.Options opts = new BitmapFactory.Options();
+            opts.inSampleSize = sample;
+            Bitmap bitmap = BitmapFactory.decodeByteArray(plain, 0, plain.length, opts);
+            if (bitmap == null) throw new IOException("decode failed");
+
+            File thumb = new File(VaultOpenFiles.openDir(getContext()),
+                    "thumb-" + UUID.randomUUID());
+            try (FileOutputStream out = new FileOutputStream(thumb)) {
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 80, out);
+            }
+            bitmap.recycle();
+            VaultOpenFiles.get().track(getContext(), documentId, thumb, false);
+            ParcelFileDescriptor pfd = ParcelFileDescriptor.open(thumb,
+                    ParcelFileDescriptor.MODE_READ_ONLY, callbackHandler,
+                    error -> VaultOpenFiles.get().onClosed(thumb));
+            return new AssetFileDescriptor(pfd, 0, AssetFileDescriptor.UNKNOWN_LENGTH);
+        } catch (IOException e) {
+            throw wrap(e);
+        }
+    }
+
     // --- helpers ----------------------------------------------------
 
     private void requireUnlocked() throws FileNotFoundException {
@@ -172,6 +213,9 @@ public class VaultDocumentsProvider extends DocumentsProvider {
             flags |= Document.FLAG_DIR_SUPPORTS_CREATE;
         } else {
             flags |= Document.FLAG_SUPPORTS_WRITE;
+            if (entry.mimeType != null && entry.mimeType.startsWith("image/")) {
+                flags |= Document.FLAG_SUPPORTS_THUMBNAIL;
+            }
         }
         flags |= Document.FLAG_SUPPORTS_DELETE | Document.FLAG_SUPPORTS_RENAME;
         cursor.newRow()

@@ -544,6 +544,23 @@ class Config {
         prefs(context).edit().putString("home_mode", mode.name()).apply();
     }
 
+    /** One of "name" / "size" / "date". */
+    static String getVaultSort(Context context) {
+        return prefs(context).getString("vault_sort", "name");
+    }
+
+    static void setVaultSort(Context context, String sort) {
+        prefs(context).edit().putString("vault_sort", sort).apply();
+    }
+
+    static boolean isVaultSortDesc(Context context) {
+        return prefs(context).getBoolean("vault_sort_desc", false);
+    }
+
+    static void setVaultSortDesc(Context context, boolean desc) {
+        prefs(context).edit().putBoolean("vault_sort_desc", desc).apply();
+    }
+
     static int getVaultAutoLockSeconds(Context context) {
         return prefs(context).getInt("vault_autolock_seconds", 120);
     }

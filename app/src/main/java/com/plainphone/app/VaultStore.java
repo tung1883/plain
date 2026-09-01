@@ -117,9 +117,85 @@ final class VaultStore {
             }
             out.add(entry);
         }
-        out.sort(Comparator.comparing((Entry e) -> !e.isDir)
-                .thenComparing(e -> e.name.toLowerCase()));
+        sort(out, "name", false);
         return out;
+    }
+
+    /** Folders always first; {@code by} is "name" / "size" / "date". */
+    static void sort(List<Entry> entries, String by, boolean desc) {
+        Comparator<Entry> c;
+        switch (by) {
+            case "size":
+                c = Comparator.comparingLong(e -> e.size);
+                break;
+            case "date":
+                c = Comparator.comparingLong(e -> e.lastModified);
+                break;
+            default:
+                c = Comparator.comparing(e -> e.name.toLowerCase());
+        }
+        if (desc) c = c.reversed();
+        entries.sort(Comparator.comparing((Entry e) -> !e.isDir).thenComparing(c));
+    }
+
+    /** Recursive name search over the whole vault. */
+    static List<Entry> searchAll(Context context, String needle) {
+        List<Entry> hits = new ArrayList<>();
+        String lower = needle.toLowerCase();
+        collect(context, ROOT_DOC_ID, lower, hits);
+        return hits;
+    }
+
+    private static void collect(Context context, String docId, String lower, List<Entry> hits) {
+        List<Entry> children;
+        try {
+            children = list(context, docId);
+        } catch (FileNotFoundException e) {
+            return;
+        }
+        for (Entry entry : children) {
+            if (entry.name.toLowerCase().contains(lower)) hits.add(entry);
+            if (entry.isDir) collect(context, entry.docId, lower, hits);
+        }
+    }
+
+    /** Move an entry under a new parent folder. Returns the new docId. */
+    static String move(Context context, String docId, String destParentDocId) throws IOException {
+        File file = resolve(context, docId);
+        File destParent = resolve(context, destParentDocId);
+        if (!destParent.isDirectory()) throw new IOException("destination not a folder");
+        if (destParentDocId.equals(docId) || isChild(docId, destParentDocId)) {
+            throw new IOException("can't move a folder into itself");
+        }
+        String name = VaultCrypto.decryptName(nameKey(), file.getName());
+        if (name == null) throw new IOException("not a vault entry");
+        String enc = VaultCrypto.encryptName(nameKey(),
+                uniqueName(context, destParentDocId, name));
+        File target = new File(destParent, enc);
+        if (!file.renameTo(target)) throw new IOException("move failed");
+        return destParentDocId + "/" + enc;
+    }
+
+    /** Every folder in the vault, depth-first, for a move destination picker. */
+    static List<Entry> allFolders(Context context) {
+        List<Entry> out = new ArrayList<>();
+        collectFolders(context, ROOT_DOC_ID, out);
+        return out;
+    }
+
+    private static void collectFolders(Context context, String docId, List<Entry> out) {
+        List<Entry> children;
+        try {
+            children = list(context, docId);
+        } catch (FileNotFoundException e) {
+            return;
+        }
+        for (Entry entry : children) {
+            if (entry.isDir) {
+                out.add(entry);
+                collectFolders(context, entry.docId, out);
+            }
+        }
     }
 
     // --- mutations --------------------------------------------------
@@ -179,6 +255,23 @@ final class VaultStore {
         }
     }
 
+    static void writeText(Context context, String docId, String text) throws IOException {
+        byte[] bytes = text.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        File blob = resolve(context, docId);
+        File tmp = new File(blob.getParentFile(), blob.getName() + ".wtmp");
+        try (InputStream in = new java.io.ByteArrayInputStream(bytes);
+             OutputStream out = new FileOutputStream(tmp)) {
+            VaultCrypto.encryptStream(in, out, contentKey());
+        } catch (GeneralSecurityException e) {
+            tmp.delete();
+            throw new IOException("encrypt failed", e);
+        }
+        if (!tmp.renameTo(blob)) {
+            tmp.delete();
+            throw new IOException("swap failed");
+        }
+    }
+
     static void encryptFromFile(Context context, File src, String docId) throws IOException {
         File blob = resolve(context, docId);
         File tmp = new File(blob.getParentFile(), blob.getName() + ".wtmp");
@@ -232,6 +325,15 @@ final class VaultStore {
             candidate = base + " (" + (++n) + ")" + ext;
         }
         return candidate;
+    }
+
+    /** The docId of a child named {@code name} under {@code parentDocId}, or null. */
+    static String findChild(Context context, String parentDocId, String name)
+            throws FileNotFoundException {
+        for (Entry e : list(context, parentDocId)) {
+            if (e.name.equalsIgnoreCase(name)) return e.docId;
+        }
+        return null;
     }
 
     private static boolean nameTaken(List<Entry> siblings, String name) {

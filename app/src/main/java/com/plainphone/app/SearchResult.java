@@ -10,7 +10,8 @@ class SearchResult {
         SYSTEM("Phone settings"),
         WEB("Web"),
         FILE("Files"),
-        CONTACT("Contacts");
+        CONTACT("Contacts"),
+        VAULT("Vault");
 
         final String header;
 
