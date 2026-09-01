@@ -2,10 +2,13 @@ package com.plainphone.app;
 
 import android.content.Context;
 
+import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.security.SecureRandom;
+import java.util.Collections;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -23,6 +26,9 @@ final class VaultOpenFiles {
     }
 
     private final ConcurrentHashMap<File, Entry> open = new ConcurrentHashMap<>();
+
+    /** Open read-only proxy-fd views (no temp file) — closed on lock so access is revoked. */
+    private final Set<Closeable> proxies = Collections.newSetFromMap(new ConcurrentHashMap<>());
 
     private static class Entry {
         Context appContext;
@@ -64,10 +70,25 @@ final class VaultOpenFiles {
         }
     }
 
+    void trackProxy(Closeable proxy) {
+        proxies.add(proxy);
+    }
+
+    void untrackProxy(Closeable proxy) {
+        proxies.remove(proxy);
+    }
+
     void shredAll() {
         for (File f : open.keySet()) {
             open.remove(f);
             shred(f);
+        }
+        for (Closeable proxy : proxies) {
+            proxies.remove(proxy);
+            try {
+                proxy.close();
+            } catch (IOException ignored) {
+            }
         }
     }
 

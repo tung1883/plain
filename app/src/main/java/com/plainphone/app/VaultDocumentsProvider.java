@@ -10,9 +10,13 @@ import android.os.CancellationSignal;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.ParcelFileDescriptor;
+import android.os.ProxyFileDescriptorCallback;
+import android.os.storage.StorageManager;
 import android.provider.DocumentsContract.Document;
 import android.provider.DocumentsContract.Root;
 import android.provider.DocumentsProvider;
+import android.system.ErrnoException;
+import android.system.OsConstants;
 
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -136,6 +140,25 @@ public class VaultDocumentsProvider extends DocumentsProvider {
                                              CancellationSignal signal) throws FileNotFoundException {
         requireUnlocked();
         final boolean writable = mode.indexOf('w') != -1;
+
+        if (!writable) {
+            // Read-only: serve straight from the blob, decrypting per 64 KiB chunk.
+            // No plaintext temp on disk; open is instant regardless of file size.
+            try {
+                VaultCryptoFile cryptoFile = VaultCryptoFile.open(
+                        VaultStore.resolve(getContext(), documentId),
+                        VaultSession.get().contentKey());
+                VaultOpenFiles.get().trackProxy(cryptoFile);
+                StorageManager sm = getContext().getSystemService(StorageManager.class);
+                return sm.openProxyFileDescriptor(ParcelFileDescriptor.MODE_READ_ONLY,
+                        new ReadCallback(cryptoFile), callbackHandler);
+            } catch (IOException e) {
+                throw wrap(e);
+            }
+        }
+
+        // Writable: ProxyFileDescriptorCallback can't truncate, so an editor that
+        // saves a shorter file needs a real fd — decrypt to a no-backup temp.
         File plainTmp = new File(VaultOpenFiles.openDir(getContext()), UUID.randomUUID().toString());
         try {
             VaultStore.decryptToFile(getContext(), documentId, plainTmp);
@@ -205,6 +228,35 @@ public class VaultDocumentsProvider extends DocumentsProvider {
         FileNotFoundException fnf = new FileNotFoundException(e.getMessage());
         fnf.initCause(e);
         return fnf;
+    }
+
+    /** Read-only proxy fd backed by {@link VaultCryptoFile} — per-chunk decrypt, no temp. */
+    private static class ReadCallback extends ProxyFileDescriptorCallback {
+        private final VaultCryptoFile file;
+
+        ReadCallback(VaultCryptoFile file) {
+            this.file = file;
+        }
+
+        @Override
+        public long onGetSize() {
+            return file.size();
+        }
+
+        @Override
+        public int onRead(long offset, int size, byte[] data) throws ErrnoException {
+            try {
+                return file.read(offset, size, data);
+            } catch (IOException e) {
+                throw new ErrnoException("onRead", OsConstants.EIO);
+            }
+        }
+
+        @Override
+        public void onRelease() {
+            VaultOpenFiles.get().untrackProxy(file);
+            file.close();
+        }
     }
 
     private void addRow(MatrixCursor cursor, VaultStore.Entry entry) {

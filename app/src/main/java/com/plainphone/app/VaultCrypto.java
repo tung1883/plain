@@ -202,6 +202,14 @@ final class VaultCrypto {
         return size;
     }
 
+    static byte[] chunkNonce(byte[] prefix, long chunkIndex) {
+        return nonce(prefix, chunkIndex);
+    }
+
+    static byte[] chunkAad(long chunkIndex, boolean last) {
+        return aad(chunkIndex, last);
+    }
+
     private static byte[] nonce(byte[] prefix, long chunkIndex) {
         ByteBuffer buf = ByteBuffer.allocate(GCM_NONCE_LEN);
         buf.put(prefix);
