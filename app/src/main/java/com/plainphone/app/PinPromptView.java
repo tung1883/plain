@@ -31,13 +31,31 @@ class PinPromptView extends FrameLayout {
         void onCancel();
     }
 
+    /** Dismiss the gate after this many idle seconds; show the countdown for the last few. */
+    private static final int IDLE_SECONDS = 20;
+    private static final int COUNTDOWN_FROM = 10;
+
     private final int maxLen;
     private final boolean masked;
 
     private final StringBuilder pin = new StringBuilder();
     private final LinearLayout column;
     private final TextView display;
+    private TextView countdown;
     private final Listener listener;
+    private int idleRemaining = IDLE_SECONDS;
+    private final Runnable idleTick = new Runnable() {
+        @Override
+        public void run() {
+            idleRemaining--;
+            if (idleRemaining <= 0) {
+                listener.onCancel();
+                return;
+            }
+            updateCountdown();
+            postDelayed(this, 1000);
+        }
+    };
 
     /** PIN mode: masked dots, 6 digits, close cross. */
     PinPromptView(Context context, Listener listener) {
@@ -95,9 +113,19 @@ class PinPromptView extends FrameLayout {
         display.setBackground(box);
         LinearLayout.LayoutParams displayParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        displayParams.bottomMargin = dp(44);
+        displayParams.bottomMargin = dp(14);
         column.addView(display, displayParams);
         updateDisplay();
+
+        countdown = new TextView(context);
+        countdown.setTextColor(Color.GRAY);
+        countdown.setTextSize(13);
+        countdown.setTypeface(font);
+        countdown.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams countdownParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, dp(20));
+        countdownParams.bottomMargin = dp(24);
+        column.addView(countdown, countdownParams);
 
         String[][] keys = {
                 {"1", "2", "3"},
@@ -191,6 +219,27 @@ class PinPromptView extends FrameLayout {
     public void onWindowFocusChanged(boolean hasWindowFocus) {
         super.onWindowFocusChanged(hasWindowFocus);
         if (hasWindowFocus) UiKit.hideSystemBars(this);
+    }
+
+    @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        removeCallbacks(idleTick);
+        idleRemaining = IDLE_SECONDS;
+        updateCountdown();
+        postDelayed(idleTick, 1000);
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        super.onDetachedFromWindow();
+        removeCallbacks(idleTick);
+    }
+
+    private void updateCountdown() {
+        if (countdown == null) return;
+        countdown.setText(idleRemaining <= COUNTDOWN_FROM
+                ? "Closing in " + idleRemaining + "s" : "");
     }
 
     private boolean deleteOne() {
