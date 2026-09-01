@@ -9,7 +9,6 @@ import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.graphics.Bitmap;
 import android.graphics.Color;
-import android.graphics.PorterDuff;
 import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
@@ -70,6 +69,7 @@ public class MainActivity extends Activity {
     private ListView listView;
     private SwipeSwitcher swipeSwitcher;
     private LinearLayout modeToggle;
+    private android.widget.HorizontalScrollView modeToggleScroller;
     private LinearLayout tipRow;
     private TextView tipKicker;
     private TextView tipBody;
@@ -283,8 +283,7 @@ public class MainActivity extends Activity {
         root.setGravity(Gravity.CENTER);
         root.setBackgroundColor(Color.BLACK);
 
-        ProgressBar spinner = new ProgressBar(this);
-        spinner.getIndeterminateDrawable().setColorFilter(Color.WHITE, PorterDuff.Mode.SRC_IN);
+        ProgressBar spinner = UiKit.spinner(this);
         root.addView(spinner);
 
         TextView label = new TextView(this);
@@ -407,7 +406,12 @@ public class MainActivity extends Activity {
         root.addView(divider());
 
         modeToggle = buildModeToggle(georgia);
-        root.addView(modeToggle, new LinearLayout.LayoutParams(
+        modeToggleScroller = new android.widget.HorizontalScrollView(this);
+        modeToggleScroller.setHorizontalScrollBarEnabled(false);
+        modeToggleScroller.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        modeToggleScroller.addView(modeToggle, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        root.addView(modeToggleScroller, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
         listView = new ListView(this);
@@ -578,8 +582,8 @@ public class MainActivity extends Activity {
         rows.clear();
         String needle = currentQuery;
 
-        if (modeToggle != null) {
-            modeToggle.setVisibility(needle.isEmpty() ? View.VISIBLE : View.GONE);
+        if (modeToggleScroller != null) {
+            modeToggleScroller.setVisibility(needle.isEmpty() ? View.VISIBLE : View.GONE);
         }
         refreshTipRow();
 

@@ -92,9 +92,7 @@ class PassphraseView extends FrameLayout {
         error.setPadding(0, dp(16), 0, 0);
         column.addView(error);
 
-        spinner = new ProgressBar(context);
-        spinner.getIndeterminateDrawable().setColorFilter(Color.WHITE,
-                android.graphics.PorterDuff.Mode.SRC_IN);
+        spinner = UiKit.spinner(context);
         spinner.setVisibility(GONE);
         LinearLayout.LayoutParams spinnerParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
