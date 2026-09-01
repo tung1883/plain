@@ -17,9 +17,11 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 /**
- * Full-screen PIN entry: a prompt, a row of dots, a self-contained number pad and
- * a close cross. No system keyboard. {@link Listener#onPin} fires on every change;
- * the host decides when a value is accepted and calls {@link #reject()} otherwise.
+ * Full-screen numeric entry: a prompt, an entry box, a self-contained number pad
+ * and (optionally) a close cross. No system keyboard. {@link Listener#onPin} fires
+ * on every change; the host decides when a value is accepted and calls
+ * {@link #reject()} otherwise. Used for PIN entry (masked) and the friction-gate
+ * maths challenge (plain digits).
  */
 class PinPromptView extends FrameLayout {
 
@@ -29,16 +31,25 @@ class PinPromptView extends FrameLayout {
         void onCancel();
     }
 
-    private static final int MAX_LEN = 6;
+    private final int maxLen;
+    private final boolean masked;
 
     private final StringBuilder pin = new StringBuilder();
     private final LinearLayout column;
     private final TextView display;
     private final Listener listener;
 
+    /** PIN mode: masked dots, 6 digits, close cross. */
     PinPromptView(Context context, Listener listener) {
+        this(context, "Enter PIN", true, 6, true, listener);
+    }
+
+    PinPromptView(Context context, String prompt, boolean masked, int maxLen,
+                  boolean showClose, Listener listener) {
         super(context);
         this.listener = listener;
+        this.masked = masked;
+        this.maxLen = maxLen;
         setBackgroundColor(Color.BLACK);
 
         if (context instanceof android.app.Activity) {
@@ -58,7 +69,7 @@ class PinPromptView extends FrameLayout {
         column.setGravity(Gravity.CENTER_HORIZONTAL);
 
         TextView promptView = new TextView(context);
-        promptView.setText("Enter PIN");
+        promptView.setText(prompt);
         promptView.setTextColor(Color.WHITE);
         promptView.setTextSize(20);
         promptView.setTypeface(font);
@@ -110,16 +121,18 @@ class PinPromptView extends FrameLayout {
         columnParams.bottomMargin = dp(32);
         addView(column, columnParams);
 
-        ImageView close = new ImageView(context);
-        close.setImageDrawable(MiniIcons.cross(dp(20), Color.WHITE));
-        close.setScaleType(ImageView.ScaleType.CENTER);
-        close.setBackground(pressBackground());
-        close.setOnClickListener(v -> listener.onCancel());
-        FrameLayout.LayoutParams closeParams = new FrameLayout.LayoutParams(
-                dp(48), dp(48), Gravity.TOP | Gravity.END);
-        closeParams.topMargin = dp(12);
-        closeParams.rightMargin = dp(8);
-        addView(close, closeParams);
+        if (showClose) {
+            ImageView close = new ImageView(context);
+            close.setImageDrawable(MiniIcons.cross(dp(20), Color.WHITE));
+            close.setScaleType(ImageView.ScaleType.CENTER);
+            close.setBackground(pressBackground());
+            close.setOnClickListener(v -> listener.onCancel());
+            FrameLayout.LayoutParams closeParams = new FrameLayout.LayoutParams(
+                    dp(48), dp(48), Gravity.TOP | Gravity.END);
+            closeParams.topMargin = dp(12);
+            closeParams.rightMargin = dp(8);
+            addView(close, closeParams);
+        }
     }
 
     private View keyButton(Context context, Typeface font, String label) {
@@ -165,7 +178,7 @@ class PinPromptView extends FrameLayout {
             });
         } else {
             key.setOnClickListener(v -> {
-                if (pin.length() < MAX_LEN) {
+                if (pin.length() < maxLen) {
                     pin.append(label);
                     changed();
                 }
@@ -202,9 +215,13 @@ class PinPromptView extends FrameLayout {
     }
 
     private void updateDisplay() {
-        StringBuilder masked = new StringBuilder();
-        for (int i = 0; i < pin.length(); i++) masked.append('•');
-        display.setText(masked.toString());
+        if (!masked) {
+            display.setText(pin.toString());
+            return;
+        }
+        StringBuilder dots = new StringBuilder();
+        for (int i = 0; i < pin.length(); i++) dots.append('•');
+        display.setText(dots.toString());
     }
 
     private StateListDrawable pressBackground() {

@@ -6,10 +6,9 @@ import android.graphics.Typeface;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.text.InputType;
 import android.view.Gravity;
-import android.widget.Button;
-import android.widget.EditText;
+import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -19,10 +18,12 @@ public abstract class FrictionGateActivity extends Activity {
 
     private static final int DEFAULT_WAIT_SECONDS = 30;
 
-    private LinearLayout content;
-    private Typeface georgia;
+    private LinearLayout countdownView;
+    private TextView countdownText;
+    private Typeface font;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private long mathAnswer;
+    private PinPromptView mathPad;
 
     protected abstract String describeAction();
 
@@ -39,7 +40,7 @@ public abstract class FrictionGateActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        georgia = Fonts.current(this);
+        font = Fonts.current(this);
 
         if (waitSeconds() <= 0 && !requiresMathChallenge()) {
             onConfirmed();
@@ -47,29 +48,49 @@ public abstract class FrictionGateActivity extends Activity {
             return;
         }
 
-        content = new LinearLayout(this);
-        content.setOrientation(LinearLayout.VERTICAL);
-        content.setGravity(Gravity.CENTER);
-        content.setBackgroundColor(Color.BLACK);
-        content.setPadding(48, 48, 48, 48);
-        setContentView(content);
+        countdownView = new LinearLayout(this);
+        countdownView.setOrientation(LinearLayout.VERTICAL);
+        countdownView.setGravity(Gravity.CENTER);
+        countdownView.setBackgroundColor(Color.BLACK);
+        countdownView.setPadding(48, 48, 48, 48);
+
+        countdownText = new TextView(this);
+        countdownText.setTextColor(Color.WHITE);
+        countdownText.setTextSize(20);
+        countdownText.setTypeface(font);
+        countdownText.setGravity(Gravity.CENTER);
+        countdownView.addView(countdownText);
+
+        FrameLayout root = new FrameLayout(this);
+        root.setBackgroundColor(Color.BLACK);
+        root.addView(countdownView, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+
+        int px = (int) (getResources().getDisplayMetrics().density * 48);
+        ImageView close = new ImageView(this);
+        close.setImageDrawable(MiniIcons.cross((int) (getResources().getDisplayMetrics().density * 20),
+                Color.WHITE));
+        close.setScaleType(ImageView.ScaleType.CENTER);
+        close.setOnClickListener(v -> finish());
+        FrameLayout.LayoutParams closeParams = new FrameLayout.LayoutParams(px, px,
+                Gravity.TOP | Gravity.END);
+        closeParams.topMargin = px / 4;
+        closeParams.rightMargin = px / 6;
+        root.addView(close, closeParams);
+
+        setContentView(root);
+        UiKit.hideSystemBars(this);
 
         startCountdown(waitSeconds());
     }
 
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) UiKit.hideSystemBars(this);
+    }
+
     private void startCountdown(int secondsLeft) {
-        content.removeAllViews();
-
-        TextView title = new TextView(this);
-        title.setTextColor(Color.WHITE);
-        title.setTextSize(20);
-        title.setTypeface(georgia);
-        title.setGravity(Gravity.CENTER);
-        title.setText(describeAction() + "\nWait " + secondsLeft + "s...");
-        content.addView(title);
-
-        content.addView(backButton(), backButtonParams());
-
         if (secondsLeft <= 0) {
             if (requiresMathChallenge()) {
                 showMathChallenge();
@@ -79,80 +100,42 @@ public abstract class FrictionGateActivity extends Activity {
             }
             return;
         }
+        countdownText.setText(describeAction() + "\nWait " + secondsLeft + "s...");
         handler.postDelayed(() -> startCountdown(secondsLeft - 1), 1000);
     }
 
     private void showMathChallenge() {
-        content.removeAllViews();
-
         Random random = new Random();
         int a = random.nextInt(90) + 10;
         int b = random.nextInt(90) + 10;
         mathAnswer = (long) a * b;
+        int answerDigits = Long.toString(mathAnswer).length();
 
-        TextView question = new TextView(this);
-        question.setTextColor(Color.WHITE);
-        question.setTextSize(24);
-        question.setTypeface(georgia);
-        question.setGravity(Gravity.CENTER);
-        question.setText("What is " + a + " × " + b + "?");
-        content.addView(question);
-
-        LinearLayout answerRow = new LinearLayout(this);
-        answerRow.setOrientation(LinearLayout.HORIZONTAL);
-        answerRow.setGravity(Gravity.CENTER);
-
-        EditText input = new EditText(this);
-        input.setInputType(InputType.TYPE_CLASS_NUMBER);
-        input.setGravity(Gravity.CENTER);
-        UiKit.style(this, input);
-        answerRow.addView(input, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-
-        Button confirm = new Button(this);
-        confirm.setText("Confirm");
-        UiKit.style(this, confirm);
-        confirm.setOnClickListener(v -> checkAnswer(input.getText().toString()));
-        LinearLayout.LayoutParams confirmParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        confirmParams.leftMargin = 24;
-        answerRow.addView(confirm, confirmParams);
-
-        LinearLayout.LayoutParams answerRowParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        answerRowParams.topMargin = 48;
-        content.addView(answerRow, answerRowParams);
-
-        content.addView(backButton(), backButtonParams());
-    }
-
-    private Button backButton() {
-        Button back = new Button(this);
-        back.setText("Back");
-        UiKit.style(this, back);
-        back.setOnClickListener(v -> finish());
-        return back;
-    }
-
-    private LinearLayout.LayoutParams backButtonParams() {
-
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.topMargin = 48;
-        return params;
-    }
-
-    private void checkAnswer(String text) {
-        try {
-            long value = Long.parseLong(text.trim());
-            if (value == mathAnswer) {
-                onConfirmed();
-                finish();
-            } else {
-                showMathChallenge();
+        mathPad = new PinPromptView(this, "What is " + a + " × " + b + "?",
+                false, answerDigits + 1, true, new PinPromptView.Listener() {
+            @Override
+            public void onPin(String value) {
+                if (value.isEmpty()) return;
+                long entered;
+                try {
+                    entered = Long.parseLong(value);
+                } catch (NumberFormatException e) {
+                    return;
+                }
+                if (entered == mathAnswer) {
+                    onConfirmed();
+                    finish();
+                } else if (value.length() >= answerDigits) {
+                    mathPad.reject();
+                }
             }
-        } catch (NumberFormatException e) {
-            showMathChallenge();
-        }
+
+            @Override
+            public void onCancel() {
+                finish();
+            }
+        });
+        setContentView(mathPad);
     }
 
     @Override
@@ -161,4 +144,3 @@ public abstract class FrictionGateActivity extends Activity {
         handler.removeCallbacksAndMessages(null);
     }
 }
-
