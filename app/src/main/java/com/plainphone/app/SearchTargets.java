@@ -74,7 +74,7 @@ class SearchTargets {
                     true, "notes", "export", "folder", "lock", "pin"),
             new PlainTarget("To-do", "Task list settings", TodoSettingsActivity.class,
                     true, "todo", "tasks", "todo.txt", "checklist"),
-            new PlainTarget("Home tips", "Tip and quote of the day", TipsSettingsActivity.class,
+            new PlainTarget("Tips and quotes", "Tip and quote of the day", TipsSettingsActivity.class,
                     true, "tips", "quotes", "hints", "quote of the day"),
     };
 

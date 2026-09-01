@@ -32,13 +32,13 @@ class Tips {
     }
 
     static final String[] DEFAULT_TIPS = {
-            "Turn off recommended apps in your recent-apps screen to cut the noise.",
+            "Turn off recommended apps in your recent-apps screen.",
             "Search files on your phone right from here.",
             "Create a note straight from the search bar.",
-            "Long-press a home tab to reorder Apps, Notes, To-do and Stats.",
-            "Lock an app and it re-locks the moment you leave it.",
-            "Flag an app to add a wait screen and an auto-close timer.",
-            "Swipe left and right on the home list to move between sections.",
+            "Long-press a home tab to reorder the sections.",
+            "A locked app re-locks the moment you leave it.",
+            "Flag an app to add a wait screen before it opens.",
+            "Swipe the home list left and right to switch sections.",
     };
 
     static final String[] DEFAULT_QUOTES = {
@@ -47,7 +47,7 @@ class Tips {
             "A quiet phone is a clearer mind.",
             "Boredom is the doorway to your next good idea.",
             "What you give your attention to grows.",
-            "The task you keep avoiding is usually the one that matters.",
+            "The task you keep avoiding is the one that matters.",
     };
 
     static String defaultTipsText() {
