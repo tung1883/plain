@@ -81,7 +81,15 @@ class StatsPanel {
 
         LinearLayout shell = newContent();
         addToggle(shell, georgia, r);
-        shell.addView(emptyText(georgia, "Loading…"));
+        TextView loading = new TextView(host);
+        loading.setText("Loading…");
+        loading.setTextColor(Color.GRAY);
+        loading.setTextSize(14);
+        loading.setTypeface(georgia);
+        LinearLayout.LayoutParams loadingParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        loadingParams.topMargin = 36;
+        shell.addView(loading, loadingParams);
         scroll.removeAllViews();
         scroll.addView(shell);
 
