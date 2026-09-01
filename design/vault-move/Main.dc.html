@@ -1,0 +1,112 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+    body { margin: 0; font-family: 'IBM Plex Mono', ui-monospace, monospace; background: #000; }
+    a { color: #ffffff; } a:hover { color: #cccccc; }
+    * { box-sizing: border-box; }
+  </style>
+</helmet>
+
+<div style="width: 390px; height: 844px; background: #000; color: #fff; display: flex; flex-direction: column;">
+
+  <!-- backdrop: the browser list, dimmed -->
+  <div style="flex: 1; opacity: 0.28; padding: 0 0 0 0; overflow: hidden;">
+    <div style="display: flex; align-items: center; padding: 34px 24px 12px; color: #888; font-size: 13px; letter-spacing: 1px;">PHOTOS</div>
+    <div style="height: 1px; background: #222;"></div>
+    <div style="display: flex; align-items: center; gap: 18px; padding: 18px 24px;"><div style="width: 30px; height: 30px; border: 1px solid #444;"></div><div style="font-size: 15px;">IMG_2231.jpg</div></div>
+    <div style="display: flex; align-items: center; gap: 18px; padding: 18px 24px;"><div style="width: 30px; height: 30px; border: 1px solid #444;"></div><div style="font-size: 15px;">IMG_2244.jpg</div></div>
+    <div style="display: flex; align-items: center; gap: 18px; padding: 18px 24px;"><div style="width: 30px; height: 30px; border: 1px solid #444;"></div><div style="font-size: 15px;">scan_receipt.pdf</div></div>
+  </div>
+
+  <!-- the move sheet -->
+  <div style="position: absolute; left: 0; right: 0; bottom: 0; background: #000; border-top: 1px solid #333;">
+
+    <div style="display: flex; align-items: baseline; justify-content: space-between; padding: 22px 24px 14px;">
+      <div style="color: #888; font-size: 13px; letter-spacing: 1.5px;">MOVE 3 ITEMS TO&hellip;</div>
+      <div style="color: #888; font-size: 16px; line-height: 1;">&times;</div>
+    </div>
+    <div style="height: 1px; background: #222;"></div>
+
+    <!-- tree -->
+    <div style="max-height: 430px; overflow-y: auto;">
+
+      <!-- Vault (root) -->
+      <div style="display: flex; align-items: center; height: 52px; padding-right: 20px;">
+        <div style="width: 22px;"></div>
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6" style="margin: 0 14px 0 4px;"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l2 2.2h7A1.5 1.5 0 0 1 21 9.7V17a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17Z"/></svg>
+        <div style="font-size: 15px;">Vault</div>
+      </div>
+
+      <!-- Documents (depth 1) -->
+      <div style="display: flex; align-items: center; height: 52px; padding-right: 20px;">
+        <div style="width: 22px; align-self: stretch; position: relative;"><div style="position: absolute; left: 11px; top: 0; bottom: 0; width: 1px; background: #333;"></div></div>
+        <div style="width: 22px; align-self: stretch; position: relative;"><div style="position: absolute; left: 11px; top: 0; height: 26px; width: 1px; background: #333;"></div><div style="position: absolute; left: 11px; top: 26px; width: 11px; height: 1px; background: #333;"></div></div>
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6" style="margin: 0 14px 0 2px;"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l2 2.2h7A1.5 1.5 0 0 1 21 9.7V17a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17Z"/></svg>
+        <div style="font-size: 15px;">Documents</div>
+      </div>
+
+      <!-- Photos (depth 1) — current location -->
+      <div style="display: flex; align-items: center; height: 52px; padding-right: 20px;">
+        <div style="width: 22px; align-self: stretch; position: relative;"><div style="position: absolute; left: 11px; top: 0; bottom: 0; width: 1px; background: #333;"></div></div>
+        <div style="width: 22px; align-self: stretch; position: relative;"><div style="position: absolute; left: 11px; top: 0; height: 26px; width: 1px; background: #333;"></div><div style="position: absolute; left: 11px; top: 26px; width: 11px; height: 1px; background: #333;"></div><div style="position: absolute; left: 11px; top: 26px; bottom: 0; width: 1px; background: #333;"></div></div>
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#666" stroke-width="1.6" style="margin: 0 14px 0 2px;"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l2 2.2h7A1.5 1.5 0 0 1 21 9.7V17a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17Z"/></svg>
+        <div style="font-size: 15px; color: #666;">Photos</div>
+        <div style="font-size: 12px; color: #555; margin-left: 10px;">— you are here</div>
+      </div>
+
+      <!-- 2024 (depth 2, child of Photos — invalid, greyed) -->
+      <div style="display: flex; align-items: center; height: 52px; padding-right: 20px;">
+        <div style="width: 22px;"></div>
+        <div style="width: 22px; align-self: stretch; position: relative;"><div style="position: absolute; left: 11px; top: 0; bottom: 0; width: 1px; background: #262626;"></div></div>
+        <div style="width: 22px; align-self: stretch; position: relative;"><div style="position: absolute; left: 11px; top: 0; height: 26px; width: 1px; background: #262626;"></div><div style="position: absolute; left: 11px; top: 26px; width: 11px; height: 1px; background: #262626;"></div></div>
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#3d3d3d" stroke-width="1.6" style="margin: 0 14px 0 2px;"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l2 2.2h7A1.5 1.5 0 0 1 21 9.7V17a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17Z"/></svg>
+        <div style="font-size: 15px; color: #3d3d3d;">2024</div>
+      </div>
+
+      <!-- Receipts (depth 1) — SELECTED destination -->
+      <div style="display: flex; align-items: center; height: 52px; padding-right: 20px; background: #161616; box-shadow: inset 2px 0 0 #fff;">
+        <div style="width: 22px; align-self: stretch; position: relative;"><div style="position: absolute; left: 11px; top: 0; bottom: 0; width: 1px; background: #333;"></div></div>
+        <div style="width: 22px; align-self: stretch; position: relative;"><div style="position: absolute; left: 11px; top: 0; height: 26px; width: 1px; background: #333;"></div><div style="position: absolute; left: 11px; top: 26px; width: 11px; height: 1px; background: #333;"></div><div style="position: absolute; left: 11px; top: 26px; bottom: 0; width: 1px; background: #333;"></div></div>
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" style="margin: 0 14px 0 2px;"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l2 2.2h7A1.5 1.5 0 0 1 21 9.7V17a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17Z"/></svg>
+        <div style="font-size: 15px; font-weight: 600;">Receipts</div>
+      </div>
+
+      <!-- Work (depth 1) -->
+      <div style="display: flex; align-items: center; height: 52px; padding-right: 20px;">
+        <div style="width: 22px; align-self: stretch; position: relative;"><div style="position: absolute; left: 11px; top: 0; bottom: 0; width: 1px; background: #333;"></div></div>
+        <div style="width: 22px; align-self: stretch; position: relative;"><div style="position: absolute; left: 11px; top: 0; height: 26px; width: 1px; background: #333;"></div><div style="position: absolute; left: 11px; top: 26px; width: 11px; height: 1px; background: #333;"></div></div>
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6" style="margin: 0 14px 0 2px;"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l2 2.2h7A1.5 1.5 0 0 1 21 9.7V17a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17Z"/></svg>
+        <div style="font-size: 15px;">Work</div>
+      </div>
+
+      <!-- Archive (depth 1, last) -->
+      <div style="display: flex; align-items: center; height: 52px; padding-right: 20px;">
+        <div style="width: 22px; align-self: stretch; position: relative;"><div style="position: absolute; left: 11px; top: 0; height: 26px; width: 1px; background: #333;"></div></div>
+        <div style="width: 22px; align-self: stretch; position: relative;"><div style="position: absolute; left: 11px; top: 0; height: 26px; width: 1px; background: #333;"></div><div style="position: absolute; left: 11px; top: 26px; width: 11px; height: 1px; background: #333;"></div></div>
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6" style="margin: 0 14px 0 2px;"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l2 2.2h7A1.5 1.5 0 0 1 21 9.7V17a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17Z"/></svg>
+        <div style="font-size: 15px;">Archive</div>
+      </div>
+
+    </div>
+
+    <div style="height: 1px; background: #222;"></div>
+    <div style="display: flex; align-items: center; justify-content: space-between; padding: 20px 24px; padding-bottom: 30px;">
+      <div style="font-size: 15px; color: #fff;">Move here&nbsp;&nbsp;&rarr;&nbsp;&nbsp;<span style="color:#888;">Receipts</span></div>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {}
+</script>
+</body>
+</html>

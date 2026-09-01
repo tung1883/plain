@@ -48,8 +48,13 @@ final class VaultSession {
 
     synchronized void unlock(Context context, char[] passphrase)
             throws GeneralSecurityException, VaultFormat.WrongPassphrase, java.io.IOException {
+        unlock(context, passphrase, null);
+    }
+
+    synchronized void unlock(Context context, char[] passphrase, VaultCrypto.Progress progress)
+            throws GeneralSecurityException, VaultFormat.WrongPassphrase, java.io.IOException {
         VaultFormat.Header header = VaultFormat.readHeader(vaultRoot(context));
-        byte[] key = VaultFormat.unwrapMasterKey(header, passphrase);
+        byte[] key = VaultFormat.unwrapMasterKey(header, passphrase, progress);
         adoptKey(key);
         notifyChanged(context);
     }
@@ -72,6 +77,7 @@ final class VaultSession {
         contentKey = null;
         nameKey = null;
         VaultOpenFiles.get().shredAll();
+        VaultThumbs.clear();
         notifyChanged(context);
     }
 

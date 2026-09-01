@@ -40,6 +40,54 @@ class MiniIcons {
         };
     }
 
+    static Drawable folder(int sizePx, int color) {
+        return new LineIcon(sizePx, color) {
+            @Override
+            void paint(Canvas canvas, Rect b, Paint p) {
+                float u = b.width();
+                float l = b.left + u * 0.12f;
+                float r = b.left + u * 0.88f;
+                float top = b.top + u * 0.28f;
+                float bot = b.top + u * 0.80f;
+                float tabTop = b.top + u * 0.20f;
+                float tabRight = b.left + u * 0.44f;
+                android.graphics.Path path = new android.graphics.Path();
+                path.moveTo(l, bot);
+                path.lineTo(l, tabTop);
+                path.lineTo(tabRight, tabTop);
+                path.lineTo(tabRight + u * 0.10f, top);
+                path.lineTo(r, top);
+                path.lineTo(r, bot);
+                path.close();
+                canvas.drawPath(path, p);
+            }
+        };
+    }
+
+    static Drawable file(int sizePx, int color) {
+        return new LineIcon(sizePx, color) {
+            @Override
+            void paint(Canvas canvas, Rect b, Paint p) {
+                float u = b.width();
+                float l = b.left + u * 0.20f;
+                float r = b.left + u * 0.80f;
+                float top = b.top + u * 0.12f;
+                float bot = b.top + u * 0.88f;
+                float fold = u * 0.22f;
+                android.graphics.Path path = new android.graphics.Path();
+                path.moveTo(l, top);
+                path.lineTo(r - fold, top);
+                path.lineTo(r, top + fold);
+                path.lineTo(r, bot);
+                path.lineTo(l, bot);
+                path.close();
+                canvas.drawPath(path, p);
+                canvas.drawLine(r - fold, top, r - fold, top + fold, p);
+                canvas.drawLine(r - fold, top + fold, r, top + fold, p);
+            }
+        };
+    }
+
     private abstract static class LineIcon extends Drawable {
         private final int size;
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);

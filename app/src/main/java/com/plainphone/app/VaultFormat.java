@@ -43,8 +43,13 @@ final class VaultFormat {
         return new File(vaultRoot, "header.pv");
     }
 
-    /** Generate salt + master key, wrap the master key under the passphrase, write the header. */
     static void createVault(File vaultRoot, char[] passphrase)
+            throws IOException, GeneralSecurityException {
+        createVault(vaultRoot, passphrase, null);
+    }
+
+    /** Generate salt + master key, wrap the master key under the passphrase, write the header. */
+    static void createVault(File vaultRoot, char[] passphrase, VaultCrypto.Progress progress)
             throws IOException, GeneralSecurityException {
         if (!vaultRoot.isDirectory() && !vaultRoot.mkdirs()) {
             throw new IOException("Can't create vault dir " + vaultRoot);
@@ -53,7 +58,7 @@ final class VaultFormat {
 
         byte[] salt = VaultCrypto.randomBytes(SALT_LEN);
         byte[] masterKey = VaultCrypto.randomBytes(MASTER_KEY_LEN);
-        byte[] passRaw = VaultCrypto.deriveKey(passphrase, salt, PBKDF2_ITERATIONS);
+        byte[] passRaw = VaultCrypto.deriveKey(passphrase, salt, PBKDF2_ITERATIONS, progress);
         byte[] wrapped;
         try {
             wrapped = VaultCrypto.wrap(VaultCrypto.aesKey(passRaw), masterKey);
@@ -90,14 +95,29 @@ final class VaultFormat {
         }
     }
 
-    /** Derive the pass key and unwrap the master key, or throw {@link WrongPassphrase}. */
     static byte[] unwrapMasterKey(Header header, char[] passphrase)
             throws GeneralSecurityException, WrongPassphrase {
-        byte[] passRaw = VaultCrypto.deriveKey(passphrase, header.salt, header.iterations);
+        return unwrapMasterKey(header, passphrase, null);
+    }
+
+    /** Derive the pass key and unwrap the master key, or throw {@link WrongPassphrase}. */
+    static byte[] unwrapMasterKey(Header header, char[] passphrase, VaultCrypto.Progress progress)
+            throws GeneralSecurityException, WrongPassphrase {
+        byte[] passRaw = VaultCrypto.deriveKey(passphrase, header.salt, header.iterations, progress);
         try {
             return VaultCrypto.unwrap(VaultCrypto.aesKey(passRaw), header.wrappedMasterKey);
         } catch (javax.crypto.AEADBadTagException e) {
-            throw new WrongPassphrase();
+            // Fall back to the platform PBKDF2 in case the hand-rolled password
+            // encoding disagreed (a non-ASCII password on some devices).
+            VaultCrypto.zeroize(passRaw);
+            byte[] jce = VaultCrypto.deriveKeyJce(passphrase, header.salt, header.iterations);
+            try {
+                return VaultCrypto.unwrap(VaultCrypto.aesKey(jce), header.wrappedMasterKey);
+            } catch (javax.crypto.AEADBadTagException e2) {
+                throw new WrongPassphrase();
+            } finally {
+                VaultCrypto.zeroize(jce);
+            }
         } finally {
             VaultCrypto.zeroize(passRaw);
         }

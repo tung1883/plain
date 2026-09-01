@@ -61,13 +61,61 @@ final class VaultCrypto {
 
     // --- KDF ---------------------------------------------------------------
 
+    interface Progress {
+        void onProgress(int done, int total);
+    }
+
     /** PBKDF2-HMAC-SHA256 → 256-bit key material. Caller owns {@code passphrase}. */
     static byte[] deriveKey(char[] passphrase, byte[] salt, int iterations)
             throws GeneralSecurityException {
+        return deriveKey(passphrase, salt, iterations, null);
+    }
+
+    /** The platform's PBKDF2 — a fallback cross-check when the hand-rolled one disagrees. */
+    static byte[] deriveKeyJce(char[] passphrase, byte[] salt, int iterations)
+            throws GeneralSecurityException {
         KeySpec spec = new PBEKeySpec(passphrase, salt, iterations, 256);
-        SecretKeyFactory factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
-        SecretKey key = factory.generateSecret(spec);
-        return key.getEncoded();
+        return SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
+                .generateSecret(spec).getEncoded();
+    }
+
+    /**
+     * PBKDF2-HMAC-SHA256, hand-rolled so the caller can watch the iteration count.
+     * dkLen is exactly one HMAC-SHA256 block (32 bytes) so there is a single
+     * {@code F(P, S, c, 1)} to compute.
+     *
+     * <p>Password bytes = one byte per char, low 8 bits — matching BouncyCastle's
+     * {@code PKCS5PasswordToBytes}, which is what Android's
+     * {@code SecretKeyFactory("PBKDF2WithHmacSHA256")} uses. (ASCII passwords are
+     * identical to UTF-8; keep passwords ASCII to stay portable.)
+     */
+    static byte[] deriveKey(char[] passphrase, byte[] salt, int iterations, Progress progress)
+            throws GeneralSecurityException {
+        byte[] pw = pkcs5Bytes(passphrase);
+        if (pw.length == 0) throw new GeneralSecurityException("empty password");
+        try {
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(pw, "HmacSHA256"));
+
+            mac.update(salt);
+            byte[] u = mac.doFinal(new byte[]{0, 0, 0, 1});   // U1 = PRF(P, S || INT(1))
+            byte[] t = u.clone();
+            for (int i = 1; i < iterations; i++) {
+                u = mac.doFinal(u);                            // Mac resets to keyed state
+                for (int k = 0; k < t.length; k++) t[k] ^= u[k];
+                if (progress != null && (i & 0x1FFF) == 0) progress.onProgress(i, iterations);
+            }
+            if (progress != null) progress.onProgress(iterations, iterations);
+            return t;
+        } finally {
+            zeroize(pw);
+        }
+    }
+
+    private static byte[] pkcs5Bytes(char[] chars) {
+        byte[] out = new byte[chars.length];
+        for (int i = 0; i < chars.length; i++) out[i] = (byte) chars[i];
+        return out;
     }
 
     // --- HKDF-SHA256 -----------------------------------------------------
