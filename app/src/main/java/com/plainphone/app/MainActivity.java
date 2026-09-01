@@ -71,6 +71,9 @@ public class MainActivity extends Activity {
     private SwipeSwitcher swipeSwitcher;
     private LinearLayout modeToggle;
     private HomeMode homeMode = HomeMode.APPS;
+    private List<HomeMode> modeOrder = new ArrayList<>();
+    private TextView draggingTab;
+    private float dragLastRawX;
 
     private StatsPanel statsPanel;
     private boolean statsPanelShown;
@@ -299,6 +302,7 @@ public class MainActivity extends Activity {
         rows = new ArrayList<>();
         collapsedSections = Config.getCollapsedSections(this);
         homeMode = Config.getHomeMode(this);
+        modeOrder = Config.getHomeModeOrder(this);
         homeUiBuilt = true;
         builtWithFont = Config.getFontChoice(this);
 
@@ -1040,15 +1044,25 @@ public class MainActivity extends Activity {
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setPadding(48, 28, 48, 20);
 
-        HomeMode[] modes = HomeMode.values();
-        for (HomeMode mode : modes) {
+        for (HomeMode mode : modeOrder) {
             TextView tab = new TextView(this);
             tab.setText(mode.label.toUpperCase());
+            tab.setTag(mode);
             tab.setTypeface(georgia);
             tab.setTextSize(13);
             tab.setLetterSpacing(0.15f);
             tab.setPadding(0, 8, 56, 8);
-            tab.setOnClickListener(v -> switchMode(mode));
+            tab.setOnClickListener(v -> {
+                if (draggingTab == null) switchMode((HomeMode) v.getTag());
+            });
+            tab.setOnLongClickListener(v -> {
+                draggingTab = (TextView) v;
+                v.setAlpha(0.55f);
+                v.setTranslationZ(12f);
+                ((TextView) v).setTextColor(Color.WHITE);
+                return true;
+            });
+            tab.setOnTouchListener(this::onTabTouch);
             row.addView(tab, new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
         }
@@ -1056,28 +1070,90 @@ public class MainActivity extends Activity {
         return row;
     }
 
+    private boolean onTabTouch(View v, android.view.MotionEvent e) {
+        switch (e.getActionMasked()) {
+            case android.view.MotionEvent.ACTION_DOWN:
+                dragLastRawX = e.getRawX();
+                return false;   // let long-press detection run
+            case android.view.MotionEvent.ACTION_MOVE:
+                if (draggingTab != v) return false;
+                float dx = e.getRawX() - dragLastRawX;
+                dragLastRawX = e.getRawX();
+                v.setTranslationX(v.getTranslationX() + dx);
+                maybeReorderTab((TextView) v);
+                return true;
+            case android.view.MotionEvent.ACTION_UP:
+            case android.view.MotionEvent.ACTION_CANCEL:
+                if (draggingTab != v) return false;
+                draggingTab = null;
+                v.animate().translationX(0f).setDuration(140).start();
+                v.setAlpha(1f);
+                v.setTranslationZ(0f);
+                Config.setHomeModeOrder(this, modeOrder);
+                refreshTabColors(modeToggle);
+                return true;
+        }
+        return false;
+    }
+
+    private boolean reorderPending;
+
+    private void maybeReorderTab(TextView tab) {
+        if (reorderPending) return;
+        int idx = modeToggle.indexOfChild(tab);
+        float center = tab.getLeft() + tab.getWidth() / 2f + tab.getTranslationX();
+
+        View neighbour = null;
+        int neighbourIdx = -1;
+        if (idx > 0) {
+            View left = modeToggle.getChildAt(idx - 1);
+            if (center < left.getLeft() + left.getWidth() / 2f) {
+                neighbour = left;
+                neighbourIdx = idx - 1;
+            }
+        }
+        if (neighbour == null && idx < modeToggle.getChildCount() - 1) {
+            View right = modeToggle.getChildAt(idx + 1);
+            if (center > right.getLeft() + right.getWidth() / 2f) {
+                neighbour = right;
+                neighbourIdx = idx + 1;
+            }
+        }
+        if (neighbour == null) return;
+
+        // Move the NEIGHBOUR across the dragged tab. The dragged view is never
+        // detached, so its touch stream (the ongoing drag) is not interrupted.
+        float beforeLeft = tab.getLeft();
+        modeToggle.removeViewAt(neighbourIdx);
+        modeToggle.addView(neighbour, idx);
+        java.util.Collections.swap(modeOrder, idx, neighbourIdx);
+        reorderPending = true;
+        modeToggle.post(() -> {
+            tab.setTranslationX(tab.getTranslationX() + beforeLeft - tab.getLeft());
+            reorderPending = false;
+        });
+    }
+
     private void refreshModeToggle() {
         if (modeToggle != null) refreshTabColors(modeToggle);
     }
 
     private HomeMode sectionAt(int dir) {
-        int next = homeMode.ordinal() + dir;
-        HomeMode[] modes = HomeMode.values();
-        return (next >= 0 && next < modes.length) ? modes[next] : null;
+        int next = modeOrder.indexOf(homeMode) + dir;
+        return (next >= 0 && next < modeOrder.size()) ? modeOrder.get(next) : null;
     }
 
     /** Tab tap: animated slide to the target section. */
     private void switchMode(HomeMode target) {
         if (homeMode == target) return;
-        int diff = target.ordinal() - homeMode.ordinal();
+        int diff = modeOrder.indexOf(target) - modeOrder.indexOf(homeMode);
         swipeSwitcher.performJump(diff > 0 ? 1 : -1, Math.abs(diff));
     }
 
     private void refreshTabColors(LinearLayout row) {
-        HomeMode[] modes = HomeMode.values();
-        for (int i = 0; i < row.getChildCount() && i < modes.length; i++) {
+        for (int i = 0; i < row.getChildCount(); i++) {
             TextView tab = (TextView) row.getChildAt(i);
-            tab.setTextColor(modes[i] == homeMode ? Color.WHITE : Color.DKGRAY);
+            tab.setTextColor(tab.getTag() == homeMode ? Color.WHITE : Color.DKGRAY);
         }
     }
 
