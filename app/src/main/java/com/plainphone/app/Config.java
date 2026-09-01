@@ -544,6 +544,14 @@ class Config {
         prefs(context).edit().putString("home_mode", mode.name()).apply();
     }
 
+    static int getVaultAutoLockSeconds(Context context) {
+        return prefs(context).getInt("vault_autolock_seconds", 120);
+    }
+
+    static void setVaultAutoLockSeconds(Context context, int seconds) {
+        prefs(context).edit().putInt("vault_autolock_seconds", seconds).apply();
+    }
+
     static boolean isPinSet(Context context) {
         return prefs(context).getString("lock_pin_hash", null) != null;
     }

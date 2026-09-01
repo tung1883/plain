@@ -9,6 +9,8 @@
         tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <!-- Home-screen search over contacts and on-device files. Both are requested at
          runtime the first time a search actually reaches for them, not at install.
@@ -272,6 +274,48 @@
             android:name=".TimeBlockOverrideActivity"
             android:exported="false"
             android:theme="@style/Theme.PlainPhone" />
+
+        <activity
+            android:name=".VaultActivity"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
+            android:name=".VaultTextViewerActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
+            android:name=".VaultImageViewerActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
+            android:name=".VaultAutoLockActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <service
+            android:name=".VaultUnlockService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <!-- Exposes the unlocked vault in the system file picker. Disabled until the
+             user creates a vault (VaultActivity.enableProvider), so it never shows an
+             empty location. -->
+        <provider
+            android:name=".VaultDocumentsProvider"
+            android:authorities="com.plainphone.app.vault"
+            android:exported="true"
+            android:enabled="false"
+            android:grantUriPermissions="true"
+            android:permission="android.permission.MANAGE_DOCUMENTS">
+            <intent-filter>
+                <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
+            </intent-filter>
+        </provider>
 
         <!-- Hands one searched-for file to a viewer app. Not exported, so nothing can query
              it directly; grantUriPermissions is what lets a single Uri be shared through an
