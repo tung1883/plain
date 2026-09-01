@@ -33,6 +33,8 @@ final class VaultSession {
     private byte[] masterKey;
     private SecretKey contentKey;
     private SecretKey nameKey;
+    private SecretKey manifestKey;
+    private VaultManifest manifest;
 
     private final CopyOnWriteArrayList<Listener> listeners = new CopyOnWriteArrayList<>();
 
@@ -55,14 +57,16 @@ final class VaultSession {
             throws GeneralSecurityException, VaultFormat.WrongPassphrase, java.io.IOException {
         VaultFormat.Header header = VaultFormat.readHeader(vaultRoot(context));
         byte[] key = VaultFormat.unwrapMasterKey(header, passphrase, progress);
-        adoptKey(key);
+        adoptKey(context, key);
         notifyChanged(context);
     }
 
-    synchronized void adoptKey(byte[] key) {
+    synchronized void adoptKey(Context context, byte[] key) {
         this.masterKey = key;
         this.contentKey = VaultCrypto.subKey(key, "content");
         this.nameKey = VaultCrypto.subKey(key, "name");
+        this.manifestKey = VaultCrypto.subKey(key, "manifest");
+        this.manifest = VaultManifest.loadOrRebuild(context, manifestKey, nameKey);
     }
 
     /** The still-unwrapped master key, for a passphrase change. Null when locked. */
@@ -76,6 +80,8 @@ final class VaultSession {
         masterKey = null;
         contentKey = null;
         nameKey = null;
+        manifestKey = null;
+        manifest = null;
         VaultOpenFiles.get().shredAll();
         VaultThumbs.clear();
         notifyChanged(context);
@@ -87,6 +93,27 @@ final class VaultSession {
 
     synchronized SecretKey nameKey() {
         return nameKey;
+    }
+
+    synchronized VaultManifest manifest() {
+        if (manifest == null) throw new IllegalStateException("vault locked");
+        return manifest;
+    }
+
+    /** Persist the manifest; a failure is logged, not thrown — the RAM copy stays authoritative. */
+    void saveManifest(Context context) {
+        VaultManifest m;
+        SecretKey key;
+        synchronized (this) {
+            m = manifest;
+            key = manifestKey;
+        }
+        if (m == null || key == null) return;
+        try {
+            m.save(context, key);
+        } catch (java.io.IOException e) {
+            android.util.Log.w("VaultSession", "manifest save failed", e);
+        }
     }
 
     void addListener(Listener l) {

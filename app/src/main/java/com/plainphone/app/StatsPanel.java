@@ -75,6 +75,7 @@ class StatsPanel {
     }
 
     void render() {
+        if (io.isShutdown() || host.isDestroyed()) return;   // host tore down mid-load
         final int gen = ++generation;
         final StatsActivity.Range r = range;
         final Typeface georgia = Fonts.current(host);

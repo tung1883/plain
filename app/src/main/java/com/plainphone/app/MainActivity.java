@@ -241,6 +241,7 @@ public class MainActivity extends Activity {
         new Thread(() -> {
             List<ResolveInfo> loaded = loadLaunchableApps();
             runOnUiThread(() -> {
+                if (isDestroyed() || isFinishing() || !homeUiBuilt) return;
                 allApps = loaded;
                 filter(search.getText().toString());
             });
@@ -559,7 +560,7 @@ public class MainActivity extends Activity {
         search.setOnEditorActionListener((v, actionId, event) -> {
             if (actionId != EditorInfo.IME_ACTION_GO) return false;
             SearchResult first = firstResult();
-            if (first == null) return false;
+            if (first == null || first.guarded) return false;
             first.activate();
             return true;
         });
