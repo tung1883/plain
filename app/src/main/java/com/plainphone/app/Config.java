@@ -455,6 +455,33 @@ class Config {
         prefs(context).edit().putString("font_choice", font.name()).apply();
     }
 
+    static java.util.List<HomeMode> getHomeModeOrder(Context context) {
+        String stored = prefs(context).getString("home_mode_order", null);
+        java.util.List<HomeMode> order = new java.util.ArrayList<>();
+        if (stored != null) {
+            for (String name : stored.split(",")) {
+                try {
+                    HomeMode mode = HomeMode.valueOf(name);
+                    if (!order.contains(mode)) order.add(mode);
+                } catch (IllegalArgumentException ignored) {
+                }
+            }
+        }
+        for (HomeMode mode : HomeMode.values()) {
+            if (!order.contains(mode)) order.add(mode);
+        }
+        return order;
+    }
+
+    static void setHomeModeOrder(Context context, java.util.List<HomeMode> order) {
+        StringBuilder sb = new StringBuilder();
+        for (HomeMode mode : order) {
+            if (sb.length() > 0) sb.append(',');
+            sb.append(mode.name());
+        }
+        prefs(context).edit().putString("home_mode_order", sb.toString()).apply();
+    }
+
     static HomeMode getHomeMode(Context context) {
         String stored = prefs(context).getString("home_mode", HomeMode.APPS.name());
         try {
