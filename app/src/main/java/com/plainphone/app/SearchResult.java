@@ -36,6 +36,9 @@ class SearchResult {
     /** Render the title struck through and greyed — used for completed to-dos. */
     boolean strike;
 
+    /** Never fire this from the keyboard's Go/Enter key — a stray match must not lock the phone. */
+    boolean guarded;
+
     private final Action action;
 
     SearchResult(Kind kind, String title, String subtitle, int score, Action action) {
@@ -53,6 +56,11 @@ class SearchResult {
 
     SearchResult withStrike(boolean value) {
         this.strike = value;
+        return this;
+    }
+
+    SearchResult guarded() {
+        this.guarded = true;
         return this;
     }
 

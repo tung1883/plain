@@ -1074,6 +1074,7 @@ public class VaultActivity extends Activity {
     }
 
     private void showPopup(android.app.AlertDialog dialog) {
+        if (isFinishing() || isDestroyed()) return;   // vault locked / left while work ran
         dialog.show();
         if (dialog.getWindow() != null) {
             WindowManager.LayoutParams params = dialog.getWindow().getAttributes();

@@ -130,7 +130,7 @@ class SearchTargets {
                 new String[]{"lock", "sleep", "turn off", "display off"}, query);
         if (screenOff != TextMatch.NO_MATCH) {
             results.add(new SearchResult(SearchResult.Kind.PLAIN, "Screen off", null,
-                    screenOff, AppMonitorService::lockScreen));
+                    screenOff, AppMonitorService::lockScreen).guarded());
         }
 
         int lockAll = TextMatch.score("Lock all",
@@ -143,7 +143,7 @@ class SearchTargets {
                         Config.isPinSet(host) ? "Locked"
                                 : "Locked — set an App-lock PIN to take effect",
                         android.widget.Toast.LENGTH_SHORT).show();
-            }));
+            }).guarded());
         }
 
         for (PlainTarget target : PLAIN) {

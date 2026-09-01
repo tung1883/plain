@@ -12,6 +12,9 @@ import java.io.InputStream;
 
 class GifArtView extends View {
 
+    /** ~25 fps — plenty for a pixel-art loop, a quarter of the buffer churn of a per-vsync redraw. */
+    private static final long FRAME_MS = 40;
+
     private Movie movie;
     private long startTime = 0;
 
@@ -28,6 +31,10 @@ class GifArtView extends View {
             movie = null;
         }
         invalidate();
+    }
+
+    private boolean animating() {
+        return movie != null && isShown() && getWindowVisibility() == VISIBLE;
     }
 
     @Override
@@ -52,7 +59,21 @@ class GifArtView extends View {
         movie.draw(canvas, 0, 0);
         canvas.restore();
 
-        invalidate();
+        if (animating()) postInvalidateDelayed(FRAME_MS);
+    }
+
+    @Override
+    protected void onWindowVisibilityChanged(int visibility) {
+        super.onWindowVisibilityChanged(visibility);
+        if (visibility == VISIBLE) {
+            startTime = 0;
+            invalidate();
+        }
+    }
+
+    @Override
+    protected void onVisibilityChanged(View changedView, int visibility) {
+        super.onVisibilityChanged(changedView, visibility);
+        if (visibility == VISIBLE && animating()) invalidate();
     }
 }
-

@@ -73,49 +73,37 @@ final class VaultStore {
 
     // --- queries -----------------------------------------------------
 
-    static Entry stat(Context context, String docId) throws FileNotFoundException {
-        File file = resolve(context, docId);
-        if (!file.exists()) throw new FileNotFoundException(docId);
+    private static Entry toEntry(VaultManifest.Entry me) {
         Entry entry = new Entry();
-        entry.docId = docId;
-        entry.isDir = file.isDirectory();
-        entry.lastModified = file.lastModified();
-        if (docId.equals(ROOT_DOC_ID)) {
-            entry.name = "PlainPhone Vault";
-            entry.isDir = true;
-        } else {
-            String decoded = VaultCrypto.decryptName(nameKey(), file.getName());
-            entry.name = decoded != null ? decoded : file.getName();
-        }
-        if (entry.isDir) {
-            entry.mimeType = Document.MIME_TYPE_DIR;
-        } else {
-            entry.size = VaultCrypto.plaintextSize(file.length());
-            entry.mimeType = mimeOf(entry.name);
-        }
+        entry.docId = me.docId;
+        entry.name = me.name;
+        entry.isDir = me.isDir;
+        entry.size = me.size;
+        entry.lastModified = me.mtime;
+        entry.mimeType = me.isDir ? Document.MIME_TYPE_DIR : mimeOf(me.name);
         return entry;
     }
 
+    static Entry stat(Context context, String docId) throws FileNotFoundException {
+        resolve(context, docId);   // validate the docId shape
+        if (docId.equals(ROOT_DOC_ID)) {
+            Entry root = new Entry();
+            root.docId = ROOT_DOC_ID;
+            root.name = "PlainPhone Vault";
+            root.isDir = true;
+            root.mimeType = Document.MIME_TYPE_DIR;
+            return root;
+        }
+        VaultManifest.Entry me = VaultSession.get().manifest().get(docId);
+        if (me == null) throw new FileNotFoundException(docId);
+        return toEntry(me);
+    }
+
     static List<Entry> list(Context context, String parentDocId) throws FileNotFoundException {
-        File dir = resolve(context, parentDocId);
-        File[] children = dir.listFiles();
+        resolve(context, parentDocId);   // validate the docId shape
         List<Entry> out = new ArrayList<>();
-        if (children == null) return out;
-        for (File child : children) {
-            String decoded = VaultCrypto.decryptName(nameKey(), child.getName());
-            if (decoded == null) continue;   // not one of ours / not this key
-            Entry entry = new Entry();
-            entry.docId = parentDocId + "/" + child.getName();
-            entry.name = decoded;
-            entry.isDir = child.isDirectory();
-            entry.lastModified = child.lastModified();
-            if (entry.isDir) {
-                entry.mimeType = Document.MIME_TYPE_DIR;
-            } else {
-                entry.size = VaultCrypto.plaintextSize(child.length());
-                entry.mimeType = mimeOf(decoded);
-            }
-            out.add(entry);
+        for (VaultManifest.Entry me : VaultSession.get().manifest().children(parentDocId)) {
+            out.add(toEntry(me));
         }
         sort(out, "name", false);
         return out;
@@ -167,13 +155,17 @@ final class VaultStore {
         if (destParentDocId.equals(docId) || isChild(docId, destParentDocId)) {
             throw new IOException("can't move a folder into itself");
         }
-        String name = VaultCrypto.decryptName(nameKey(), file.getName());
+        VaultManifest.Entry me = VaultSession.get().manifest().get(docId);
+        String name = me != null ? me.name : VaultCrypto.decryptName(nameKey(), file.getName());
         if (name == null) throw new IOException("not a vault entry");
-        String enc = VaultCrypto.encryptName(nameKey(),
-                uniqueName(context, destParentDocId, name));
+        String finalName = uniqueName(context, destParentDocId, name);
+        String enc = VaultCrypto.encryptName(nameKey(), finalName);
         File target = new File(destParent, enc);
         if (!file.renameTo(target)) throw new IOException("move failed");
-        return destParentDocId + "/" + enc;
+        String newDocId = destParentDocId + "/" + enc;
+        VaultSession.get().manifest().rekey(docId, newDocId, finalName);
+        VaultSession.get().saveManifest(context);
+        return newDocId;
     }
 
     /** Every folder in the vault, depth-first, for a move destination picker. */
@@ -204,7 +196,8 @@ final class VaultStore {
                                  String mimeType) throws IOException {
         File parent = resolve(context, parentDocId);
         if (!parent.isDirectory()) throw new IOException("parent not a dir");
-        String enc = VaultCrypto.encryptName(nameKey(), uniqueName(context, parentDocId, displayName));
+        String finalName = uniqueName(context, parentDocId, displayName);
+        String enc = VaultCrypto.encryptName(nameKey(), finalName);
         File target = new File(parent, enc);
         boolean dir = Document.MIME_TYPE_DIR.equals(mimeType);
         try {
@@ -218,21 +211,30 @@ final class VaultStore {
         } catch (GeneralSecurityException e) {
             throw new IOException(e);
         }
-        return parentDocId + "/" + enc;
+        String docId = parentDocId + "/" + enc;
+        VaultSession.get().manifest().put(new VaultManifest.Entry(docId, finalName, dir,
+                dir ? 0 : VaultCrypto.plaintextSize(target.length()), target.lastModified()));
+        VaultSession.get().saveManifest(context);
+        return docId;
     }
 
     static void delete(Context context, String docId) throws FileNotFoundException {
         deleteRecursively(resolve(context, docId));
+        VaultSession.get().manifest().remove(docId);
+        VaultSession.get().saveManifest(context);
     }
 
     static String rename(Context context, String docId, String newName) throws IOException {
         File file = resolve(context, docId);
         String parentDocId = docId.substring(0, docId.lastIndexOf('/'));
-        String enc = VaultCrypto.encryptName(nameKey(),
-                uniqueName(context, parentDocId, newName));
+        String finalName = uniqueName(context, parentDocId, newName);
+        String enc = VaultCrypto.encryptName(nameKey(), finalName);
         File target = new File(file.getParentFile(), enc);
         if (!file.renameTo(target)) throw new IOException("rename failed");
-        return parentDocId + "/" + enc;
+        String newDocId = parentDocId + "/" + enc;
+        VaultSession.get().manifest().rekey(docId, newDocId, finalName);
+        VaultSession.get().saveManifest(context);
+        return newDocId;
     }
 
     // --- content ---------------------------------------------------
@@ -270,6 +272,7 @@ final class VaultStore {
             tmp.delete();
             throw new IOException("swap failed");
         }
+        touchManifest(context, docId, blob);
     }
 
     static void encryptFromFile(Context context, File src, String docId) throws IOException {
@@ -286,13 +289,20 @@ final class VaultStore {
             tmp.delete();
             throw new IOException("swap failed");
         }
+        touchManifest(context, docId, blob);
+    }
+
+    private static void touchManifest(Context context, String docId, File blob) {
+        VaultSession.get().manifest().updateContent(docId,
+                VaultCrypto.plaintextSize(blob.length()), blob.lastModified());
+        VaultSession.get().saveManifest(context);
     }
 
     static String importStream(Context context, String parentDocId, String displayName,
                                InputStream plaintext) throws IOException {
         File parent = resolve(context, parentDocId);
-        String enc = VaultCrypto.encryptName(nameKey(),
-                uniqueName(context, parentDocId, displayName));
+        String finalName = uniqueName(context, parentDocId, displayName);
+        String enc = VaultCrypto.encryptName(nameKey(), finalName);
         File target = new File(parent, enc);
         try (OutputStream out = new FileOutputStream(target)) {
             VaultCrypto.encryptStream(plaintext, out, contentKey());
@@ -300,7 +310,11 @@ final class VaultStore {
             target.delete();
             throw new IOException("encrypt failed", e);
         }
-        return parentDocId + "/" + enc;
+        String docId = parentDocId + "/" + enc;
+        VaultSession.get().manifest().put(new VaultManifest.Entry(docId, finalName, false,
+                VaultCrypto.plaintextSize(target.length()), target.lastModified()));
+        VaultSession.get().saveManifest(context);
+        return docId;
     }
 
     static void exportStream(Context context, String docId, OutputStream dest) throws IOException {
