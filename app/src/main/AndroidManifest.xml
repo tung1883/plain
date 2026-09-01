@@ -208,6 +208,17 @@
             android:theme="@style/Theme.PlainPhone" />
 
         <activity
+            android:name=".TipsSettingsActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
+            android:name=".TipsListEditActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
             android:name=".TimeBlocksActivity"
             android:exported="false"
             android:theme="@style/Theme.PlainPhone" />

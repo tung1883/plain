@@ -70,6 +70,9 @@ public class MainActivity extends Activity {
     private ListView listView;
     private SwipeSwitcher swipeSwitcher;
     private LinearLayout modeToggle;
+    private LinearLayout tipRow;
+    private TextView tipKicker;
+    private TextView tipBody;
     private HomeMode homeMode = HomeMode.APPS;
     private List<HomeMode> modeOrder = new ArrayList<>();
     private TextView draggingTab;
@@ -164,6 +167,7 @@ public class MainActivity extends Activity {
             WebSearch.forget();
             applyPixelArtSelection();
             refreshTimeBlockRow();
+            refreshTipRow();
         }
     }
 
@@ -341,6 +345,12 @@ public class MainActivity extends Activity {
 
         root.addView(search, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        tipRow = buildTipRow(georgia);
+        root.addView(tipRow, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        Tips.advance(this);
+        refreshTipRow();
 
         LinearLayout menuColumn = new LinearLayout(this);
         menuColumn.setOrientation(LinearLayout.VERTICAL);
@@ -571,6 +581,7 @@ public class MainActivity extends Activity {
         if (modeToggle != null) {
             modeToggle.setVisibility(needle.isEmpty() ? View.VISIBLE : View.GONE);
         }
+        refreshTipRow();
 
         boolean showStats = homeMode == HomeMode.STATS && needle.isEmpty();
         if (statsPanel != null) {
@@ -1283,6 +1294,46 @@ public class MainActivity extends Activity {
         drawable.addState(new int[]{android.R.attr.state_pressed}, new ColorDrawable(Color.DKGRAY));
         drawable.addState(new int[]{}, new ColorDrawable(Color.BLACK));
         return drawable;
+    }
+
+    private LinearLayout buildTipRow(Typeface georgia) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.VERTICAL);
+        row.setBackground(rowBackground());
+        row.setPadding(48, 8, 48, 36);
+        row.setOnClickListener(v -> {
+            Tips.advance(this);
+            refreshTipRow();
+        });
+
+        tipKicker = new TextView(this);
+        tipKicker.setTextColor(Color.parseColor("#5C5C5C"));
+        tipKicker.setTextSize(11);
+        tipKicker.setLetterSpacing(0.2f);
+        tipKicker.setTypeface(georgia);
+        tipKicker.setPadding(0, 0, 0, 12);
+        row.addView(tipKicker);
+
+        tipBody = new TextView(this);
+        tipBody.setTextColor(Color.parseColor("#9A9A9A"));
+        tipBody.setTextSize(15);
+        tipBody.setLineSpacing(6f, 1f);
+        tipBody.setTypeface(georgia);
+        row.addView(tipBody);
+
+        return row;
+    }
+
+    private void refreshTipRow() {
+        if (tipRow == null) return;
+        Tips.Entry entry = currentQuery.isEmpty() ? Tips.current(this) : null;
+        if (entry == null) {
+            tipRow.setVisibility(View.GONE);
+            return;
+        }
+        tipKicker.setText(entry.kicker());
+        tipBody.setText(entry.text);
+        tipRow.setVisibility(View.VISIBLE);
     }
 
     private void launchApp(ResolveInfo info) {

@@ -1,0 +1,37 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap');
+    body { margin: 0; }
+    a { color: #cfcfcf; } a:hover { color: #ffffff; }
+  </style>
+</helmet>
+
+<div style="width: 460px; background: #000000; color: #ffffff; font-family: 'IBM Plex Mono', 'Cascadia Mono', ui-monospace, Menlo, Consolas, monospace; padding: 22px 0;">
+
+  <div style="display: flex; align-items: center; gap: 12px; padding: 12px 24px; opacity: 0.4;">
+    <div style="flex-grow: 1; color: #7a7a7a; font-size: 15px;">Search</div>
+    <svg width="17" height="17" viewBox="0 0 16 16" fill="none" stroke="#ffffff" stroke-width="1.4">
+      <circle cx="6.7" cy="6.7" r="4.5"></circle><line x1="10.2" y1="10.2" x2="14" y2="14"></line>
+    </svg>
+  </div>
+
+  <!-- the strip: labelled kicker, no chevron; tap anywhere to advance -->
+  <div style="display: flex; flex-direction: column; gap: 8px; padding: 16px 24px 18px 24px;">
+    <div style="font-size: 10px; letter-spacing: 2.5px; color: #5c5c5c;">TIP OF THE DAY</div>
+    <div style="font-size: 14px; line-height: 1.55; color: #9a9a9a;">Search files on your phone right from here.</div>
+  </div>
+
+  <div style="padding: 14px 24px; font-size: 19px; color: #ffffff; opacity: 0.4;">Screen off</div>
+
+</div>
+</x-dc>
+</body>
+</html>
