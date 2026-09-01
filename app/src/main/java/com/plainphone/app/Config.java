@@ -322,6 +322,23 @@ class Config {
         prefs(context).edit().putBoolean("quotes_enabled", enabled).apply();
     }
 
+    /** Minutes between automatic tip/quote rotations; 0 = only advance on tap. */
+    static int getTipRotateMinutes(Context context) {
+        return prefs(context).getInt("tip_rotate_minutes", 5);
+    }
+
+    static void setTipRotateMinutes(Context context, int minutes) {
+        prefs(context).edit().putInt("tip_rotate_minutes", minutes).apply();
+    }
+
+    static long getTipLastAdvance(Context context) {
+        return prefs(context).getLong("tip_last_advance", 0L);
+    }
+
+    static void setTipLastAdvance(Context context, long millis) {
+        prefs(context).edit().putLong("tip_last_advance", millis).apply();
+    }
+
     static int getTipIndex(Context context) {
         return prefs(context).getInt("tip_index", 0);
     }

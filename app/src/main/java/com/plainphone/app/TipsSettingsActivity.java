@@ -65,6 +65,11 @@ public class TipsSettingsActivity extends Activity {
         root.addView(row("Edit quotes", v ->
                 startActivity(TipsListEditActivity.forQuotes(this, true))));
         root.addView(row("Reset quotes to default", v -> confirmReset(true)));
+
+        root.addView(sectionHeader("Rotation"));
+        int rotate = Config.getTipRotateMinutes(this);
+        root.addView(row("Change every: " + (rotate <= 0 ? "On tap only" : rotate + " min"),
+                v -> startActivity(new Intent(this, TipRotateActivity.class))));
     }
 
     private void confirmReset(boolean quotes) {
