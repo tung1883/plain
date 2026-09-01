@@ -141,11 +141,27 @@ class PinPromptView extends FrameLayout {
 
         key.setBackground(pressBackground());
         if ("←".equals(label)) {
-            key.setOnClickListener(v -> {
-                if (pin.length() > 0) {
-                    pin.deleteCharAt(pin.length() - 1);
-                    changed();
+            key.setOnClickListener(v -> deleteOne());
+            final Runnable[] repeat = new Runnable[1];
+            key.setOnLongClickListener(v -> {
+                repeat[0] = new Runnable() {
+                    @Override
+                    public void run() {
+                        if (deleteOne()) postDelayed(this, 80);
+                    }
+                };
+                post(repeat[0]);
+                return true;
+            });
+            key.setOnTouchListener((v, event) -> {
+                int action = event.getActionMasked();
+                if ((action == android.view.MotionEvent.ACTION_UP
+                        || action == android.view.MotionEvent.ACTION_CANCEL)
+                        && repeat[0] != null) {
+                    removeCallbacks(repeat[0]);
+                    repeat[0] = null;
                 }
+                return false;
             });
         } else {
             key.setOnClickListener(v -> {
@@ -162,6 +178,13 @@ class PinPromptView extends FrameLayout {
     public void onWindowFocusChanged(boolean hasWindowFocus) {
         super.onWindowFocusChanged(hasWindowFocus);
         if (hasWindowFocus) UiKit.hideSystemBars(this);
+    }
+
+    private boolean deleteOne() {
+        if (pin.length() == 0) return false;
+        pin.deleteCharAt(pin.length() - 1);
+        changed();
+        return pin.length() > 0;
     }
 
     private void changed() {
