@@ -298,6 +298,71 @@ final class VaultStore {
         VaultSession.get().saveManifest(context);
     }
 
+    // --- bulk import fast path (phase 8) --------------------------
+
+    static void beginBulkImport() {
+        VaultSession.get().beginManifestBatch();
+    }
+
+    static void endBulkImport(Context context) {
+        VaultSession.get().endManifestBatch(context);
+    }
+
+    /** Snapshot of the lowercased names already under {@code parentDocId}. */
+    static java.util.Set<String> takenNames(Context context, String parentDocId)
+            throws FileNotFoundException {
+        resolve(context, parentDocId);
+        java.util.HashSet<String> set = new java.util.HashSet<>();
+        for (VaultManifest.Entry e : VaultSession.get().manifest().children(parentDocId)) {
+            set.add(e.name.toLowerCase());
+        }
+        return set;
+    }
+
+    /**
+     * Import one file, deduping against {@code taken} (mutated) instead of re-listing.
+     * Returns the new docId, or null when the name was already present (caller skips it).
+     * The manifest save is the caller's job — wrap a run in {@link #beginBulkImport} /
+     * {@link #endBulkImport}.
+     */
+    static String importStreamInto(Context context, String parentDocId, String name,
+                                   InputStream plaintext, java.util.Set<String> taken)
+            throws IOException {
+        if (taken.contains(name.toLowerCase())) return null;
+        File parent = resolve(context, parentDocId);
+        String enc = VaultCrypto.encryptName(nameKey(), name);
+        File target = new File(parent, enc);
+        try (OutputStream out = new FileOutputStream(target)) {
+            VaultCrypto.encryptStream(plaintext, out, contentKey());
+        } catch (GeneralSecurityException e) {
+            target.delete();
+            throw new IOException("encrypt failed", e);
+        }
+        String docId = parentDocId + "/" + enc;
+        VaultSession.get().manifest().put(new VaultManifest.Entry(docId, name, false,
+                VaultCrypto.plaintextSize(target.length()), target.lastModified()));
+        taken.add(name.toLowerCase());
+        return docId;
+    }
+
+    /** Folder under {@code parentDocId} by name, creating it if absent. Uses {@code taken}. */
+    static String ensureDirInto(Context context, String parentDocId, String name,
+                                java.util.Set<String> taken) throws IOException {
+        if (taken.contains(name.toLowerCase())) {
+            String existing = findChild(context, parentDocId, name);
+            if (existing != null) return existing;
+        }
+        File parent = resolve(context, parentDocId);
+        String enc = VaultCrypto.encryptName(nameKey(), name);
+        File target = new File(parent, enc);
+        if (!target.mkdir() && !target.isDirectory()) throw new IOException("mkdir failed");
+        String docId = parentDocId + "/" + enc;
+        VaultSession.get().manifest().put(new VaultManifest.Entry(docId, name, true, 0,
+                target.lastModified()));
+        taken.add(name.toLowerCase());
+        return docId;
+    }
+
     static String importStream(Context context, String parentDocId, String displayName,
                                InputStream plaintext) throws IOException {
         File parent = resolve(context, parentDocId);

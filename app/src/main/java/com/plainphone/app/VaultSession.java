@@ -106,11 +106,26 @@ final class VaultSession {
         return manifest;
     }
 
+    private boolean manifestBatch;
+
+    /** Coalesce manifest writes during a bulk operation (folder import) into one save. */
+    synchronized void beginManifestBatch() {
+        manifestBatch = true;
+    }
+
+    void endManifestBatch(Context context) {
+        synchronized (this) {
+            manifestBatch = false;
+        }
+        saveManifest(context);
+    }
+
     /** Persist the manifest; a failure is logged, not thrown — the RAM copy stays authoritative. */
     void saveManifest(Context context) {
         VaultManifest m;
         SecretKey key;
         synchronized (this) {
+            if (manifestBatch) return;
             m = manifest;
             key = manifestKey;
         }
