@@ -246,7 +246,7 @@ public class AppMonitorService extends AccessibilityService {
     private void enforce(String packageName) {
         if (Config.getLockedPackages(this).contains(packageName)) {
             if (!Config.isAppRecentlyUnlocked(this, packageName)) {
-                launchGate(packageName, PinGateActivity.class);
+                showPinOverlay(packageName);
                 return;
             }
             Config.markAppUnlocked(this, packageName);   // refresh grace while in use
@@ -291,6 +291,71 @@ public class AppMonitorService extends AccessibilityService {
         gate.putExtra("label", AllAppsUsage.label(getPackageManager(), packageName));
         gate.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         handler.postDelayed(() -> startActivity(gate), 250);
+    }
+
+    /**
+     * PIN gate for a locked app, drawn as an accessibility overlay <b>on top of the
+     * app</b> — the app is never sent away, so a deep-linked screen (e.g. Settings
+     * opened straight to Wi-Fi from a quick tile) is still there when the overlay
+     * clears, and no duplicate task is created. On success the overlay is just
+     * removed; on cancel we go home.
+     */
+    private void showPinOverlay(String packageName) {
+        endSession();
+        cancelCountdown();
+        cancelBudgetTimer();
+        removeOverlay();
+        currentGatedPackage = packageName;
+        currentGateKind = GateKind.PIN;
+        sessionPackage = packageName;
+        sessionStartMillis = SystemClock.elapsedRealtime();
+        UsageStore.recordOpen(this, packageName);
+
+        final Runnable cancel = () -> {
+            removeOverlay();
+            currentGatedPackage = null;
+            currentGateKind = null;
+            endSession();
+            performGlobalAction(GLOBAL_ACTION_HOME);
+        };
+
+        final PinPromptView[] pad = new PinPromptView[1];
+        pad[0] = new PinPromptView(this, new PinPromptView.Listener() {
+            @Override
+            public void onPin(String pin) {
+                if (pin.length() >= 4 && Config.checkLockPin(AppMonitorService.this, pin)) {
+                    Config.markAppUnlocked(AppMonitorService.this, packageName);
+                    removeOverlay();
+                    if (Config.getFlaggedPackages(AppMonitorService.this).contains(packageName)) {
+                        launchGate(packageName, FlaggedGateActivity.class);
+                    }
+                } else if (pin.length() >= 6) {
+                    pad[0].reject();
+                }
+            }
+
+            @Override
+            public void onCancel() {
+                cancel.run();
+            }
+        });
+        pad[0].setFocusableInTouchMode(true);
+        pad[0].setOnKeyListener((v, keyCode, event) -> {
+            if (keyCode == KeyEvent.KEYCODE_BACK && event.getAction() == KeyEvent.ACTION_UP) {
+                cancel.run();
+                return true;
+            }
+            return false;
+        });
+
+        WindowManager.LayoutParams params = new WindowManager.LayoutParams(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                0,
+                PixelFormat.OPAQUE);
+        ((WindowManager) getSystemService(WINDOW_SERVICE)).addView(pad[0], params);
+        overlayRoot = pad[0];
     }
 
     private void startGate(String packageName, GateKind kind) {
