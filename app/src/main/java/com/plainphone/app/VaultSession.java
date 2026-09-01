@@ -40,8 +40,14 @@ final class VaultSession {
 
     private VaultSession() {}
 
-    static File vaultRoot(Context context) {
+    /** App-private default, used when no custom location is configured. */
+    static File defaultVaultRoot(Context context) {
         return new File(context.getFilesDir(), "vault");
+    }
+
+    static File vaultRoot(Context context) {
+        String custom = Config.getVaultLocationPath(context);
+        return custom != null ? new File(custom) : defaultVaultRoot(context);
     }
 
     synchronized boolean isUnlocked() {

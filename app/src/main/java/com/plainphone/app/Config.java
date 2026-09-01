@@ -561,6 +561,19 @@ class Config {
         prefs(context).edit().putString("home_mode", mode.name()).apply();
     }
 
+    /** Absolute path of the vault directory, or null for the app-private default. */
+    static String getVaultLocationPath(Context context) {
+        return prefs(context).getString("vault_location_path", null);
+    }
+
+    static void setVaultLocationPath(Context context, String path) {
+        if (path == null) {
+            prefs(context).edit().remove("vault_location_path").apply();
+        } else {
+            prefs(context).edit().putString("vault_location_path", path).apply();
+        }
+    }
+
     /** One of "name" / "size" / "date". */
     static String getVaultSort(Context context) {
         return prefs(context).getString("vault_sort", "name");

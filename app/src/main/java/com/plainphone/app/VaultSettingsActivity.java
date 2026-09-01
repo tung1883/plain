@@ -3,6 +3,7 @@ package com.plainphone.app;
 import android.app.Activity;
 import android.content.Intent;
 import android.graphics.Color;
+import java.io.File;
 import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.StateListDrawable;
@@ -70,6 +71,13 @@ public class VaultSettingsActivity extends Activity {
         root.addView(row("Auto-lock: " + formatTimeout(Config.getVaultAutoLockSeconds(this)),
                 v -> startActivity(new Intent(this, VaultAutoLockActivity.class))));
 
+        root.addView(sectionHeader("Location"));
+        root.addView(readout(VaultLocation.label(this)));
+        root.addView(row("Change location", v -> pickLocation()));
+        if (Config.getVaultLocationPath(this) != null) {
+            root.addView(row("Move back to internal", v -> moveBackToInternal()));
+        }
+
         root.addView(sectionHeader("Session"));
         root.addView(row("Open vault", v ->
                 startActivity(new Intent(this, VaultActivity.class))));
@@ -80,6 +88,67 @@ public class VaultSettingsActivity extends Activity {
                 Toast.makeText(this, "Vault locked", Toast.LENGTH_SHORT).show();
                 render();
             }));
+        }
+    }
+
+    private static final int REQ_PICK_VAULT_DIR = 6601;
+
+    private void pickLocation() {
+        if (!VaultLocation.hasStorageAccess()) {
+            Toast.makeText(this, "Grant all-files access first", Toast.LENGTH_SHORT).show();
+            startActivity(VaultLocation.storageAccessSettingsIntent(this));
+            return;
+        }
+        startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), REQ_PICK_VAULT_DIR);
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != REQ_PICK_VAULT_DIR || resultCode != RESULT_OK
+                || data == null || data.getData() == null) {
+            return;
+        }
+        File picked = VaultLocation.treeUriToDir(data.getData());
+        if (picked == null) {
+            Toast.makeText(this, "Can't use that folder — pick one on this phone's storage",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+        relocateTo(VaultLocation.vaultDirIn(picked));
+    }
+
+    private void relocateTo(File target) {
+        File current = VaultSession.vaultRoot(this);
+        if (target.equals(current)) return;
+
+        boolean haveVault = VaultFormat.exists(current);
+        forceLock();
+
+        if (haveVault) {
+            try {
+                VaultLocation.moveVault(current, target);
+            } catch (Exception e) {
+                Toast.makeText(this, "Move failed: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                return;
+            }
+        }
+        Config.setVaultLocationPath(this, target.getAbsolutePath());
+        VaultLocation.ensureNoMedia(target);
+        Toast.makeText(this, haveVault ? "Vault moved" : "Location set", Toast.LENGTH_SHORT).show();
+        render();
+    }
+
+    private void moveBackToInternal() {
+        relocateTo(VaultSession.defaultVaultRoot(this));
+        Config.setVaultLocationPath(this, null);
+        render();
+    }
+
+    private void forceLock() {
+        if (VaultSession.get().isUnlocked()) {
+            VaultUnlockService.stop(this);
+            VaultSession.get().lock(this);
         }
     }
 
