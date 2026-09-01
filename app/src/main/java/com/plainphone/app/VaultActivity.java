@@ -244,7 +244,8 @@ public class VaultActivity extends Activity {
 
         bar.addView(actionText(font, "SORT", v -> showSortMenu()));
         bar.addView(actionText(font, "LOCK", v -> confirmLock()));
-        bar.addView(actionText(font, "•••", v -> showMoreMenu()));
+        bar.addView(actionText(font, "•••", v ->
+                startActivity(new Intent(this, VaultSettingsActivity.class))));
         column.addView(bar, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
@@ -781,23 +782,6 @@ public class VaultActivity extends Activity {
             }
             loadListing();
         });
-    }
-
-    private void showMoreMenu() {
-        Typeface font = Fonts.current(this);
-        LinearLayout box = popupBox();
-        box.addView(popupTitle(font, "Vault"));
-        android.app.AlertDialog dialog = popupDialog(box);
-        box.addView(option(font, "Change password", v -> {
-            dialog.dismiss();
-            startActivity(new Intent(this, VaultChangePasswordActivity.class));
-        }));
-        box.addView(option(font, "Auto-lock timeout", v -> {
-            dialog.dismiss();
-            startActivity(new Intent(this, VaultAutoLockActivity.class));
-        }));
-        box.addView(option(font, "Cancel", v -> dialog.dismiss()));
-        showPopup(dialog);
     }
 
     private void showSortMenu() {

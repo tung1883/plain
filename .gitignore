@@ -10,3 +10,6 @@
 local.properties
 **/build/
 *.apk
+
+# design mockups / Claude Design canvases (not app code)
+design/
