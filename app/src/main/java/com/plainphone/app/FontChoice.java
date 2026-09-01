@@ -1,10 +1,10 @@
 package com.plainphone.app;
 
 enum FontChoice {
-    GEORGIA("Georgia"),
+    CASCADIA_MONO("Cascadia Mono"),
     IBM_PLEX_MONO("IBM Plex Mono"),
-    EXCALIFONT("Excalifont"),
-    CASCADIA_MONO("Cascadia Mono");
+    GEORGIA("Georgia"),
+    EXCALIFONT("Excalifont");
 
     final String label;
 

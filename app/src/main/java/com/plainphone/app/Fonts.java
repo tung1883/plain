@@ -12,10 +12,10 @@ class Fonts {
 
     static Typeface current(Context context) {
         return switch (Config.getFontChoice(context)) {
+            case CASCADIA_MONO -> cascadiaMono(context);
             case IBM_PLEX_MONO -> ibmPlexMono(context);
             case GEORGIA -> georgia(context);
             case EXCALIFONT -> excalifont(context);
-            case CASCADIA_MONO -> cascadiaMono(context);
         };
     }
 
