@@ -15,6 +15,7 @@ import android.widget.Toast;
 enum Lock {
     NOTES("notes", "Unlocking Notes"),
     TODOS("todos", "Unlocking To-do"),
+    RECORDER("recorder", "Unlocking the recorder"),
     APPS("apps", "Unlocking the app list"),
     SEARCH("search", "Unlocking search");
 

@@ -76,7 +76,7 @@ class SearchTargets {
                     true, "todo", "tasks", "todo.txt", "checklist"),
             new PlainTarget("Voice recorder", "Recording format and sample rate",
                     RecorderSettingsActivity.class, true, "recorder", "record", "voice", "audio",
-                    "mic", "microphone", "memo", "wav", "m4a"),
+                    "mic", "microphone", "memo", "wav", "m4a", "lock", "pin", "noise reduction"),
             new PlainTarget("Tips, quotes and warnings", "Tip and quote of the day",
                     TipsSettingsActivity.class,
                     true, "tips", "quotes", "hints", "quote of the day", "warning", "accessibility"),
