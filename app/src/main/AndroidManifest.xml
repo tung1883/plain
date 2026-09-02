@@ -153,6 +153,11 @@
             android:theme="@style/Theme.PlainPhone" />
 
         <activity
+            android:name=".ArtSlideshowActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
             android:name=".AppAccessActivity"
             android:exported="false"
             android:theme="@style/Theme.PlainPhone" />

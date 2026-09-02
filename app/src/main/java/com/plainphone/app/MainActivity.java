@@ -131,6 +131,7 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         pm = getPackageManager();
+        Config.migrateArt(this);
 
         SharedPreferences onboardingPrefs = getSharedPreferences("plain", Context.MODE_PRIVATE);
         if (!onboardingPrefs.getBoolean("onboarding_complete", false)) {
@@ -171,7 +172,9 @@ public class MainActivity extends Activity {
             refreshApps();
 
             WebSearch.forget();
+            ArtGallery.maybeAdvance(this);
             applyPixelArtSelection();
+            scheduleArtRotation();
             refreshTimeBlockRow();
             Tips.maybeAutoAdvance(this);
             refreshTipRow();
@@ -183,6 +186,7 @@ public class MainActivity extends Activity {
     protected void onPause() {
         super.onPause();
         tipHandler.removeCallbacks(tipRotate);
+        artHandler.removeCallbacks(artRotate);
         VaultJobs.removeListener(vaultJobListener);
     }
 
@@ -196,6 +200,7 @@ public class MainActivity extends Activity {
 
         searchHandler.removeCallbacksAndMessages(null);
         tipHandler.removeCallbacks(tipRotate);
+        artHandler.removeCallbacks(artRotate);
         FileIndex.setListener(null);
         if (statsPanel != null) statsPanel.shutdown();
     }
@@ -235,17 +240,64 @@ public class MainActivity extends Activity {
     }
 
     private void applyPixelArtSelection() {
-
         artFrame.removeAllViews();
-        View art = Config.isPhotoArtSelected(this) && Config.getArtPhotoUri(this) != null
-                ? new PhotoArtView(this, Uri.parse(Config.getArtPhotoUri(this)),
-                        Config.getArtPhotoFocusX(this), Config.getArtPhotoFocusY(this),
-                        Config.getArtPhotoZoom(this))
-                : new GifArtView(this, Config.getGifScene(this));
-        artFrame.addView(art, new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        View art = ArtKit.homeArt(this);
+        artFrame.setVisibility(art == null ? View.GONE : View.VISIBLE);
+        if (art != null) {
+            artFrame.addView(art, new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        }
+    }
 
-        artFrame.setVisibility(Config.isPixelArtEnabled(this) ? View.VISIBLE : View.GONE);
+    private final Handler artHandler = new Handler(Looper.getMainLooper());
+    private final Runnable artRotate = new Runnable() {
+        @Override
+        public void run() {
+            if (!slideshowActive()) return;
+            ArtGallery.advance(MainActivity.this);
+            crossfadeArt();
+            artHandler.postDelayed(this, Config.getArtSlideshowMinutes(MainActivity.this) * 60_000L);
+        }
+    };
+
+    private boolean slideshowActive() {
+        return !"off".equals(Config.getArtMode(this))
+                && ArtGallery.selectedIds(this).size() >= 2
+                && Config.getArtSlideshowMinutes(this) > 0;
+    }
+
+    private void scheduleArtRotation() {
+        artHandler.removeCallbacks(artRotate);
+        if (slideshowActive()) {
+            artHandler.postDelayed(artRotate, Config.getArtSlideshowMinutes(this) * 60_000L);
+        }
+    }
+
+    private void crossfadeArt() {
+        if (artFrame == null) return;
+        View next = ArtKit.homeArt(this);
+        if (next == null) {
+            applyPixelArtSelection();
+            return;
+        }
+        next.setAlpha(0f);
+        artFrame.addView(next, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        long dur = animatorsOff() ? 0 : 400;
+        next.animate().alpha(1f).setDuration(dur).withEndAction(() -> {
+            for (int i = artFrame.getChildCount() - 1; i >= 0; i--) {
+                if (artFrame.getChildAt(i) != next) artFrame.removeViewAt(i);
+            }
+        }).start();
+    }
+
+    private boolean animatorsOff() {
+        try {
+            return android.provider.Settings.Global.getFloat(getContentResolver(),
+                    android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private void refreshApps() {
@@ -432,7 +484,9 @@ public class MainActivity extends Activity {
             }
         });
 
+        ArtGallery.maybeAdvance(this);
         applyPixelArtSelection();
+        scheduleArtRotation();
 
         root.addView(menuRow, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
