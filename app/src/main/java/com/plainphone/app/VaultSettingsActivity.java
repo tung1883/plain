@@ -111,8 +111,8 @@ public class VaultSettingsActivity extends Activity {
         }
         File picked = VaultLocation.treeUriToDir(data.getData());
         if (picked == null) {
-            Toast.makeText(this, "Can't use that folder — pick one on this phone's storage",
-                    Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Only folders on this phone's internal storage work — "
+                    + "not SD cards or USB drives", Toast.LENGTH_LONG).show();
             return;
         }
         relocateTo(VaultLocation.vaultDirIn(picked));
