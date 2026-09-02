@@ -298,6 +298,14 @@ class Config {
         return prefs(context).getString("notes_export_tree", null);
     }
 
+    static int getVaultNoteCount(Context context) {
+        return prefs(context).getInt("vault_note_count", 0);
+    }
+
+    static void setVaultNoteCount(Context context, int count) {
+        prefs(context).edit().putInt("vault_note_count", count).apply();
+    }
+
     static void setNotesExportTree(Context context, String uriString) {
         if (uriString == null) {
             prefs(context).edit().remove("notes_export_tree").apply();

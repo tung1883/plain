@@ -21,6 +21,7 @@ import android.widget.Toast;
 import java.io.File;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
@@ -93,6 +94,152 @@ class Notes {
 
     static String exportFileName(Note note) {
         return exportBaseName(note) + ".md";
+    }
+
+    // --- vault bridge: notes kept encrypted in vault/Plain Notes/ ----------
+
+    static final String VAULT_FOLDER = "Plain Notes";
+    private static final String VAULT_PREFIX = "vault:";
+
+    static boolean isVaulted(String noteId) {
+        return noteId != null && noteId.startsWith(VAULT_PREFIX);
+    }
+
+    static String docIdOf(String noteId) {
+        return noteId.substring(VAULT_PREFIX.length());
+    }
+
+    static boolean vaultReady(Context c) {
+        return VaultFormat.exists(VaultSession.vaultRoot(c)) && VaultSession.get().isUnlocked();
+    }
+
+    /** docId of the Plain Notes folder if it already exists, else null (never creates). */
+    private static String vaultFolderIfPresent(Context c) {
+        if (!vaultReady(c)) return null;
+        try {
+            return VaultStore.findChild(c, VaultStore.ROOT_DOC_ID, VAULT_FOLDER);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static String vaultFolder(Context c) {
+        if (!vaultReady(c)) return null;
+        try {
+            String existing = VaultStore.findChild(c, VaultStore.ROOT_DOC_ID, VAULT_FOLDER);
+            return existing != null ? existing : VaultStore.createDocument(c,
+                    VaultStore.ROOT_DOC_ID, VAULT_FOLDER, DocumentsContract.Document.MIME_TYPE_DIR);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** Make the "Plain Notes" folder visible in the vault browser even when empty. */
+    static void ensureVaultFolder(Context c) {
+        vaultFolder(c);
+    }
+
+    /** Only plain-text files in Plain Notes are surfaced as notes. */
+    private static boolean isNoteFile(String name) {
+        String n = name.toLowerCase();
+        return n.endsWith(".md") || n.endsWith(".txt") || n.indexOf('.') < 0;
+    }
+
+    /** Vault notes as transient {@link Note}s (id = {@code "vault:" + docId}); empty when locked. */
+    static List<Note> vaultNotes(Context c) {
+        List<Note> out = new ArrayList<>();
+        String folder = vaultFolderIfPresent(c);
+        if (folder == null) return out;
+        try {
+            for (VaultStore.Entry e : VaultStore.list(c, folder)) {
+                if (e.isDir || !isNoteFile(e.name)) continue;
+                try {
+                    String text = new String(VaultStore.decryptToMemory(c, e.docId),
+                            StandardCharsets.UTF_8);
+                    out.add(Note.forVault(VAULT_PREFIX + e.docId, text, e.lastModified));
+                } catch (Exception ignored) {
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        Config.setVaultNoteCount(c, out.size());   // self-heal the locked-state display count
+        return out;
+    }
+
+    static Note vaultNote(Context c, String noteId) {
+        for (Note n : vaultNotes(c)) if (n.id.equals(noteId)) return n;
+        return null;
+    }
+
+    static String vaultNoteName(Context c, String noteId) {
+        try {
+            return VaultStore.stat(c, docIdOf(noteId)).name;
+        } catch (Exception e) {
+            return "note";
+        }
+    }
+
+    private static String vaultContent(Note note) {
+        String t = note.title == null ? "" : note.title.trim();
+        String body = note.text == null ? "" : note.text;
+        if (t.isEmpty()) return body;
+        String firstLine = body.split("\n", 2)[0].trim();
+        return firstLine.equals(t) ? body : t + "\n\n" + body;
+    }
+
+    /** Move a prefs note into the vault. */
+    static boolean moveToVault(Context c, Note note) {
+        String folder = vaultFolder(c);
+        if (folder == null) return false;
+        try {
+            String docId = VaultStore.createDocument(c, folder, exportFileName(note), EXPORT_MIME);
+            VaultStore.writeText(c, docId, vaultContent(note));
+            List<Note> notes = Config.getNotes(c);
+            notes.removeIf(n -> n.id.equals(note.id));
+            Config.setNotes(c, notes);
+            Config.setVaultNoteCount(c, Config.getVaultNoteCount(c) + 1);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** Move a vault note back out to the prefs store. */
+    static boolean moveOutOfVault(Context c, String noteId) {
+        if (!isVaulted(noteId) || !vaultReady(c)) return false;
+        String docId = docIdOf(noteId);
+        try {
+            String text = new String(VaultStore.decryptToMemory(c, docId), StandardCharsets.UTF_8);
+            Note n = Note.create();
+            n.text = text;
+            List<Note> notes = Config.getNotes(c);
+            notes.add(n);
+            Config.setNotes(c, notes);
+            VaultStore.delete(c, docId);
+            Config.setVaultNoteCount(c, Math.max(0, Config.getVaultNoteCount(c) - 1));
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    static void deleteVaultNote(Context c, String noteId) {
+        if (!isVaulted(noteId) || !vaultReady(c)) return;
+        try {
+            VaultStore.delete(c, docIdOf(noteId));
+            Config.setVaultNoteCount(c, Math.max(0, Config.getVaultNoteCount(c) - 1));
+        } catch (Exception ignored) {
+        }
+    }
+
+    /** Move every non-blank prefs note into the vault. Returns how many moved. */
+    static int moveAllToVault(Context c) {
+        int moved = 0;
+        for (Note n : new ArrayList<>(Config.getNotes(c))) {
+            if (n.isBlank()) continue;
+            if (moveToVault(c, n)) moved++;
+        }
+        return moved;
     }
 
     // --- default export folder ---------------------------------------------
