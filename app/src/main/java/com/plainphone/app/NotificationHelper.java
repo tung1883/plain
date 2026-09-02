@@ -24,8 +24,16 @@ class NotificationHelper {
                 .setContentText(appLabel(context, packageName) + " will close in 10 seconds")
                 .setSmallIcon(android.R.drawable.ic_dialog_alert)
                 .setAutoCancel(true)
+                .setOngoing(false)
+                .setTimeoutAfter(10_000)   // gone by the time the app actually closes
                 .build();
         manager.notify(packageName.hashCode(), notification);
+    }
+
+    /** Pull the "closing soon" warning — the app closed, or the user left / earned more time. */
+    static void cancelClosingSoon(Context context, String packageName) {
+        if (packageName == null) return;
+        context.getSystemService(NotificationManager.class).cancel(packageName.hashCode());
     }
 
     private static void ensureChannel(NotificationManager manager) {
