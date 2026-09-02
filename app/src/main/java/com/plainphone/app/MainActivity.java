@@ -435,9 +435,9 @@ public class MainActivity extends Activity {
         root.addView(divider());
 
         modeToggle = buildModeToggle(georgia);
-        modeToggleScroller = new android.widget.HorizontalScrollView(this);
+        modeToggleScroller = new EdgeSnapScrollView(this);
         modeToggleScroller.setHorizontalScrollBarEnabled(false);
-        modeToggleScroller.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        modeToggleScroller.setOverScrollMode(View.OVER_SCROLL_ALWAYS);
         modeToggleScroller.addView(modeToggle, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         root.addView(modeToggleScroller, new LinearLayout.LayoutParams(
@@ -1102,6 +1102,32 @@ public class MainActivity extends Activity {
         return next == 0 ? "none" : String.valueOf(next);
     }
 
+    /**
+     * Tab-strip scroller: a little rubber-band past either edge that springs back in
+     * one motion. The natural scroll extent already ends at the last tab (see
+     * {@link #trimTrailingTab}), so there's no second snap after the spring.
+     */
+    private static class EdgeSnapScrollView extends android.widget.HorizontalScrollView {
+        EdgeSnapScrollView(Context context) {
+            super(context);
+        }
+
+        @Override
+        protected boolean overScrollBy(int dx, int dy, int sx, int sy, int rangeX, int rangeY,
+                                       int maxOverX, int maxOverY, boolean isTouch) {
+            int over = (int) (40 * getResources().getDisplayMetrics().density);
+            return super.overScrollBy(dx, dy, sx, sy, rangeX, rangeY, over, 0, isTouch);
+        }
+    }
+
+    /** The visually-last tab carries no inter-tab spacing on its right — keep that after reorders. */
+    private void trimTrailingTab(LinearLayout row) {
+        for (int i = 0; i < row.getChildCount(); i++) {
+            boolean last = i == row.getChildCount() - 1;
+            row.getChildAt(i).setPadding(0, 8, last ? 0 : 56, 8);
+        }
+    }
+
     private LinearLayout buildModeToggle(Typeface georgia) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
@@ -1114,12 +1140,14 @@ public class MainActivity extends Activity {
             tab.setTypeface(georgia);
             tab.setTextSize(13);
             tab.setLetterSpacing(0.15f);
-            tab.setPadding(0, 8, 56, 8);
             tab.setOnClickListener(v -> {
                 if (draggingTab == null) switchMode((HomeMode) v.getTag());
             });
             tab.setOnLongClickListener(v -> {
                 draggingTab = (TextView) v;
+                if (modeToggleScroller != null) {
+                    modeToggleScroller.requestDisallowInterceptTouchEvent(true);
+                }
                 v.setAlpha(0.55f);
                 v.setTranslationZ(12f);
                 ((TextView) v).setTextColor(Color.WHITE);
@@ -1129,6 +1157,7 @@ public class MainActivity extends Activity {
             row.addView(tab, new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
         }
+        trimTrailingTab(row);
         refreshTabColors(row);
         return row;
     }
@@ -1149,10 +1178,14 @@ public class MainActivity extends Activity {
             case android.view.MotionEvent.ACTION_CANCEL:
                 if (draggingTab != v) return false;
                 draggingTab = null;
+                if (modeToggleScroller != null) {
+                    modeToggleScroller.requestDisallowInterceptTouchEvent(false);
+                }
                 v.animate().translationX(0f).setDuration(140).start();
                 v.setAlpha(1f);
                 v.setTranslationZ(0f);
                 Config.setHomeModeOrder(this, modeOrder);
+                trimTrailingTab(modeToggle);
                 refreshTabColors(modeToggle);
                 return true;
         }
