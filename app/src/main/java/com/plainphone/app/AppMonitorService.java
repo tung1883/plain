@@ -567,6 +567,7 @@ public class AppMonitorService extends AccessibilityService {
 
     private void closeGatedApp() {
         String packageName = currentGatedPackage;
+        NotificationHelper.cancelClosingSoon(this, packageName);
         cancelCountdown();
         cancelBudgetTimer();
         removeOverlay();
@@ -595,6 +596,7 @@ public class AppMonitorService extends AccessibilityService {
         budgetRunnable = () -> {
             budgetRunnable = null;
             budgetPackage = null;
+            NotificationHelper.cancelClosingSoon(this, packageName);
             // The budget is spent — apply the reopen lockout even if the user stepped
             // away just before it expired.
             if (Config.isLockoutEnabled(this)) {
@@ -613,6 +615,7 @@ public class AppMonitorService extends AccessibilityService {
             handler.removeCallbacks(budgetRunnable);
             budgetRunnable = null;
         }
+        if (budgetPackage != null) NotificationHelper.cancelClosingSoon(this, budgetPackage);
         budgetPackage = null;
         if (warningRunnable != null) {
             handler.removeCallbacks(warningRunnable);
