@@ -151,6 +151,8 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        VaultJobs.resumeIfPending(this);
+        VaultJobs.addListener(vaultJobListener);
         if (showingHomeReminder && isDefaultHomeApp()) {
             showingHomeReminder = false;
             startLoadingHomeUi();
@@ -179,7 +181,12 @@ public class MainActivity extends Activity {
     protected void onPause() {
         super.onPause();
         tipHandler.removeCallbacks(tipRotate);
+        VaultJobs.removeListener(vaultJobListener);
     }
+
+    private final VaultJobs.Listener vaultJobListener = () -> runOnUiThread(() -> {
+        if (!isFinishing() && !isDestroyed() && homeUiBuilt) filter(search.getText().toString());
+    });
 
     @Override
     protected void onDestroy() {
@@ -601,12 +608,13 @@ public class MainActivity extends Activity {
     }
 
     private void lockAll() {
-        Lock.lockAll(this);
-        search.setText("");
-        filter("");
-        android.widget.Toast.makeText(this,
-                Config.isPinSet(this) ? "Locked" : "Locked — set an App-lock PIN to take effect",
-                android.widget.Toast.LENGTH_SHORT).show();
+        PluginLock.requestLockAll(this, () -> Lock.lockAllSections(this), () -> {
+            search.setText("");
+            filter("");
+            android.widget.Toast.makeText(this,
+                    Config.isPinSet(this) ? "Locked" : "Locked — set an App-lock PIN to take effect",
+                    android.widget.Toast.LENGTH_SHORT).show();
+        });
     }
 
     private void renderRows() {
@@ -846,6 +854,11 @@ public class MainActivity extends Activity {
     }
 
     private void renderVaultSection() {
+        if (VaultJobs.resetPending(this)) {
+            rows.add(new SearchResult(SearchResult.Kind.PLAIN, "Vault",
+                    "Erases all data stored in vault", -1, () -> {}));
+            return;
+        }
         boolean created = VaultFormat.exists(VaultSession.vaultRoot(this));
         boolean unlocked = VaultSession.get().isUnlocked();
 
@@ -876,11 +889,9 @@ public class MainActivity extends Activity {
         rows.add(new SearchResult(SearchResult.Kind.PLAIN, title, state, -1,
                 () -> startActivity(new Intent(this, VaultActivity.class))));
         if (created && unlocked) {
-            rows.add(new SearchResult(SearchResult.Kind.PLAIN, "Lock vault now", null, -1, () -> {
-                VaultUnlockService.stop(this);
-                VaultSession.get().lock(this);
-                filter(search.getText().toString());
-            }));
+            rows.add(new SearchResult(SearchResult.Kind.PLAIN, "Lock vault now", null, -1, () ->
+                    PluginLock.requestLock(this, java.util.EnumSet.of(HomeMode.VAULT),
+                            () -> filter(search.getText().toString()))));
         }
     }
 

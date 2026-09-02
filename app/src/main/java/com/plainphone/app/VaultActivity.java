@@ -28,6 +28,7 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ListView;
+import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -95,6 +96,8 @@ public class VaultActivity extends Activity {
     protected void onResume() {
         super.onResume();
         VaultSession.get().addListener(lockListener);
+        VaultJobs.resumeIfPending(this);
+        VaultJobs.addListener(jobListener);
         if (VaultSession.get().isUnlocked()) {
             VaultUnlockService.touch(this);
             if (list != null && query.isEmpty()) loadListing();   // pick up outside edits
@@ -108,6 +111,35 @@ public class VaultActivity extends Activity {
     protected void onPause() {
         super.onPause();
         VaultSession.get().removeListener(lockListener);
+        VaultJobs.removeListener(jobListener);
+        main.removeCallbacks(jobTick);
+    }
+
+    private final VaultJobs.Listener jobListener = () -> main.post(this::onJobChanged);
+
+    private final Runnable jobTick = () -> {
+        if (!isFinishing() && !isDestroyed() && adapter != null) adapter.notifyDataSetChanged();
+    };
+
+    private void onJobChanged() {
+        if (isFinishing() || isDestroyed()) return;
+        boolean stillRunning = VaultJobs.importPending(this) || VaultJobs.resetPending(this);
+        if (stillRunning) {
+            // Only redraw the visible progress row — no disk re-listing per tick.
+            main.removeCallbacks(jobTick);
+            main.postDelayed(jobTick, 150);
+            return;
+        }
+        // Job finished: one real refresh + a one-time summary.
+        if (VaultSession.get().isUnlocked() && query.isEmpty()) loadListing();
+        VaultImport.Result r = VaultJobs.lastImport;
+        if (r != null && !VaultJobs.importPending(this)) {
+            VaultJobs.lastImport = null;
+            String msg = r.filesAdded + " added"
+                    + (r.filesSkipped > 0 ? ", " + r.filesSkipped + " already there" : "")
+                    + (r.filesFailed > 0 ? ", " + r.filesFailed + " failed" : "");
+            Toast.makeText(this, msg, Toast.LENGTH_LONG).show();
+        }
     }
 
     private void renderState() {
@@ -202,6 +234,11 @@ public class VaultActivity extends Activity {
     }
 
     private void confirmLock() {
+        if (!PluginTasks.runningIn(this, java.util.EnumSet.of(HomeMode.VAULT)).isEmpty()) {
+            PluginLock.requestLock(this, java.util.EnumSet.of(HomeMode.VAULT),
+                    () -> { if (!VaultSession.get().isUnlocked()) main.post(this::finish); });
+            return;
+        }
         VaultUi.confirm(this, "Lock the vault?", null,
                 "Lock", this::lockAndClose, "Cancel", null);
     }
@@ -271,16 +308,14 @@ public class VaultActivity extends Activity {
 
         actionRows = new LinearLayout(this);
         actionRows.setOrientation(LinearLayout.VERTICAL);
-        actionRows.addView(actionRow(font, "+ Add files", v -> {
-            Intent pick = new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*")
-                    .addCategory(Intent.CATEGORY_OPENABLE)
-                    .putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
-            startActivityForResult(pick, REQ_ADD);
-        }));
+        actionRows.addView(actionRow(font, "+ Add files", v -> startActivityForResult(
+                new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*")
+                        .addCategory(Intent.CATEGORY_OPENABLE)
+                        .putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true), REQ_ADD)));
+        actionRows.addView(actionRow(font, "+ Add folder", v -> startActivityForResult(
+                new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), REQ_IMPORT_TREE)));
         actionRows.addView(actionRow(font, "+ New file", v -> promptNewFile()));
         actionRows.addView(actionRow(font, "+ New folder", v -> promptNewFolder()));
-        actionRows.addView(actionRow(font, "+ Import folder", v -> startActivityForResult(
-                new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), REQ_IMPORT_TREE)));
         column.addView(actionRows, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
@@ -326,14 +361,14 @@ public class VaultActivity extends Activity {
         } catch (Exception e) {
             entries = new ArrayList<>();
         }
+        injectImportRow();
         refreshChrome();
         adapter.notifyDataSetChanged();
     }
 
     private void refreshChrome() {
         crumb.setText(headerLabel());
-        boolean browsing = query.isEmpty() && !selecting;
-        actionRows.setVisibility(browsing ? View.VISIBLE : View.GONE);
+        actionRows.setVisibility(query.isEmpty() ? View.VISIBLE : View.GONE);
         selectionBar.setVisibility(selecting ? View.VISIBLE : View.GONE);
         if (selecting) rebuildSelectionBar();
     }
@@ -358,6 +393,65 @@ public class VaultActivity extends Activity {
         return query.isEmpty() ? entries : searchHits;
     }
 
+    private static final String IMPORT_GHOST_ID = "importing:";
+
+    /** Imports queued/running into the current folder that aren't on disk yet. */
+    private List<VaultJobs.Import> importsHere() {
+        List<VaultJobs.Import> out = new ArrayList<>();
+        for (VaultJobs.Import im : VaultJobs.pendingImports(this)) {
+            if (currentDocId.equals(im.destParentDocId) && im.folderName != null) out.add(im);
+        }
+        return out;
+    }
+
+    /** Show each pending import's destination folder as a greyed row even before it's on disk. */
+    private void injectImportRow() {
+        for (VaultJobs.Import im : importsHere()) {
+            boolean onDisk = false;
+            for (VaultStore.Entry e : entries) if (im.folderName.equals(e.name)) { onDisk = true; break; }
+            if (onDisk) continue;
+            VaultStore.Entry ghost = new VaultStore.Entry();
+            ghost.docId = IMPORT_GHOST_ID + im.id;
+            ghost.name = im.folderName;
+            ghost.isDir = true;
+            entries.add(0, ghost);
+        }
+    }
+
+    private boolean isImportingRow(VaultStore.Entry e) {
+        if (e == null) return false;
+        if (e.docId != null && e.docId.startsWith(IMPORT_GHOST_ID)) return true;
+        if (!e.isDir || e.name == null) return false;
+        for (VaultJobs.Import im : importsHere()) if (im.folderName.equals(e.name)) return true;
+        return false;
+    }
+
+    /** True when this row is the import currently being worked on (vs queued behind others). */
+    private boolean isRunningImport(VaultStore.Entry e) {
+        VaultJobs.Snapshot s = VaultJobs.snapshot;
+        return s != null && VaultJobs.TYPE_IMPORT.equals(s.type)
+                && e.name != null && e.name.equals(s.folderName)
+                && currentDocId.equals(s.destParentDocId);
+    }
+
+    private String importSubText(VaultStore.Entry e) {
+        VaultJobs.Snapshot s = VaultJobs.snapshot;
+        if (!isRunningImport(e)) return "Queued";
+        if (s.scanning) {
+            return s.totalFiles > 0 ? "Scanning… " + s.totalFiles + " files" : "Scanning…";
+        }
+        if (s.totalBytes > 0) {
+            return "Importing · " + humanSize(s.doneBytes) + " / " + humanSize(s.totalBytes);
+        }
+        return "Importing…";
+    }
+
+    private int importPct(VaultStore.Entry e) {
+        VaultJobs.Snapshot s = VaultJobs.snapshot;
+        return isRunningImport(e) && s.totalBytes > 0
+                ? (int) (100L * s.doneBytes / s.totalBytes) : 0;
+    }
+
     private boolean hasUpRow() {
         return query.isEmpty() && !stack.isEmpty();
     }
@@ -369,6 +463,7 @@ public class VaultActivity extends Activity {
             return;
         }
         VaultStore.Entry entry = shown().get(pos - (hasUpRow() ? 1 : 0));
+        if (isImportingRow(entry)) return;
         if (selecting) {
             toggleSelected(entry.docId);
             return;
@@ -388,6 +483,7 @@ public class VaultActivity extends Activity {
     private boolean onRowLongPressed(int pos) {
         if (hasUpRow() && pos == 0) return false;
         VaultStore.Entry entry = shown().get(pos - (hasUpRow() ? 1 : 0));
+        if (isImportingRow(entry)) return false;
         if (!selecting) {
             selecting = true;
             selected.clear();
@@ -835,61 +931,34 @@ public class VaultActivity extends Activity {
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (resultCode != RESULT_OK || data == null) return;
-        if (requestCode == REQ_ADD) importFrom(data);
+        if (requestCode == REQ_ADD) addFilesImport(data);
         else if (requestCode == REQ_EXPORT && data.getData() != null) exportTo(data.getData());
-        else if (requestCode == REQ_IMPORT_TREE && data.getData() != null) importTree(data.getData());
+        else if (requestCode == REQ_IMPORT_TREE && data.getData() != null) folderImport(data.getData());
         else if (requestCode == REQ_EXPORT_TREE && data.getData() != null) {
             exportSelectedInto(data.getData());
         }
     }
 
-    private void importTree(Uri treeUri) {
+    private void folderImport(Uri treeUri) {
         try {
             getContentResolver().takePersistableUriPermission(treeUri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION);
         } catch (SecurityException ignored) {
         }
         String dest = currentDocId;
-        showBusy("Importing…");
-        new Thread(() -> {
-            VaultImport.Result result = VaultImport.run(this, treeUri, dest,
-                    (fd, ft, bd, bt) -> main.post(() -> {
-                        int pct = ft > 0 ? (int) (100L * fd / ft) : 0;
-                        String msg = pct + "%   " + fd + "/" + ft + " files";
-                        if (bt > 0) msg += "   " + humanSize(bd) + " / " + humanSize(bt);
-                        setBusy(msg);
-                    }));
-            main.post(() -> {
-                hideBusy();
-                loadListing();
-                showImportResult(result);
-            });
-        }).start();
-    }
-
-    private void showImportResult(VaultImport.Result result) {
-        String summary = result.filesAdded + " added"
-                + (result.filesSkipped > 0 ? ", " + result.filesSkipped + " already there" : "")
-                + (result.errors > 0 ? ", " + result.errors + " failed" : "");
-        if (result.importedSources.isEmpty()) {
-            confirm("Import done", summary, "OK", null);
-            return;
+        String name = VaultImport.pickedFolderName(this, treeUri);
+        List<String> clash = new ArrayList<>();
+        try {
+            if (VaultStore.takenNames(this, dest).contains(name.toLowerCase())) clash.add(name);
+        } catch (Exception ignored) {
         }
-        confirm("Import done", summary + "\n\nDelete the " + result.importedSources.size()
-                        + " imported file(s) from the source folder?", "Delete originals", () -> {
-            showBusy("Deleting originals…");
-            new Thread(() -> {
-                int gone = VaultImport.shredSources(this, result.importedSources);
-                main.post(() -> {
-                    hideBusy();
-                    Toast.makeText(this, "Deleted " + gone + " from source",
-                            Toast.LENGTH_SHORT).show();
-                });
-            }).start();
+        confirmDup(clash, dup -> {
+            VaultJobs.startImport(this, treeUri, dest, dup);
+            loadListing();
         });
     }
 
-    private void importFrom(Intent data) {
+    private void addFilesImport(Intent data) {
         List<Uri> uris = new ArrayList<>();
         if (data.getClipData() != null) {
             for (int i = 0; i < data.getClipData().getItemCount(); i++) {
@@ -899,29 +968,53 @@ public class VaultActivity extends Activity {
             uris.add(data.getData());
         }
         if (uris.isEmpty()) return;
-        String parent = currentDocId;
-        showBusy("Adding files…");
-        new Thread(() -> {
-            int ok = 0;
-            for (Uri uri : uris) {
-                String name = queryName(uri);
-                int done = ok;
-                main.post(() -> setBusy("Adding files… " + done + "/" + uris.size()));
-                try (InputStream in = getContentResolver().openInputStream(uri)) {
-                    if (in == null) continue;
-                    VaultStore.importStream(this, parent, name, in);
-                    ok++;
-                } catch (Exception ignored) {
-                }
+
+        String dest = currentDocId;
+        List<VaultImport.FileRef> refs = new ArrayList<>();
+        for (Uri uri : uris) {
+            try {
+                getContentResolver().takePersistableUriPermission(uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            } catch (SecurityException ignored) {
             }
-            int added = ok;
-            main.post(() -> {
-                hideBusy();
-                Toast.makeText(this, "Added " + added + " file" + (added == 1 ? "" : "s"),
-                        Toast.LENGTH_SHORT).show();
-                loadListing();
-            });
-        }).start();
+            String name = VaultImport.nameOf(this, uri);
+            refs.add(new VaultImport.FileRef(uri, name != null ? name : queryName(uri)));
+        }
+
+        Set<String> taken;
+        try {
+            taken = VaultStore.takenNames(this, dest);
+        } catch (Exception e) {
+            taken = new LinkedHashSet<>();
+        }
+        List<String> clash = new ArrayList<>();
+        for (VaultImport.FileRef r : refs) {
+            if (taken.contains(r.name.toLowerCase())) clash.add(r.name);
+        }
+        String label = refs.size() == 1 ? refs.get(0).name : refs.size() + " files";
+        confirmDup(clash, dup -> {
+            VaultJobs.startImportFiles(this, dest, refs, dup, label);
+            loadListing();
+        });
+    }
+
+    private interface DupPick { void chosen(VaultImport.DupPolicy dup); }
+
+    private void confirmDup(List<String> clashes, DupPick onPick) {
+        if (clashes.isEmpty()) {
+            onPick.chosen(VaultImport.DupPolicy.KEEP_BOTH);
+            return;
+        }
+        String title = clashes.size() + (clashes.size() == 1 ? " name already exists"
+                : " names already exist");
+        VaultUi.tasksDialog(this, title, clashes,
+                new String[]{"Keep both", "Skip", "Replace", "Cancel"},
+                new VaultUi.Choice[]{
+                        () -> onPick.chosen(VaultImport.DupPolicy.KEEP_BOTH),
+                        () -> onPick.chosen(VaultImport.DupPolicy.SKIP),
+                        () -> onPick.chosen(VaultImport.DupPolicy.REPLACE),
+                        null,
+                });
     }
 
     private void exportTo(Uri dest) {
@@ -1189,6 +1282,7 @@ public class VaultActivity extends Activity {
                 holder.thumb.setVisibility(View.GONE);
                 holder.check.setVisibility(View.GONE);
                 holder.more.setVisibility(View.GONE);
+                holder.bar.setVisibility(View.GONE);
                 holder.name.setText("↑  up");
                 holder.name.setTextColor(Color.GRAY);
                 holder.sub.setVisibility(View.GONE);
@@ -1197,9 +1291,27 @@ public class VaultActivity extends Activity {
 
             VaultStore.Entry entry = shown().get(position - (hasUpRow() ? 1 : 0));
             holder.thumb.setVisibility(View.VISIBLE);
+            holder.bar.setVisibility(View.GONE);
+
+            if (isImportingRow(entry)) {
+                holder.check.setVisibility(View.GONE);
+                holder.more.setVisibility(View.GONE);
+                holder.name.setText(entry.name);
+                holder.name.setTextColor(Color.GRAY);
+                holder.thumb.setBackground(null);
+                holder.thumb.setImageDrawable(MiniIcons.folder(thumbPx, Color.DKGRAY));
+                holder.sub.setText(importSubText(entry));
+                holder.sub.setTextColor(Color.GRAY);
+                holder.sub.setVisibility(View.VISIBLE);
+                holder.bar.setVisibility(isRunningImport(entry) ? View.VISIBLE : View.GONE);
+                holder.bar.setProgress(importPct(entry));
+                return row;
+            }
+
             holder.more.setVisibility(selecting ? View.GONE : View.VISIBLE);
             holder.name.setText(entry.name);
             holder.name.setTextColor(Color.WHITE);
+            holder.sub.setTextColor(Color.GRAY);
             if (entry.isDir) {
                 holder.sub.setVisibility(View.GONE);
             } else {
@@ -1290,6 +1402,15 @@ public class VaultActivity extends Activity {
             sub.setTypeface(font);
             text.addView(sub);
 
+            ProgressBar bar = new ProgressBar(VaultActivity.this, null,
+                    android.R.attr.progressBarStyleHorizontal);
+            bar.setMax(100);
+            bar.setVisibility(View.GONE);
+            LinearLayout.LayoutParams barLp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, dp(3));
+            barLp.topMargin = dp(6);
+            text.addView(bar, barLp);
+
             row.addView(text, new LinearLayout.LayoutParams(
                     0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
@@ -1315,6 +1436,7 @@ public class VaultActivity extends Activity {
             holder.thumb = thumb;
             holder.name = name;
             holder.sub = sub;
+            holder.bar = bar;
             holder.check = check;
             holder.more = more;
             row.setTag(holder);
@@ -1333,6 +1455,7 @@ public class VaultActivity extends Activity {
         ImageView thumb;
         TextView name;
         TextView sub;
+        ProgressBar bar;
         TextView check;
         TextView more;
     }

@@ -35,17 +35,17 @@ enum Lock {
         return valueOf(intent.getStringExtra(EXTRA_LOCK));
     }
 
-    /** Turn every area's lock on and expire all active grace windows, section and per-app. */
-    static void lockAll(Context context) {
+    /**
+     * Turn every launcher section's lock on and expire all grace windows, section
+     * and per-app. The vault is a plugin with pausable tasks — it is locked
+     * separately through {@link PluginLock#requestLockAll}.
+     */
+    static void lockAllSections(Context context) {
         for (Lock lock : values()) {
             lock.setLocked(context, true);
             Config.setUnlockUntil(context, lock.area, 0L);
         }
         Config.clearAppUnlocks(context);
-        if (VaultSession.get().isUnlocked()) {
-            VaultUnlockService.stop(context);
-            VaultSession.get().lock(context.getApplicationContext());
-        }
     }
 
     boolean isLocked(Context context) {

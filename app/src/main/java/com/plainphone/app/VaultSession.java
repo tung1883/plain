@@ -120,6 +120,22 @@ final class VaultSession {
         saveManifest(context);
     }
 
+    /** Persist the manifest even mid-batch — a checkpoint for a long, resumable import. */
+    void flushManifest(Context context) {
+        VaultManifest m;
+        SecretKey key;
+        synchronized (this) {
+            m = manifest;
+            key = manifestKey;
+        }
+        if (m == null || key == null) return;
+        try {
+            m.save(context, key);
+        } catch (java.io.IOException e) {
+            android.util.Log.w("VaultSession", "manifest flush failed", e);
+        }
+    }
+
     /** Persist the manifest; a failure is logged, not thrown — the RAM copy stays authoritative. */
     void saveManifest(Context context) {
         VaultManifest m;

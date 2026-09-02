@@ -26,7 +26,16 @@ public class VaultUnlockService extends Service {
     private static final int NOTIF_ID = 0x5641; // 'VA'
 
     private final Handler handler = new Handler(Looper.getMainLooper());
-    private final Runnable autoLock = this::lockAndStop;
+    private final Runnable autoLock = this::maybeAutoLock;
+
+    /** Idle timeout fired — but don't lock out from under a running background job. */
+    private void maybeAutoLock() {
+        if (VaultJobs.anyPending(getApplicationContext())) {
+            armTimeout();
+            return;
+        }
+        lockAndStop();
+    }
 
     private BroadcastReceiver screenOff;
 
@@ -52,6 +61,7 @@ public class VaultUnlockService extends Service {
         screenOff = new BroadcastReceiver() {
             @Override
             public void onReceive(Context c, Intent i) {
+                if (VaultJobs.anyPending(c)) return;   // let a background job keep running
                 lockAndStop();
             }
         };
@@ -74,7 +84,12 @@ public class VaultUnlockService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null && ACTION_LOCK.equals(intent.getAction())) {
-            lockAndStop();
+            if (VaultJobs.anyPending(this)) {
+                startActivity(new Intent(this, PluginLockPromptActivity.class)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            } else {
+                lockAndStop();
+            }
             return START_NOT_STICKY;
         }
         startForeground(NOTIF_ID, buildNotification());

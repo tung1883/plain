@@ -103,12 +103,13 @@ public class VaultSettingsActivity extends Activity {
         root.addView(row("Open vault", v ->
                 startActivity(new Intent(this, VaultActivity.class))));
         if (unlocked) {
-            root.addView(row("Lock now", v -> {
-                VaultUnlockService.stop(this);
-                VaultSession.get().lock(this);
-                Toast.makeText(this, "Vault locked", Toast.LENGTH_SHORT).show();
+            root.addView(row("Lock now", v -> PluginLock.requestLock(this,
+                    java.util.EnumSet.of(HomeMode.VAULT), () -> {
+                if (!VaultSession.get().isUnlocked()) {
+                    Toast.makeText(this, "Vault locked", Toast.LENGTH_SHORT).show();
+                }
                 render();
-            }));
+            })));
         }
 
         root.addView(sectionHeader("Danger"));
@@ -141,9 +142,11 @@ public class VaultSettingsActivity extends Activity {
     }
 
     private void doWipe() {
-        runBlocking("Resetting the vault…",
-                () -> VaultReset.wipe(getApplicationContext()),
-                () -> Toast.makeText(this, "Vault reset", Toast.LENGTH_SHORT).show());
+        VaultJobs.startReset(this);
+        Toast.makeText(this, "Resetting the vault…", Toast.LENGTH_SHORT).show();
+        startActivity(new Intent(this, MainActivity.class)
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP));
+        finish();
     }
 
     /**
@@ -233,6 +236,10 @@ public class VaultSettingsActivity extends Activity {
     }
 
     private void relocate(File target, String newConfigPath) {
+        if (VaultJobs.anyPending(this)) {
+            Toast.makeText(this, "Finish the running task first", Toast.LENGTH_SHORT).show();
+            return;
+        }
         File current = VaultSession.vaultRoot(this);
         if (target.equals(current)) return;
 

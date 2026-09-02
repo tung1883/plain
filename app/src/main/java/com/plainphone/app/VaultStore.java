@@ -308,6 +308,11 @@ final class VaultStore {
         VaultSession.get().endManifestBatch(context);
     }
 
+    /** Checkpoint the manifest during a bulk import without ending the batch. */
+    static void flushBulkImport(Context context) {
+        VaultSession.get().flushManifest(context);
+    }
+
     /** Snapshot of the lowercased names already under {@code parentDocId}. */
     static java.util.Set<String> takenNames(Context context, String parentDocId)
             throws FileNotFoundException {
@@ -413,6 +418,18 @@ final class VaultStore {
             if (e.name.equalsIgnoreCase(name)) return e.docId;
         }
         return null;
+    }
+
+    /** Delete a child by name (for "replace on import"). Returns true if something went. */
+    static boolean deleteChild(Context context, String parentDocId, String name) {
+        try {
+            String child = findChild(context, parentDocId, name);
+            if (child == null) return false;
+            delete(context, child);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private static boolean nameTaken(List<Entry> siblings, String name) {
