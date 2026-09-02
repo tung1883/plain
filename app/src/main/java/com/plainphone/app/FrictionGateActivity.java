@@ -135,6 +135,7 @@ public abstract class FrictionGateActivity extends Activity {
                 finish();
             }
         });
+        mathPad.disableIdleTimeout();
         setContentView(mathPad);
     }
 
