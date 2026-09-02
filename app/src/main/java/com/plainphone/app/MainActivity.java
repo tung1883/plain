@@ -90,6 +90,8 @@ public class MainActivity extends Activity {
     private FrameLayout artFrame;
     private boolean showingHomeReminder = false;
     private boolean homeUiBuilt = false;
+    // Home-list settings groups — collapsed on every entry, never persisted.
+    private boolean notesSettingsOpen, todoSettingsOpen, vaultSettingsOpen;
     private FontChoice builtWithFont;
 
     @Override
@@ -153,9 +155,9 @@ public class MainActivity extends Activity {
             showingHomeReminder = false;
             startLoadingHomeUi();
         } else if (homeUiBuilt) {
-            if (Config.getFontChoice(this) != builtWithFont) {
-
-                recreate();
+            if (Config.getFontChoice(this) != builtWithFont
+                    || !modeOrder.equals(Config.getHomeModeOrder(this))) {
+                recreate();   // font changed, or a section was shown/hidden
                 return;
             }
 
@@ -770,10 +772,10 @@ public class MainActivity extends Activity {
     }
 
     private void renderNoteSettingsGroup() {
-        boolean expanded = Config.isNotesHomeSettingsExpanded(this);
+        boolean expanded = notesSettingsOpen;
         rows.add(new SearchResult(SearchResult.Kind.NOTE,
                 (expanded ? "▾  " : "▸  ") + "Notes settings", null, -1, () -> {
-            Config.setNotesHomeSettingsExpanded(this, !expanded);
+            notesSettingsOpen = !expanded;
             filter(search.getText().toString());
         }));
         if (!expanded) return;
@@ -846,9 +848,32 @@ public class MainActivity extends Activity {
     private void renderVaultSection() {
         boolean created = VaultFormat.exists(VaultSession.vaultRoot(this));
         boolean unlocked = VaultSession.get().isUnlocked();
+
+        if (created && unlocked) {
+            boolean expanded = vaultSettingsOpen;
+            rows.add(new SearchResult(SearchResult.Kind.PLAIN,
+                    (expanded ? "▾  " : "▸  ") + "Vault settings", null, -1, () -> {
+                vaultSettingsOpen = !expanded;
+                filter(search.getText().toString());
+            }));
+            if (expanded) {
+                rows.add(new SearchResult(SearchResult.Kind.PLAIN, "Show on home screen: "
+                        + (Config.isVaultHiddenFromHome(this) ? "Off" : "On"), null, -1, () -> {
+                    Config.setVaultHiddenFromHome(this, !Config.isVaultHiddenFromHome(this));
+                    recreate();
+                }));
+                rows.add(new SearchResult(SearchResult.Kind.PLAIN, "Auto-lock: "
+                        + formatVaultTimeout(Config.getVaultAutoLockSeconds(this)), null, -1,
+                        () -> startActivity(new Intent(this, VaultAutoLockActivity.class))));
+                rows.add(new SearchResult(SearchResult.Kind.PLAIN, "More vault settings", null, -1,
+                        () -> startActivity(new Intent(this, VaultSettingsActivity.class))));
+            }
+        }
+
+        String title = created && !unlocked ? "Vault is locked" : "Vault";
         String state = !created ? "Tap to set up"
-                : unlocked ? "Unlocked — tap to browse" : "Locked — tap to unlock";
-        rows.add(new SearchResult(SearchResult.Kind.PLAIN, "File vault", state, -1,
+                : unlocked ? "Unlocked — tap to browse" : "Tap to unlock";
+        rows.add(new SearchResult(SearchResult.Kind.PLAIN, title, state, -1,
                 () -> startActivity(new Intent(this, VaultActivity.class))));
         if (created && unlocked) {
             rows.add(new SearchResult(SearchResult.Kind.PLAIN, "Lock vault now", null, -1, () -> {
@@ -857,6 +882,11 @@ public class MainActivity extends Activity {
                 filter(search.getText().toString());
             }));
         }
+    }
+
+    private static String formatVaultTimeout(int seconds) {
+        if (seconds % 60 == 0) return (seconds / 60) + " min";
+        return seconds + " s";
     }
 
     private void renderTodoSection() {
@@ -868,10 +898,10 @@ public class MainActivity extends Activity {
         }
         if (Lock.TODOS.isLocked(this)) Lock.TODOS.keepUnlocked(this);
 
-        boolean expanded = Config.isTodoHomeSettingsExpanded(this);
+        boolean expanded = todoSettingsOpen;
         rows.add(new SearchResult(SearchResult.Kind.TODO,
                 (expanded ? "▾  " : "▸  ") + "To-do settings", null, -1, () -> {
-            Config.setTodoHomeSettingsExpanded(this, !expanded);
+            todoSettingsOpen = !expanded;
             filter(search.getText().toString());
         }));
         if (expanded) {
@@ -1295,7 +1325,8 @@ public class MainActivity extends Activity {
 
     private List<SearchResult> vaultResults(String needle) {
         List<SearchResult> results = new ArrayList<>();
-        if (needle.isEmpty() || !VaultSession.get().isUnlocked()
+        if (needle.isEmpty() || Config.isVaultHiddenFromHome(this)
+                || !VaultSession.get().isUnlocked()
                 || !VaultFormat.exists(VaultSession.vaultRoot(this))) {
             return results;
         }
