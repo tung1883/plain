@@ -448,6 +448,14 @@ class Config {
         prefs(context).edit().putString("pixel_gif_scene", scene.name()).apply();
     }
 
+    static boolean isAccessWarnEnabled(Context context) {
+        return prefs(context).getBoolean("access_warn_enabled", true);
+    }
+
+    static void setAccessWarnEnabled(Context context, boolean enabled) {
+        prefs(context).edit().putBoolean("access_warn_enabled", enabled).apply();
+    }
+
     // --- home art: mode -----------------------------------------
 
     /** "off" | "on". "on" = show the current item in the selection (1 = static, 2+ = slideshow). */

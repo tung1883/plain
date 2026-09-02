@@ -15,7 +15,7 @@ class Tips {
 
     private Tips() {}
 
-    enum Kind { TIP, QUOTE }
+    enum Kind { TIP, QUOTE, WARNING }
 
     static class Entry {
         final Kind kind;
@@ -27,8 +27,20 @@ class Tips {
         }
 
         String kicker() {
-            return kind == Kind.QUOTE ? "QUOTE OF THE DAY" : "TIP OF THE DAY";
+            switch (kind) {
+                case QUOTE: return "QUOTE OF THE DAY";
+                case WARNING: return "HEADS UP";
+                default: return "TIP OF THE DAY";
+            }
         }
+    }
+
+    /** Shown in the rotation (every 3rd slot) while plainphone's accessibility access is off. */
+    static final Entry ACCESS_WARNING = new Entry(Kind.WARNING,
+            "Allow Plain's accessibility access for full-fledged features.");
+
+    static boolean warningActive(Context context) {
+        return Config.isAccessWarnEnabled(context) && !AppMonitorService.isEnabled(context);
     }
 
     static final String[] DEFAULT_TIPS = {
@@ -78,11 +90,27 @@ class Tips {
         return out;
     }
 
-    /** The item to show now, or null when nothing is enabled / both lists are empty. */
+    /**
+     * The item to show now, or null when nothing is enabled. With the accessibility
+     * warning active the sequence is tip · quote · warning · tip · quote · warning · …
+     */
     static Entry current(Context context) {
+        int i = Config.getTipIndex(context);
+
+        if (warningActive(context)) {
+            if (Math.floorMod(i, 3) == 2) return ACCESS_WARNING;
+            int k = i - i / 3;   // which non-warning slot this is
+            List<String> t = Config.isTipsEnabled(context) ? tips(context) : new ArrayList<>();
+            List<String> q = Config.isQuotesEnabled(context) ? quotes(context) : new ArrayList<>();
+            if (t.isEmpty() && q.isEmpty()) return ACCESS_WARNING;
+            boolean pickTip = q.isEmpty() || (!t.isEmpty() && k % 2 == 0);
+            return pickTip ? new Entry(Kind.TIP, t.get((k / 2) % t.size()))
+                    : new Entry(Kind.QUOTE, q.get((k / 2) % q.size()));
+        }
+
         List<Entry> pool = pool(context);
         if (pool.isEmpty()) return null;
-        return pool.get(Math.floorMod(Config.getTipIndex(context), pool.size()));
+        return pool.get(Math.floorMod(i, pool.size()));
     }
 
     static void advance(Context context) {

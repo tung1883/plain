@@ -110,8 +110,7 @@ public class PixelSceneActivity extends Activity {
     }
 
     private String slideshowLabel() {
-        int m = Config.getArtSlideshowMinutes(this);
-        return m <= 0 ? "Manual" : "every " + m + " min";
+        return "every " + Config.getArtSlideshowMinutes(this) + " min";
     }
 
     // --- selection ---------------------------------------

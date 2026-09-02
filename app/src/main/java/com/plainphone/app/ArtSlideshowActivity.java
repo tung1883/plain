@@ -20,7 +20,7 @@ public class ArtSlideshowActivity extends StepperActivity {
 
     @Override
     protected int min() {
-        return 0;
+        return 1;
     }
 
     @Override
@@ -40,6 +40,6 @@ public class ArtSlideshowActivity extends StepperActivity {
 
     @Override
     protected String format(int value) {
-        return value <= 0 ? "Manual" : "Every " + value + " min";
+        return "Every " + value + " min";
     }
 }
