@@ -400,22 +400,6 @@ class Config {
         }
     }
 
-    static boolean isNotesHomeSettingsExpanded(Context context) {
-        return prefs(context).getBoolean("notes_home_settings_expanded", false);
-    }
-
-    static void setNotesHomeSettingsExpanded(Context context, boolean expanded) {
-        prefs(context).edit().putBoolean("notes_home_settings_expanded", expanded).apply();
-    }
-
-    static boolean isTodoHomeSettingsExpanded(Context context) {
-        return prefs(context).getBoolean("todos_home_settings_expanded", false);
-    }
-
-    static void setTodoHomeSettingsExpanded(Context context, boolean expanded) {
-        prefs(context).edit().putBoolean("todos_home_settings_expanded", expanded).apply();
-    }
-
     static boolean isTodosShowCompleted(Context context) {
         return prefs(context).getBoolean("todos_show_completed", true);
     }
@@ -521,6 +505,14 @@ class Config {
         prefs(context).edit().putString("font_choice", font.name()).apply();
     }
 
+    static boolean isVaultHiddenFromHome(Context context) {
+        return prefs(context).getBoolean("vault_hidden_from_home", false);
+    }
+
+    static void setVaultHiddenFromHome(Context context, boolean hidden) {
+        prefs(context).edit().putBoolean("vault_hidden_from_home", hidden).apply();
+    }
+
     static java.util.List<HomeMode> getHomeModeOrder(Context context) {
         String stored = prefs(context).getString("home_mode_order", null);
         java.util.List<HomeMode> order = new java.util.ArrayList<>();
@@ -536,6 +528,7 @@ class Config {
         for (HomeMode mode : HomeMode.values()) {
             if (!order.contains(mode)) order.add(mode);
         }
+        if (isVaultHiddenFromHome(context)) order.remove(HomeMode.VAULT);
         return order;
     }
 
@@ -551,7 +544,9 @@ class Config {
     static HomeMode getHomeMode(Context context) {
         String stored = prefs(context).getString("home_mode", HomeMode.APPS.name());
         try {
-            return HomeMode.valueOf(stored);
+            HomeMode mode = HomeMode.valueOf(stored);
+            if (mode == HomeMode.VAULT && isVaultHiddenFromHome(context)) return HomeMode.APPS;
+            return mode;
         } catch (IllegalArgumentException e) {
             return HomeMode.APPS;
         }

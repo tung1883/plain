@@ -1,6 +1,7 @@
 package com.plainphone.app;
 
 import android.app.Activity;
+import android.app.KeyguardManager;
 import android.content.Intent;
 import android.graphics.Color;
 import java.io.File;
@@ -11,6 +12,8 @@ import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.content.Context;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -20,7 +23,9 @@ import android.widget.Toast;
 public class VaultSettingsActivity extends Activity {
 
     private LinearLayout root;
+    private FrameLayout stack;
     private Typeface font;
+    private boolean busy;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -35,7 +40,12 @@ public class VaultSettingsActivity extends Activity {
         scroller.setBackgroundColor(Color.BLACK);
         scroller.addView(root, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        setContentView(scroller);
+
+        stack = new FrameLayout(this);
+        stack.setBackgroundColor(Color.BLACK);
+        stack.addView(scroller, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        setContentView(stack);
     }
 
     @Override
@@ -54,6 +64,17 @@ public class VaultSettingsActivity extends Activity {
         root.addView(sectionHeader("Status"));
         root.addView(readout(!created ? "Not set up"
                 : unlocked ? "Unlocked" : "Locked"));
+
+        root.addView(sectionHeader("Home"));
+        boolean hidden = Config.isVaultHiddenFromHome(this);
+        root.addView(row("Show on home screen: " + (hidden ? "Off" : "On"), v -> {
+            Config.setVaultHiddenFromHome(this, !hidden);
+            render();
+        }));
+        if (hidden) {
+            root.addView(readout("Hidden from the home tabs and search. The file-picker "
+                    + "location is unaffected — reach the vault from here."));
+        }
 
         if (!created) {
             root.addView(row("Set up the vault", v ->
@@ -89,9 +110,90 @@ public class VaultSettingsActivity extends Activity {
                 render();
             }));
         }
+
+        root.addView(sectionHeader("Danger"));
+        root.addView(row("Reset vault — delete everything", v -> confirmReset()));
     }
 
     private static final int REQ_PICK_VAULT_DIR = 6601;
+    private static final int REQ_CONFIRM_RESET = 6602;
+
+    private void confirmReset() {
+        VaultUi.confirm(this, "Reset the vault?",
+                "Deletes the vault and every file in it. Nothing can be recovered without the "
+                        + "password — this is the way out if you've forgotten it.",
+                "Continue", this::promptCredentialThenWipe, "Cancel", null);
+    }
+
+    private void promptCredentialThenWipe() {
+        KeyguardManager km = getSystemService(KeyguardManager.class);
+        Intent auth = km == null ? null
+                : km.createConfirmDeviceCredentialIntent("Reset the vault",
+                        "Confirm it's you before wiping the vault");
+        if (auth != null) {
+            startActivityForResult(auth, REQ_CONFIRM_RESET);
+        } else {
+            // No screen lock set on the device — a typed confirmation is the best we can do.
+            VaultUi.confirm(this, "No screen lock",
+                    "Set a device screen lock for a safer reset, or continue anyway.",
+                    "Wipe now", this::doWipe, "Cancel", null);
+        }
+    }
+
+    private void doWipe() {
+        runBlocking("Resetting the vault…",
+                () -> VaultReset.wipe(getApplicationContext()),
+                () -> Toast.makeText(this, "Vault reset", Toast.LENGTH_SHORT).show());
+    }
+
+    /**
+     * Run a slow filesystem job (wipe / move — hundreds of files) off the main thread
+     * behind a blocking overlay. Deleting the vault inline used to ANR ("Waited 10000ms
+     * for FocusEvent").
+     */
+    private void runBlocking(String label, Runnable work, Runnable onDone) {
+        if (busy) return;
+        busy = true;
+        View overlay = busyOverlay(label);
+        stack.addView(overlay);
+        new Thread(() -> {
+            Throwable failure = null;
+            try {
+                work.run();
+            } catch (Throwable t) {
+                failure = t;
+            }
+            final Throwable f = failure;
+            runOnUiThread(() -> {
+                busy = false;
+                stack.removeView(overlay);
+                if (isFinishing() || isDestroyed()) return;
+                if (f != null) {
+                    Toast.makeText(this, "Failed: " + f.getMessage(), Toast.LENGTH_LONG).show();
+                } else if (onDone != null) {
+                    onDone.run();
+                }
+                render();
+            });
+        }, "vault-settings-job").start();
+    }
+
+    private View busyOverlay(String label) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setGravity(Gravity.CENTER);
+        box.setBackgroundColor(Color.BLACK);
+        box.setClickable(true);
+        box.addView(UiKit.spinner(this));
+        TextView text = new TextView(this);
+        text.setText(label);
+        text.setTextColor(Color.WHITE);
+        text.setTextSize(15);
+        text.setTypeface(font);
+        text.setPadding(0, 32, 0, 0);
+        box.addView(text);
+        return box;
+    }
 
     private void pickLocation() {
         if (!VaultLocation.hasStorageAccess()) {
@@ -105,6 +207,10 @@ public class VaultSettingsActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQ_CONFIRM_RESET) {
+            if (resultCode == RESULT_OK) doWipe();
+            return;
+        }
         if (requestCode != REQ_PICK_VAULT_DIR || resultCode != RESULT_OK
                 || data == null || data.getData() == null) {
             return;
@@ -119,30 +225,33 @@ public class VaultSettingsActivity extends Activity {
     }
 
     private void relocateTo(File target) {
+        relocate(target, target.getAbsolutePath());
+    }
+
+    private void moveBackToInternal() {
+        relocate(VaultSession.defaultVaultRoot(this), null);
+    }
+
+    private void relocate(File target, String newConfigPath) {
         File current = VaultSession.vaultRoot(this);
         if (target.equals(current)) return;
 
         boolean haveVault = VaultFormat.exists(current);
         forceLock();
 
-        if (haveVault) {
-            try {
-                VaultLocation.moveVault(current, target);
-            } catch (Exception e) {
-                Toast.makeText(this, "Move failed: " + e.getMessage(), Toast.LENGTH_LONG).show();
-                return;
-            }
-        }
-        Config.setVaultLocationPath(this, target.getAbsolutePath());
-        VaultLocation.ensureNoMedia(target);
-        Toast.makeText(this, haveVault ? "Vault moved" : "Location set", Toast.LENGTH_SHORT).show();
-        render();
-    }
-
-    private void moveBackToInternal() {
-        relocateTo(VaultSession.defaultVaultRoot(this));
-        Config.setVaultLocationPath(this, null);
-        render();
+        Context app = getApplicationContext();
+        runBlocking(haveVault ? "Moving the vault…" : "Setting location…",
+                () -> {
+                    try {
+                        if (haveVault) VaultLocation.moveVault(current, target);
+                    } catch (java.io.IOException e) {
+                        throw new RuntimeException(e.getMessage(), e);
+                    }
+                    Config.setVaultLocationPath(app, newConfigPath);
+                    VaultLocation.ensureNoMedia(target);
+                },
+                () -> Toast.makeText(this, haveVault ? "Vault moved" : "Location set",
+                        Toast.LENGTH_SHORT).show());
     }
 
     private void forceLock() {
