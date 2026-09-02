@@ -74,8 +74,9 @@ class SearchTargets {
                     true, "notes", "export", "folder", "lock", "pin"),
             new PlainTarget("To-do", "Task list settings", TodoSettingsActivity.class,
                     true, "todo", "tasks", "todo.txt", "checklist"),
-            new PlainTarget("Tips and quotes", "Tip and quote of the day", TipsSettingsActivity.class,
-                    true, "tips", "quotes", "hints", "quote of the day"),
+            new PlainTarget("Tips, quotes and warnings", "Tip and quote of the day",
+                    TipsSettingsActivity.class,
+                    true, "tips", "quotes", "hints", "quote of the day", "warning", "accessibility"),
     };
 
     private static final SystemTarget[] SYSTEM = {

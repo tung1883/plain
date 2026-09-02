@@ -1514,6 +1514,10 @@ public class MainActivity extends Activity {
         row.setBackground(rowBackground());
         row.setPadding(48, 8, 48, 36);
         row.setOnClickListener(v -> {
+            if (currentTipEntry != null && currentTipEntry.kind == Tips.Kind.WARNING) {
+                startActivity(new Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS));
+                return;
+            }
             Tips.advance(this);
             refreshTipRow();
         });
@@ -1538,13 +1542,19 @@ public class MainActivity extends Activity {
         return row;
     }
 
+    private Tips.Entry currentTipEntry;
+
     private void refreshTipRow() {
         if (tipRow == null) return;
         Tips.Entry entry = currentQuery.isEmpty() ? Tips.current(this) : null;
+        currentTipEntry = entry;
         if (entry == null) {
             tipRow.setVisibility(View.GONE);
             return;
         }
+        boolean warn = entry.kind == Tips.Kind.WARNING;
+        tipKicker.setTextColor(Color.parseColor(warn ? "#B05A50" : "#5C5C5C"));
+        tipBody.setTextColor(Color.parseColor(warn ? "#C88F87" : "#9A9A9A"));
         tipKicker.setText(entry.kicker());
         tipBody.setText(entry.text);
         tipRow.setVisibility(View.VISIBLE);

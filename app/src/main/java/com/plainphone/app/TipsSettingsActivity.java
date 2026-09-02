@@ -82,6 +82,12 @@ public class TipsSettingsActivity extends Activity {
         int rotate = Config.getTipRotateMinutes(this);
         root.addView(row("Change every: " + (rotate <= 0 ? "On tap only" : rotate + " min"),
                 v -> startActivity(new Intent(this, TipRotateActivity.class))));
+
+        root.addView(sectionHeader("Warnings"));
+        root.addView(row("Warning: " + (Config.isAccessWarnEnabled(this) ? "On" : "Off"), v -> {
+            Config.setAccessWarnEnabled(this, !Config.isAccessWarnEnabled(this));
+            render();
+        }));
     }
 
     private void pickImportFile(int requestCode) {
