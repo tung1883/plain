@@ -43,6 +43,7 @@ class PinPromptView extends FrameLayout {
     private final TextView display;
     private TextView countdown;
     private final Listener listener;
+    private boolean idleTimeout = true;
     private int idleRemaining = IDLE_SECONDS;
     private final Runnable idleTick = new Runnable() {
         @Override
@@ -221,9 +222,17 @@ class PinPromptView extends FrameLayout {
         if (hasWindowFocus) UiKit.hideSystemBars(this);
     }
 
+    /** Turn off the walk-away auto-dismiss + countdown (e.g. the flagged-app maths challenge). */
+    void disableIdleTimeout() {
+        idleTimeout = false;
+        removeCallbacks(idleTick);
+        if (countdown != null) countdown.setText("");
+    }
+
     @Override
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
+        if (!idleTimeout) return;
         removeCallbacks(idleTick);
         idleRemaining = IDLE_SECONDS;
         updateCountdown();
