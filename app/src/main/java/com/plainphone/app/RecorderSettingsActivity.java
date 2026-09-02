@@ -63,6 +63,9 @@ public class RecorderSettingsActivity extends Activity {
             render();
         }));
 
+        root.addView(row("Locked: " + (Lock.RECORDER.isLocked(this) ? "On" : "Off"),
+                v -> Lock.RECORDER.toggleLock(this, this::render)));
+
         int local = Recorder.all(this).size();
         if (local > 0 && VaultFormat.exists(VaultSession.vaultRoot(this))) {
             root.addView(row("Move all recordings to vault", v -> {

@@ -92,6 +92,7 @@ public class MainActivity extends Activity {
     private static final int REQUEST_TODOS_UNLOCK = 4304;
     private static final int REQUEST_APPS_UNLOCK = 4305;
     private static final int REQUEST_SEARCH_UNLOCK = 4306;
+    private static final int REQUEST_RECORDER_UNLOCK = 4307;
     private FrameLayout artFrame;
     private boolean showingHomeReminder = false;
     private boolean homeUiBuilt = false;
@@ -122,6 +123,8 @@ public class MainActivity extends Activity {
         } else if (requestCode == REQUEST_APPS_UNLOCK && resultCode == RESULT_OK) {
             filter(search.getText().toString());
         } else if (requestCode == REQUEST_SEARCH_UNLOCK && resultCode == RESULT_OK) {
+            filter(search.getText().toString());
+        } else if (requestCode == REQUEST_RECORDER_UNLOCK && resultCode == RESULT_OK) {
             filter(search.getText().toString());
         } else if (requestCode == REQUEST_PICK_NOTES_FOLDER && resultCode == RESULT_OK) {
             Notes.saveFolderPick(this, data);
@@ -977,6 +980,14 @@ public class MainActivity extends Activity {
     }
 
     private void renderRecorderSection() {
+        if (Lock.RECORDER.gateActive(this)) {
+            rows.add(new SearchResult(SearchResult.Kind.RECORDING, "Recorder is locked",
+                    "Tap to unlock", -1, () -> startActivityForResult(
+                    Lock.RECORDER.pinGate(this), REQUEST_RECORDER_UNLOCK)));
+            return;
+        }
+        if (Lock.RECORDER.isLocked(this)) Lock.RECORDER.keepUnlocked(this);
+
         if (selectMode == HomeMode.RECORDER) {
             renderRecorderSelection(recorderAll());
             return;
@@ -994,6 +1005,9 @@ public class MainActivity extends Activity {
             rows.add(new SearchResult(SearchResult.Kind.RECORDING,
                     "Sample rate: " + Config.getRecorderSampleRate(this) + " Hz", null, -1,
                     () -> startActivity(new Intent(this, RecorderSettingsActivity.class))));
+            rows.add(new SearchResult(SearchResult.Kind.RECORDING,
+                    "Locked: " + (Lock.RECORDER.isLocked(this) ? "On" : "Off"), null, -1,
+                    () -> Lock.RECORDER.toggleLock(this, () -> filter(search.getText().toString()))));
             int local = Recorder.all(this).size();
             if (local > 0 && VaultFormat.exists(VaultSession.vaultRoot(this))) {
                 rows.add(new SearchResult(SearchResult.Kind.RECORDING,
@@ -1370,6 +1384,7 @@ public class MainActivity extends Activity {
 
     private List<SearchResult> recordingResults(String needle) {
         List<SearchResult> results = new ArrayList<>();
+        if (Lock.RECORDER.gateActive(this)) return results;
         for (Recording r : recorderAll()) {
             int score = TextMatch.score(r.displayName(), currentSearch);
             if (score == TextMatch.NO_MATCH) continue;
@@ -1380,6 +1395,7 @@ public class MainActivity extends Activity {
     }
 
     private void openRecording(String id) {
+        if (Lock.RECORDER.isLocked(this)) Lock.RECORDER.keepUnlocked(this);
         Intent intent = new Intent(this, RecordingPlayerActivity.class);
         if (Recorder.isVaulted(id)) {
             String name = Recorder.vaultRecordingName(this, id);
