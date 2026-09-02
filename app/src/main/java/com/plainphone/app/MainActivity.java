@@ -203,6 +203,15 @@ public class MainActivity extends Activity {
     });
 
     @Override
+    public void onBackPressed() {
+        if (selectMode != null) {
+            exitSelection();
+            return;
+        }
+        super.onBackPressed();
+    }
+
+    @Override
     protected void onDestroy() {
         super.onDestroy();
 
@@ -1048,7 +1057,7 @@ public class MainActivity extends Activity {
 
     private void toggleSelected(String id) {
         if (!selection.remove(id)) selection.add(id);
-        if (selection.isEmpty()) selectMode = null;
+        // Empty selection stays in selection mode — only ✕ (or a tab switch / search) leaves.
         filter(search.getText().toString());
     }
 
@@ -1062,7 +1071,7 @@ public class MainActivity extends Activity {
         boolean all = !allIds.isEmpty() && selection.size() == allIds.size();
         selection.clear();
         if (!all) selection.addAll(allIds);
-        if (selection.isEmpty()) selectMode = null;
+        // "Select none" keeps you in selection mode — only unchecking the last row leaves.
         filter(search.getText().toString());
     }
 
