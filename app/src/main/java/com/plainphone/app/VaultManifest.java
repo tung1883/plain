@@ -10,7 +10,6 @@ import org.json.JSONObject;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.security.GeneralSecurityException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -134,14 +133,24 @@ final class VaultManifest {
 
     private static VaultManifest tryLoad(Context context, SecretKey manifestKey) {
         File file = new File(dir(context), FILE_NAME);
-        if (!file.isFile()) return null;
+        if (!file.isFile() || file.length() == 0) return null;
         try {
-            byte[] wrapped = Files.readAllBytes(file.toPath());
+            byte[] wrapped = readAll(file);
             byte[] json = VaultCrypto.unwrap(manifestKey, wrapped);
             return fromJson(new String(json, StandardCharsets.UTF_8));
         } catch (Exception e) {
             Log.w(TAG, "manifest unreadable, will rebuild from the filesystem", e);
             return null;
+        }
+    }
+
+    private static byte[] readAll(File file) throws IOException {
+        try (java.io.FileInputStream in = new java.io.FileInputStream(file);
+             java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream()) {
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) != -1) out.write(buf, 0, n);
+            return out.toByteArray();
         }
     }
 
@@ -185,11 +194,23 @@ final class VaultManifest {
         } catch (GeneralSecurityException | JSONException e) {
             throw new IOException(e);
         }
-        Files.write(tmp.toPath(), wrapped);
-        if (target.isFile()) target.renameTo(bak);
+
+        writeAll(tmp, wrapped);
+        if (target.isFile()) {
+            bak.delete();
+            target.renameTo(bak);
+        }
         if (!tmp.renameTo(target)) {
-            Files.write(target.toPath(), wrapped);
+            // Some FUSE-backed volumes reject cross-name rename — write in place instead.
+            writeAll(target, wrapped);
             tmp.delete();
+        }
+    }
+
+    private static void writeAll(File file, byte[] data) throws IOException {
+        try (java.io.FileOutputStream out = new java.io.FileOutputStream(file)) {
+            out.write(data);
+            out.getFD().sync();
         }
     }
 

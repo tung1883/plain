@@ -451,13 +451,33 @@ public class VaultActivity extends Activity {
 
     private void openViewer(VaultStore.Entry entry) {
         String mime = entry.mimeType == null ? "" : entry.mimeType;
-        Class<?> viewer = mime.startsWith("image/")
-                ? VaultImageViewerActivity.class
-                : VaultTextViewerActivity.class;   // everything else → text
+        Class<?> viewer;
+        if (mime.startsWith("image/")) {
+            viewer = VaultImageViewerActivity.class;          // downsampled in the viewer
+        } else if (looksTextual(mime, entry.name)) {
+            viewer = VaultTextViewerActivity.class;           // large ones open truncated, read-only
+        } else {
+            Toast.makeText(this, "No built-in viewer — long-press to Export",
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
         Intent intent = new Intent(this, viewer);
         intent.putExtra("docId", entry.docId);
         intent.putExtra("name", entry.name);
         startActivity(intent);
+    }
+
+    private static boolean looksTextual(String mime, String name) {
+        if (mime.startsWith("text/")) return true;
+        if (mime.equals("application/json") || mime.equals("application/xml")
+                || mime.equals("application/javascript")) return true;
+        String lower = name.toLowerCase();
+        for (String ext : new String[]{".txt", ".md", ".json", ".xml", ".csv", ".log",
+                ".ini", ".cfg", ".yml", ".yaml", ".sh", ".java", ".kt", ".py", ".js", ".html",
+                ".css", ".gradle", ".properties"}) {
+            if (lower.endsWith(ext)) return true;
+        }
+        return mime.isEmpty() || mime.equals("application/octet-stream");
     }
 
     // --- selection actions -------------------------------------

@@ -38,7 +38,13 @@ final class VaultLocation {
                 Uri.parse("package:" + context.getPackageName()));
     }
 
-    /** The folder an {@code ACTION_OPEN_DOCUMENT_TREE} result points at, or null if unsupported. */
+    /**
+     * The folder an {@code ACTION_OPEN_DOCUMENT_TREE} result points at, or null.
+     * Only the primary shared volume ({@code /storage/emulated/0}) is allowed — a
+     * removable SD card is not usably writable through the raw {@link File} API
+     * even with all-files access (the atomic manifest rename fails there), so we
+     * refuse it rather than strand the vault.
+     */
     static File treeUriToDir(Uri treeUri) {
         String docId;
         try {
@@ -47,11 +53,9 @@ final class VaultLocation {
             return null;
         }
         String[] parts = docId.split(":", 2);
-        String volume = parts[0];
+        if (!"primary".equalsIgnoreCase(parts[0])) return null;   // SD card / USB — refuse
         String relative = parts.length > 1 ? parts[1] : "";
-        File base = "primary".equalsIgnoreCase(volume)
-                ? Environment.getExternalStorageDirectory()
-                : new File("/storage/" + volume);
+        File base = Environment.getExternalStorageDirectory();
         if (!base.isDirectory()) return null;
         return relative.isEmpty() ? base : new File(base, relative);
     }

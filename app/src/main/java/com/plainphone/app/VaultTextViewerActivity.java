@@ -93,7 +93,15 @@ public class VaultTextViewerActivity extends Activity {
 
         try {
             byte[] plain = VaultStore.decryptToMemory(this, docId);
-            editor.setText(new String(plain, StandardCharsets.UTF_8));
+            int cap = 2 * 1024 * 1024;                      // read-only EditText tolerates ~this much
+            if (plain.length > cap) {
+                editor.setText(new String(plain, 0, cap, StandardCharsets.UTF_8)
+                        + "\n\n… (truncated — file is too large to show in full)");
+                editor.setEnabled(false);                  // don't let a partial save corrupt it
+                saveButton.setVisibility(android.view.View.GONE);
+            } else {
+                editor.setText(new String(plain, StandardCharsets.UTF_8));
+            }
         } catch (Exception e) {
             Toast.makeText(this, "Couldn't open", Toast.LENGTH_SHORT).show();
             finish();

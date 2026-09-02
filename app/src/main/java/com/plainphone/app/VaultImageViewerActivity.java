@@ -36,8 +36,8 @@ public class VaultImageViewerActivity extends Activity {
 
         try {
             byte[] plain = VaultStore.decryptToMemory(this, getIntent().getStringExtra("docId"));
-            image.setImageBitmap(BitmapFactory.decodeByteArray(plain, 0, plain.length));
-        } catch (Exception e) {
+            image.setImageBitmap(decodeDownsampled(plain));
+        } catch (Throwable e) {
             Toast.makeText(this, "Couldn't open", Toast.LENGTH_SHORT).show();
             finish();
             return;
@@ -57,6 +57,24 @@ public class VaultImageViewerActivity extends Activity {
 
         setContentView(root);
         VaultUnlockService.touch(this);
+    }
+
+    /** Decode at most ~2x the screen resolution so a big photo can't OOM. */
+    private android.graphics.Bitmap decodeDownsampled(byte[] data) {
+        android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
+        int target = Math.max(dm.widthPixels, dm.heightPixels) * 2;
+
+        BitmapFactory.Options bounds = new BitmapFactory.Options();
+        bounds.inJustDecodeBounds = true;
+        BitmapFactory.decodeByteArray(data, 0, data.length, bounds);
+
+        int sample = 1;
+        int longest = Math.max(bounds.outWidth, bounds.outHeight);
+        while (longest / sample > target) sample *= 2;
+
+        BitmapFactory.Options opts = new BitmapFactory.Options();
+        opts.inSampleSize = sample;
+        return BitmapFactory.decodeByteArray(data, 0, data.length, opts);
     }
 
     @Override
