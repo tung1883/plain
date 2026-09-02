@@ -69,6 +69,8 @@ public class MainActivity extends Activity {
     private ListView listView;
     private SwipeSwitcher swipeSwitcher;
     private LinearLayout modeToggle;
+    private LinearLayout menuRow;
+    private View menuDivider;
     private android.widget.HorizontalScrollView modeToggleScroller;
     private LinearLayout tipRow;
     private TextView tipKicker;
@@ -407,7 +409,7 @@ public class MainActivity extends Activity {
         menuColumn.addView(settingsRow, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        LinearLayout menuRow = new LinearLayout(this);
+        menuRow = new LinearLayout(this);
         menuRow.setOrientation(LinearLayout.HORIZONTAL);
         menuRow.addView(menuColumn, new LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
@@ -441,7 +443,8 @@ public class MainActivity extends Activity {
         root.addView(timeBlockRow, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        root.addView(divider());
+        menuDivider = divider();
+        root.addView(menuDivider);
 
         modeToggle = buildModeToggle(georgia);
         modeToggleScroller = new EdgeSnapScrollView(this);
@@ -623,6 +626,12 @@ public class MainActivity extends Activity {
 
         if (modeToggleScroller != null) {
             modeToggleScroller.setVisibility(needle.isEmpty() ? View.VISIBLE : View.GONE);
+        }
+        if (menuRow != null) {
+            menuRow.setVisibility(needle.isEmpty() ? View.VISIBLE : View.GONE);
+        }
+        if (menuDivider != null) {
+            menuDivider.setVisibility(needle.isEmpty() ? View.VISIBLE : View.GONE);
         }
         refreshTipRow();
 
