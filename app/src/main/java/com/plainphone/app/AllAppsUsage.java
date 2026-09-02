@@ -116,6 +116,7 @@ class AllAppsUsage {
             for (UsageStats s : stats) {
                 long fg = s.getTotalTimeInForeground();
                 if (fg <= 0) continue;
+                if (OWN_PACKAGE.equals(s.getPackageName())) continue;
                 if (packages != null && !packages.contains(s.getPackageName())) continue;
                 int idx = (int) ((s.getFirstTimeStamp() - rangeStart) / dayMs);
                 if (idx >= 0 && idx < days) buckets[idx] += fg;
@@ -132,12 +133,16 @@ class AllAppsUsage {
         return out;
     }
 
+    /** Plainphone's own screen time is not "app usage" the user cares about — leave it out. */
+    private static final String OWN_PACKAGE = "com.plainphone.app";
+
     private static Map<String, Long> aggregate(UsageStatsManager usm, long start, long end) {
         Map<String, Long> totals = new HashMap<>();
         List<UsageStats> stats = usm.queryUsageStats(UsageStatsManager.INTERVAL_BEST, start, end);
         if (stats != null) {
             for (UsageStats s : stats) {
-                if (s.getTotalTimeInForeground() > 0) {
+                if (s.getTotalTimeInForeground() > 0
+                        && !OWN_PACKAGE.equals(s.getPackageName())) {
                     totals.merge(s.getPackageName(), s.getTotalTimeInForeground(), Long::sum);
                 }
             }
