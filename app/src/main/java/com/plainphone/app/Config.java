@@ -306,6 +306,70 @@ class Config {
         prefs(context).edit().putInt("vault_note_count", count).apply();
     }
 
+    // --- voice recorder ---------------------------------------------------
+
+    static List<Recording> getRecordings(Context context) {
+        String stored = prefs(context).getString("recordings", null);
+        List<Recording> out = new ArrayList<>();
+        if (stored == null) return out;
+        try {
+            JSONArray arr = new JSONArray(stored);
+            for (int i = 0; i < arr.length(); i++) {
+                out.add(Recording.fromJson(arr.getJSONObject(i)));
+            }
+        } catch (JSONException e) {
+            return new ArrayList<>();
+        }
+        return out;
+    }
+
+    static void setRecordings(Context context, List<Recording> recordings) {
+        JSONArray arr = new JSONArray();
+        for (Recording r : recordings) arr.put(r.toJson());
+        prefs(context).edit().putString("recordings", arr.toString()).apply();
+    }
+
+    static String getRecorderFormat(Context context) {
+        return prefs(context).getString("recorder_format", "m4a");
+    }
+
+    static void setRecorderFormat(Context context, String format) {
+        prefs(context).edit().putString("recorder_format", format).apply();
+    }
+
+    static int getRecorderSampleRate(Context context) {
+        return prefs(context).getInt("recorder_sample_rate", 44100);
+    }
+
+    static void setRecorderSampleRate(Context context, int rate) {
+        prefs(context).edit().putInt("recorder_sample_rate", rate).apply();
+    }
+
+    static int getRecordingCount(Context context) {
+        return prefs(context).getInt("recording_count", 0);
+    }
+
+    static boolean isRecorderNoiseReduction(Context context) {
+        return prefs(context).getBoolean("recorder_noise_reduction", true);
+    }
+
+    static void setRecorderNoiseReduction(Context context, boolean on) {
+        prefs(context).edit().putBoolean("recorder_noise_reduction", on).apply();
+    }
+
+    /** Monotonic counter for auto-naming recordings ("Recording 1", "Recording 2", …). */
+    static int getRecorderNextNumber(Context context) {
+        return prefs(context).getInt("recorder_next_number", 1);
+    }
+
+    static void setRecorderNextNumber(Context context, int n) {
+        prefs(context).edit().putInt("recorder_next_number", n).apply();
+    }
+
+    static void setRecordingCount(Context context, int count) {
+        prefs(context).edit().putInt("recording_count", count).apply();
+    }
+
     static void setNotesExportTree(Context context, String uriString) {
         if (uriString == null) {
             prefs(context).edit().remove("notes_export_tree").apply();

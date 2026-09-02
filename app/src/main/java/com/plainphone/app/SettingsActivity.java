@@ -101,6 +101,9 @@ entries.add(new Entry("Appearance", "Home screen art", row("Home screen art",
         entries.add(new Entry("To-do", "To-do", row("To-do",
                 v -> startActivity(new Intent(this, TodoSettingsActivity.class)))));
 
+        entries.add(new Entry("Voice recorder", "Voice recorder", row("Voice recorder",
+                v -> startActivity(new Intent(this, RecorderSettingsActivity.class)))));
+
         entries.add(new Entry("Vault", "Vault", row("Vault",
                 v -> startActivity(new Intent(this, VaultSettingsActivity.class)))));
 

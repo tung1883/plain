@@ -94,7 +94,9 @@ public class MainActivity extends Activity {
     private boolean showingHomeReminder = false;
     private boolean homeUiBuilt = false;
     // Home-list settings groups — collapsed on every entry, never persisted.
-    private boolean notesSettingsOpen, todoSettingsOpen, vaultSettingsOpen;
+    private boolean notesSettingsOpen, todoSettingsOpen, vaultSettingsOpen, recorderSettingsOpen;
+    private boolean recSelecting;
+    private final java.util.LinkedHashSet<String> recSelected = new java.util.LinkedHashSet<>();
     private FontChoice builtWithFont;
 
     @Override
@@ -585,6 +587,15 @@ public class MainActivity extends Activity {
                 showNoteOptions((Note) result.payload);
                 return true;
             }
+            if (result.payload instanceof Recording) {
+                Recording rec = (Recording) result.payload;
+                if (!recSelecting) {
+                    recSelecting = true;
+                    recSelected.clear();
+                }
+                toggleRecSelected(rec.id);
+                return true;
+            }
             if (result.payload instanceof Todos.Item) {
                 Todos.Item item = (Todos.Item) result.payload;
                 showTodoOptions(item.index, item.todo);
@@ -690,6 +701,11 @@ public class MainActivity extends Activity {
         }
         refreshTipRow();
 
+        if ((homeMode != HomeMode.RECORDER || !needle.isEmpty()) && recSelecting) {
+            recSelecting = false;
+            recSelected.clear();
+        }
+
         boolean showStats = homeMode == HomeMode.STATS && needle.isEmpty();
         if (statsPanel != null) {
             statsPanel.view().setVisibility(showStats ? View.VISIBLE : View.GONE);
@@ -720,6 +736,8 @@ public class MainActivity extends Activity {
                 }
             } else if (homeMode == HomeMode.TODOS) {
                 renderTodoSection();
+            } else if (homeMode == HomeMode.RECORDER) {
+                renderRecorderSection();
             } else if (homeMode == HomeMode.VAULT) {
                 renderVaultSection();
             } else if (Lock.APPS.gateActive(this)) {
@@ -750,6 +768,7 @@ public class MainActivity extends Activity {
         switch (kind) {
             case NOTE: return noteResults(needle);
             case TODO: return todoResults(needle);
+            case RECORDING: return recordingResults(needle);
             case PLAIN: return SearchTargets.plain(this, currentSearch);
             case SYSTEM: return SearchTargets.system(this, currentSearch);
             case WEB: return webResults();
@@ -988,6 +1007,277 @@ public class MainActivity extends Activity {
             }));
         }
 
+        dialog.show();
+        if (dialog.getWindow() != null) {
+            android.view.WindowManager.LayoutParams params = dialog.getWindow().getAttributes();
+            params.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.85);
+            dialog.getWindow().setAttributes(params);
+        }
+    }
+
+    // --- voice recorder ---------------------------------------------------
+
+    private List<Recording> recorderAll() {
+        List<Recording> list = new ArrayList<>(Recorder.all(this));
+        list.addAll(Recorder.vaultRecordings(this));
+        Collections.sort(list, (a, b) -> Long.compare(b.createdAt, a.createdAt));
+        return list;
+    }
+
+    private void renderRecorderSection() {
+        if (recSelecting) {
+            renderRecSelection(recorderAll());
+            return;
+        }
+        boolean expanded = recorderSettingsOpen;
+        rows.add(new SearchResult(SearchResult.Kind.RECORDING,
+                (expanded ? "▾  " : "▸  ") + "Recorder settings", null, -1, () -> {
+            recorderSettingsOpen = !expanded;
+            filter(search.getText().toString());
+        }));
+        if (expanded) {
+            rows.add(new SearchResult(SearchResult.Kind.RECORDING,
+                    "Format: " + Config.getRecorderFormat(this).toUpperCase(java.util.Locale.US),
+                    null, -1, () -> startActivity(new Intent(this, RecorderSettingsActivity.class))));
+            rows.add(new SearchResult(SearchResult.Kind.RECORDING,
+                    "Sample rate: " + Config.getRecorderSampleRate(this) + " Hz", null, -1,
+                    () -> startActivity(new Intent(this, RecorderSettingsActivity.class))));
+            int local = Recorder.all(this).size();
+            if (local > 0 && VaultFormat.exists(VaultSession.vaultRoot(this))) {
+                rows.add(new SearchResult(SearchResult.Kind.RECORDING,
+                        "Move all recordings to vault", null, -1, () -> {
+                    if (!VaultSession.get().isUnlocked()) {
+                        Toast.makeText(this, "Unlock the vault first", Toast.LENGTH_SHORT).show();
+                        startActivity(new Intent(this, VaultActivity.class));
+                        return;
+                    }
+                    VaultUi.confirm(this, "Move " + local + " recording"
+                                    + (local == 1 ? "" : "s") + " to the vault?",
+                            "They'll be encrypted and only playable while the vault is unlocked.",
+                            "Move", () -> {
+                                int moved = Recorder.moveAllToVault(this);
+                                Toast.makeText(this, "Moved " + moved + " to the vault",
+                                        Toast.LENGTH_SHORT).show();
+                                filter(search.getText().toString());
+                            }, "Cancel", null);
+                }));
+            }
+        }
+
+        rows.add(new SearchResult(SearchResult.Kind.RECORDING, "+ New recording", null, -1,
+                () -> startActivity(new Intent(this, RecordActivity.class))));
+        rows.addAll(recorderBrowseResults());
+    }
+
+    private List<SearchResult> recorderBrowseResults() {
+        List<Recording> list = recorderAll();
+        List<SearchResult> results = new ArrayList<>();
+        for (int i = 0; i < list.size(); i++) {
+            Recording r = list.get(i);
+            results.add(new SearchResult(SearchResult.Kind.RECORDING, r.displayName(),
+                    r.subtitle(), i, () -> openRecording(r.id), r));
+        }
+        if (!VaultSession.get().isUnlocked() && VaultFormat.exists(VaultSession.vaultRoot(this))
+                && Config.getRecordingCount(this) > 0) {
+            int n = Config.getRecordingCount(this);
+            results.add(new SearchResult(SearchResult.Kind.RECORDING,
+                    n + (n == 1 ? " recording in the vault" : " recordings in the vault"),
+                    "Unlock to play", -1,
+                    () -> startActivity(new Intent(this, VaultActivity.class))));
+        }
+        return results;
+    }
+
+    // --- recorder multi-selection (vault-browser style) -----------------
+
+    private void toggleRecSelected(String id) {
+        if (!recSelected.remove(id)) recSelected.add(id);
+        if (recSelected.isEmpty()) recSelecting = false;
+        filter(search.getText().toString());
+    }
+
+    private void exitRecSelection() {
+        recSelecting = false;
+        recSelected.clear();
+        filter(search.getText().toString());
+    }
+
+    private void renderRecSelection(List<Recording> list) {
+        List<Recording> sel = new ArrayList<>();
+        for (Recording r : list) if (recSelected.contains(r.id)) sel.add(r);
+        int locals = 0, vaulted = 0;
+        for (Recording r : sel) {
+            if (Recorder.isVaulted(r.id)) vaulted++; else locals++;
+        }
+        boolean all = !list.isEmpty() && sel.size() == list.size();
+
+        rows.add(new SearchResult(SearchResult.Kind.RECORDING, sel.size() + " selected",
+                all ? "Tap to select none" : "Tap to select all", -1, () -> {
+            recSelected.clear();
+            if (!all) for (Recording r : list) recSelected.add(r.id);
+            if (recSelected.isEmpty()) recSelecting = false;
+            filter(search.getText().toString());
+        }));
+
+        final int fLocals = locals;
+        if (locals > 0 && VaultFormat.exists(VaultSession.vaultRoot(this))) {
+            rows.add(new SearchResult(SearchResult.Kind.RECORDING,
+                    "Move to vault (" + locals + ")", null, -1,
+                    () -> recMoveToVault(new ArrayList<>(sel))));
+        }
+        if (vaulted > 0) {
+            rows.add(new SearchResult(SearchResult.Kind.RECORDING,
+                    "Move out of vault (" + vaulted + ")", null, -1, () -> {
+                int moved = 0;
+                for (Recording r : sel) {
+                    if (Recorder.isVaulted(r.id) && Recorder.moveOutOfVault(this, r.id)) moved++;
+                }
+                Toast.makeText(this, "Moved " + moved + " out of the vault",
+                        Toast.LENGTH_SHORT).show();
+                exitRecSelection();
+            }));
+        }
+        if (locals > 0) {
+            rows.add(new SearchResult(SearchResult.Kind.RECORDING, "Export (" + fLocals + ")",
+                    null, -1, () -> recExport(new ArrayList<>(sel))));
+        }
+        if (sel.size() == 1 && locals == 1) {
+            Recording one = sel.get(0);
+            rows.add(new SearchResult(SearchResult.Kind.RECORDING, "Rename", null, -1,
+                    () -> promptRenameRecording(one)));
+        }
+        rows.add(new SearchResult(SearchResult.Kind.RECORDING, "Delete (" + sel.size() + ")",
+                null, -1, () -> VaultUi.confirm(this,
+                "Delete " + sel.size() + " recording" + (sel.size() == 1 ? "" : "s") + "?",
+                null, "Delete", () -> {
+                    for (Recording r : sel) {
+                        if (Recorder.isVaulted(r.id)) Recorder.deleteVaultRecording(this, r.id);
+                        else Recorder.deleteLocal(this, r);
+                    }
+                    exitRecSelection();
+                }, "Cancel", null)));
+        rows.add(new SearchResult(SearchResult.Kind.RECORDING, "Done", null, -1,
+                this::exitRecSelection));
+
+        for (Recording r : list) {
+            boolean on = recSelected.contains(r.id);
+            rows.add(new SearchResult(SearchResult.Kind.RECORDING,
+                    (on ? "[x]  " : "[ ]  ") + r.displayName(), r.subtitle(), -1,
+                    () -> toggleRecSelected(r.id), r));
+        }
+    }
+
+    private void recMoveToVault(List<Recording> sel) {
+        if (!VaultFormat.exists(VaultSession.vaultRoot(this))) {
+            VaultUi.confirm(this, "Set up the vault?",
+                    "Recordings you move in are encrypted with your vault password.",
+                    "Set up", () -> startActivity(new Intent(this, VaultActivity.class)),
+                    "Cancel", null);
+            return;
+        }
+        if (!VaultSession.get().isUnlocked()) {
+            Toast.makeText(this, "Unlock the vault first", Toast.LENGTH_SHORT).show();
+            startActivity(new Intent(this, VaultActivity.class));
+            return;
+        }
+        int moved = 0;
+        for (Recording r : sel) {
+            if (!Recorder.isVaulted(r.id) && Recorder.moveToVault(this, r)) moved++;
+        }
+        Toast.makeText(this, "Moved " + moved + " to the vault", Toast.LENGTH_SHORT).show();
+        exitRecSelection();
+    }
+
+    private void recExport(List<Recording> sel) {
+        java.util.ArrayList<Uri> uris = new java.util.ArrayList<>();
+        for (Recording r : sel) {
+            if (Recorder.isVaulted(r.id)) continue;
+            java.io.File f = Recorder.fileFor(this, r);
+            if (f.isFile()) uris.add(PlainFileProvider.uriFor(getPackageName() + ".files", f));
+        }
+        if (uris.isEmpty()) {
+            Toast.makeText(this, "Nothing to export", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        try {
+            Intent send = new Intent(uris.size() == 1
+                    ? Intent.ACTION_SEND : Intent.ACTION_SEND_MULTIPLE);
+            send.setType("audio/*");
+            if (uris.size() == 1) {
+                send.putExtra(Intent.EXTRA_STREAM, uris.get(0));
+            } else {
+                send.putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris);
+            }
+            send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            startActivity(Intent.createChooser(send, "Send recordings"));
+        } catch (Exception e) {
+            Toast.makeText(this, "Export failed", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private List<SearchResult> recordingResults(String needle) {
+        List<SearchResult> results = new ArrayList<>();
+        for (Recording r : recorderAll()) {
+            int score = TextMatch.score(r.displayName(), currentSearch);
+            if (score == TextMatch.NO_MATCH) continue;
+            results.add(new SearchResult(SearchResult.Kind.RECORDING, r.displayName(),
+                    r.subtitle(), score, () -> openRecording(r.id), r));
+        }
+        return results;
+    }
+
+    private void openRecording(String id) {
+        Intent intent = new Intent(this, RecordingPlayerActivity.class);
+        if (Recorder.isVaulted(id)) {
+            String name = Recorder.vaultRecordingName(this, id);
+            int dot = name.lastIndexOf('.');
+            intent.putExtra("docId", Recorder.docIdOf(id));
+            intent.putExtra("name", dot > 0 ? name.substring(0, dot) : name);
+            intent.putExtra("format", dot >= 0 ? name.substring(dot + 1).toLowerCase() : "m4a");
+        } else {
+            intent.putExtra("recId", id);
+        }
+        startActivity(intent);
+    }
+
+    private void promptRenameRecording(Recording rec) {
+        Typeface georgia = Fonts.current(this);
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackground(popupBackground());
+        root.setPadding(0, 32, 0, 8);
+
+        TextView title = new TextView(this);
+        title.setText("Rename recording");
+        title.setTextColor(Color.WHITE);
+        title.setTextSize(18);
+        title.setTypeface(georgia);
+        title.setPadding(48, 0, 48, 16);
+        root.addView(title);
+
+        EditText input = new EditText(this);
+        input.setText(rec.displayName());
+        input.setSelectAllOnFocus(true);
+        input.setBackground(null);
+        input.setTextColor(Color.WHITE);
+        input.setTypeface(georgia);
+        input.setTextSize(18);
+        input.setSingleLine(true);
+        input.setPadding(48, 8, 48, 16);
+        root.addView(input);
+
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
+                .setView(root).create();
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        }
+        root.addView(optionRow(georgia, "Save", v -> {
+            String name = input.getText().toString().trim();
+            if (!name.isEmpty()) Recorder.rename(this, rec.id, name);
+            dialog.dismiss();
+            exitRecSelection();
+        }));
+        root.addView(optionRow(georgia, "Cancel", v -> dialog.dismiss()));
         dialog.show();
         if (dialog.getWindow() != null) {
             android.view.WindowManager.LayoutParams params = dialog.getWindow().getAttributes();
