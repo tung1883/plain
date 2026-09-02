@@ -73,6 +73,8 @@ public class MainActivity extends Activity {
     private LinearLayout menuRow;
     private View menuDivider;
     private android.widget.HorizontalScrollView modeToggleScroller;
+    private LinearLayout headerStrip;
+    private TextView chevLeft, chevRight;
     private LinearLayout tipRow;
     private TextView tipKicker;
     private TextView tipBody;
@@ -512,8 +514,22 @@ public class MainActivity extends Activity {
         modeToggleScroller.setOverScrollMode(View.OVER_SCROLL_ALWAYS);
         modeToggleScroller.addView(modeToggle, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        root.addView(modeToggleScroller, new LinearLayout.LayoutParams(
+        modeToggleScroller.setOnScrollChangeListener(
+                (v, sx, sy, osx, osy) -> updateHeaderChevrons());
+
+        chevLeft = headerChevron("‹");
+        chevRight = headerChevron("›");
+        headerStrip = new LinearLayout(this);
+        headerStrip.setOrientation(LinearLayout.HORIZONTAL);
+        headerStrip.setGravity(Gravity.CENTER_VERTICAL);
+        headerStrip.setBackgroundColor(Color.BLACK);
+        headerStrip.addView(chevLeft);
+        headerStrip.addView(modeToggleScroller, new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        headerStrip.addView(chevRight);
+        root.addView(headerStrip, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        modeToggleScroller.post(this::updateHeaderChevrons);
 
         selectionBar = new LinearLayout(this);
         selectionBar.setOrientation(LinearLayout.VERTICAL);
@@ -707,8 +723,10 @@ public class MainActivity extends Activity {
         }
         boolean selecting = selectMode != null;
 
-        if (modeToggleScroller != null) {
-            modeToggleScroller.setVisibility(needle.isEmpty() && !selecting ? View.VISIBLE : View.GONE);
+        if (headerStrip != null) {
+            boolean showStrip = needle.isEmpty() && !selecting;
+            headerStrip.setVisibility(showStrip ? View.VISIBLE : View.GONE);
+            if (showStrip) modeToggleScroller.post(this::updateHeaderChevrons);
         }
         if (menuRow != null) {
             menuRow.setVisibility(needle.isEmpty() && !selecting ? View.VISIBLE : View.GONE);
@@ -1677,10 +1695,43 @@ public class MainActivity extends Activity {
         }
     }
 
+    private TextView headerChevron(String glyph) {
+        TextView t = new TextView(this);
+        t.setText(glyph);
+        t.setTextColor(0xFF5C5C5C);
+        t.setTextSize(15);
+        t.setTypeface(Fonts.current(this));
+        t.setGravity(Gravity.CENTER);
+        t.setPadding(14, 0, 14, 0);
+        t.setVisibility(View.INVISIBLE);   // space reserved; the strip never re-flows
+        return t;
+    }
+
+    /**
+     * Show a chevron only while the section strip can still scroll that way, and
+     * dim any tab the viewport edge is cutting through so the clip looks intentional.
+     */
+    private void updateHeaderChevrons() {
+        if (modeToggleScroller == null || chevLeft == null) return;
+        chevLeft.setVisibility(modeToggleScroller.canScrollHorizontally(-1)
+                ? View.VISIBLE : View.INVISIBLE);
+        chevRight.setVisibility(modeToggleScroller.canScrollHorizontally(1)
+                ? View.VISIBLE : View.INVISIBLE);
+
+        if (modeToggle == null || draggingTab != null) return;
+        int start = modeToggleScroller.getScrollX();
+        int end = start + modeToggleScroller.getWidth();
+        for (int i = 0; i < modeToggle.getChildCount(); i++) {
+            View tab = modeToggle.getChildAt(i);
+            boolean clipped = tab.getLeft() < start || tab.getRight() > end;
+            tab.setAlpha(clipped ? 0.35f : 1f);
+        }
+    }
+
     private LinearLayout buildModeToggle(Typeface georgia) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setPadding(48, 28, 48, 20);
+        row.setPadding(20, 28, 20, 20);   // the flanking chevrons carry the edge inset now
 
         for (HomeMode mode : modeOrder) {
             TextView tab = new TextView(this);
@@ -1736,6 +1787,7 @@ public class MainActivity extends Activity {
                 Config.setHomeModeOrder(this, modeOrder);
                 trimTrailingTab(modeToggle);
                 refreshTabColors(modeToggle);
+                modeToggleScroller.post(this::updateHeaderChevrons);
                 return true;
         }
         return false;
