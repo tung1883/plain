@@ -355,7 +355,10 @@ public class VaultActivity extends Activity {
 
     private void loadListing() {
         VaultUnlockService.touch(this);
-        if (currentDocId.equals(VaultStore.ROOT_DOC_ID)) Notes.ensureVaultFolder(this);
+        if (currentDocId.equals(VaultStore.ROOT_DOC_ID)) {
+            Notes.ensureVaultFolder(this);
+            Recorder.ensureVaultFolder(this);
+        }
         try {
             entries = VaultStore.list(this, currentDocId);
             VaultStore.sort(entries, Config.getVaultSort(this), Config.isVaultSortDesc(this));
@@ -484,7 +487,14 @@ public class VaultActivity extends Activity {
     private boolean isManagedFolder(VaultStore.Entry e) {
         return e != null && e.isDir && query.isEmpty()
                 && currentDocId.equals(VaultStore.ROOT_DOC_ID)
-                && e.name.equalsIgnoreCase(Notes.VAULT_FOLDER);
+                && managedFolderOwner(e.name) != null;
+    }
+
+    /** "Notes" / "Recorder" for a plugin-managed root folder, else null. */
+    private static String managedFolderOwner(String name) {
+        if (Notes.VAULT_FOLDER.equalsIgnoreCase(name)) return "Notes";
+        if (Recorder.VAULT_FOLDER.equalsIgnoreCase(name)) return "Recorder";
+        return null;
     }
 
     private boolean onRowLongPressed(int pos) {
@@ -845,8 +855,9 @@ public class VaultActivity extends Activity {
         Typeface font = Fonts.current(this);
         // The "Plain Notes" folder is managed — renaming / moving / deleting it would
         // orphan every vaulted note, so only Export is offered.
-        boolean managed = entry.isDir && currentDocId.equals(VaultStore.ROOT_DOC_ID)
-                && entry.name.equalsIgnoreCase(Notes.VAULT_FOLDER);
+        String managedOwner = entry.isDir && currentDocId.equals(VaultStore.ROOT_DOC_ID)
+                ? managedFolderOwner(entry.name) : null;
+        boolean managed = managedOwner != null;
 
         LinearLayout box = popupBox();
         box.addView(popupTitle(font, entry.name));
@@ -863,7 +874,8 @@ public class VaultActivity extends Activity {
             }));
         }
         if (managed) {
-            box.addView(readonlyNote(font, "Special folder for Notes plugin. No changes allowed."));
+            box.addView(readonlyNote(font, "Special folder for " + managedOwner
+                    + " plugin. No changes allowed."));
             showPopup(dialog);
             return;
         }
