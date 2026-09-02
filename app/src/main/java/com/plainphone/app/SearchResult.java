@@ -37,6 +37,10 @@ class SearchResult {
     /** Render the title struck through and greyed — used for completed to-dos. */
     boolean strike;
 
+    /** Show a leading [ ] / [x] checkbox marker — used in multi-select mode. */
+    boolean showCheck;
+    boolean checked;
+
     /** Never fire this from the keyboard's Go/Enter key — a stray match must not lock the phone. */
     boolean guarded;
 
@@ -57,6 +61,12 @@ class SearchResult {
 
     SearchResult withStrike(boolean value) {
         this.strike = value;
+        return this;
+    }
+
+    SearchResult check(boolean on) {
+        this.showCheck = true;
+        this.checked = on;
         return this;
     }
 

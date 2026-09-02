@@ -145,8 +145,19 @@ class SearchResultsAdapter extends BaseAdapter {
                 ? (LinearLayout) convertView
                 : newResultView();
 
-        TextView title = (TextView) view.getChildAt(0);
-        TextView subtitle = (TextView) view.getChildAt(1);
+        TextView marker = (TextView) view.getChildAt(0);
+        LinearLayout textCol = (LinearLayout) view.getChildAt(1);
+        TextView title = (TextView) textCol.getChildAt(0);
+        TextView subtitle = (TextView) textCol.getChildAt(1);
+
+        if (result.showCheck) {
+            marker.setVisibility(View.VISIBLE);
+            marker.setText(result.checked ? "[x]" : "[ ]");
+            marker.setTextColor(result.checked ? Color.WHITE : Color.GRAY);
+            marker.setTypeface(typeface);
+        } else {
+            marker.setVisibility(View.GONE);
+        }
 
         title.setText(result.title);
         title.setTypeface(typeface);
@@ -166,15 +177,28 @@ class SearchResultsAdapter extends BaseAdapter {
             subtitle.setVisibility(View.VISIBLE);
         }
 
-        view.setPadding(48, result.subtitle == null ? 40 : 28, 48,
-                result.subtitle == null ? 40 : 28);
+        int pad = result.subtitle == null ? 40 : 28;
+        view.setPadding(result.showCheck ? 30 : 48, pad, 48, pad);
         return view;
     }
 
     private LinearLayout newResultView() {
         LinearLayout view = new LinearLayout(context);
-        view.setOrientation(LinearLayout.VERTICAL);
+        view.setOrientation(LinearLayout.HORIZONTAL);
+        view.setGravity(Gravity.CENTER_VERTICAL);
         view.setBackground(rowBackground());
+
+        TextView marker = new TextView(context);
+        marker.setTextSize(16);
+        marker.setGravity(Gravity.CENTER);
+        marker.setVisibility(View.GONE);
+        LinearLayout.LayoutParams mp = new LinearLayout.LayoutParams(
+                72, LinearLayout.LayoutParams.WRAP_CONTENT);
+        mp.rightMargin = 8;
+        view.addView(marker, mp);
+
+        LinearLayout textCol = new LinearLayout(context);
+        textCol.setOrientation(LinearLayout.VERTICAL);
 
         TextView title = new TextView(context);
         title.setTextColor(Color.WHITE);
@@ -182,7 +206,7 @@ class SearchResultsAdapter extends BaseAdapter {
         title.setGravity(Gravity.START);
         title.setSingleLine(true);
         title.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        view.addView(title, new LinearLayout.LayoutParams(
+        textCol.addView(title, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
         TextView subtitle = new TextView(context);
@@ -190,9 +214,11 @@ class SearchResultsAdapter extends BaseAdapter {
         subtitle.setTextSize(14);
         subtitle.setSingleLine(true);
         subtitle.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
-        view.addView(subtitle, new LinearLayout.LayoutParams(
+        textCol.addView(subtitle, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
+        view.addView(textCol, new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
         return view;
     }
 

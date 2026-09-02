@@ -133,6 +133,26 @@ class Todos {
         save(context, todos);
     }
 
+    /** Batch mark-done/undone across canonical indices, one save. */
+    static void setDone(Context context, java.util.Collection<Integer> indices, boolean done) {
+        List<Todo> todos = load(context);
+        for (int i : indices) {
+            if (i >= 0 && i < todos.size()) todos.set(i, todos.get(i).markDone(done));
+        }
+        save(context, todos);
+    }
+
+    /** Batch delete across canonical indices, one save. */
+    static void deleteAll(Context context, java.util.Collection<Integer> indices) {
+        List<Integer> sorted = new ArrayList<>(indices);
+        java.util.Collections.sort(sorted, java.util.Collections.reverseOrder());
+        List<Todo> todos = load(context);
+        for (int i : sorted) {
+            if (i >= 0 && i < todos.size()) todos.remove(i);
+        }
+        save(context, todos);
+    }
+
     static int completedCount(Context context) {
         int n = 0;
         for (Todo todo : load(context)) {
