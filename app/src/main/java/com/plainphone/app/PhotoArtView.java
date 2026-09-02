@@ -13,7 +13,7 @@ import android.view.View;
 
 import java.io.InputStream;
 
-class PhotoArtView extends View {
+class PhotoArtView extends View implements CropArt {
 
     private static final int MAX_DECODED_SIDE = 1080;
 
@@ -28,32 +28,42 @@ class PhotoArtView extends View {
     private float focusX;
     private float focusY;
     private float zoom;
+    private boolean gray;
 
     PhotoArtView(Context context, Uri uri, float focusX, float focusY, float zoom) {
+        this(context, uri, focusX, focusY, zoom, true);
+    }
+
+    PhotoArtView(Context context, Uri uri, float focusX, float focusY, float zoom, boolean gray) {
         super(context);
         this.focusX = focusX;
         this.focusY = focusY;
         this.zoom = zoom;
+        this.gray = gray;
         this.bitmap = decodeDownsampled(context, uri);
     }
 
-    float getFocusX() {
+    public float getFocusX() {
         return focusX;
     }
 
-    float getFocusY() {
+    public float getFocusY() {
         return focusY;
     }
 
-    float getZoom() {
+    public float getZoom() {
         return zoom;
     }
 
-    void setZoom(float zoom) {
+    public void setZoom(float zoom) {
         this.zoom = zoom;
     }
 
-    void panBy(float dx, float dy) {
+    void setGrayscale(boolean g) {
+        if (gray != g) { gray = g; invalidate(); }
+    }
+
+    public void panBy(float dx, float dy) {
         if (bitmap == null || getWidth() <= 0 || getHeight() <= 0) return;
         float scale = coverScale() * zoom;
         focusX = clamp01(focusX - dx / scale / bitmap.getWidth());
@@ -66,6 +76,12 @@ class PhotoArtView extends View {
 
     private static float clamp01(float v) {
         return Math.max(0f, Math.min(v, 1f));
+    }
+
+    private static float clampSpan(float pos, float frameMinusDrawn) {
+        float lo = Math.min(0f, frameMinusDrawn);
+        float hi = Math.max(0f, frameMinusDrawn);
+        return Math.max(lo, Math.min(pos, hi));
     }
 
     private Bitmap decodeDownsampled(Context context, Uri uri) {
@@ -97,25 +113,21 @@ class PhotoArtView extends View {
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
 
-        canvas.drawColor(Color.DKGRAY);
+        canvas.drawColor(Color.BLACK);
         if (bitmap == null || getWidth() <= 0 || getHeight() <= 0) return;
 
         float scale = coverScale() * zoom;
         float drawnW = bitmap.getWidth() * scale;
         float drawnH = bitmap.getHeight() * scale;
 
-        float left = drawnW >= getWidth()
-                ? Math.min(0f, Math.max(getWidth() / 2f - focusX * drawnW, getWidth() - drawnW))
-                : (getWidth() - drawnW) / 2f;
-        float top = drawnH >= getHeight()
-                ? Math.min(0f, Math.max(getHeight() / 2f - focusY * drawnH, getHeight() - drawnH))
-                : (getHeight() - drawnH) / 2f;
+        float left = clampSpan(getWidth() / 2f - focusX * drawnW, getWidth() - drawnW);
+        float top = clampSpan(getHeight() / 2f - focusY * drawnH, getHeight() - drawnH);
 
         canvas.save();
         canvas.clipRect(0, 0, getWidth(), getHeight());
         canvas.translate(left, top);
         canvas.scale(scale, scale);
-        canvas.drawBitmap(bitmap, 0, 0, GRAYSCALE_PAINT);
+        canvas.drawBitmap(bitmap, 0, 0, gray ? GRAYSCALE_PAINT : null);
         canvas.restore();
     }
 }

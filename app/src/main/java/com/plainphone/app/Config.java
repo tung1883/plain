@@ -444,52 +444,143 @@ class Config {
         }
     }
 
-    static boolean isPhotoArtSelected(Context context) {
-        return "photo".equals(prefs(context).getString("art_source", "gif"));
-    }
-
-    static void setPhotoArtSelected(Context context, boolean selected) {
-        prefs(context).edit().putString("art_source", selected ? "photo" : "gif").apply();
-    }
-
-    static String getArtPhotoUri(Context context) {
-        return prefs(context).getString("art_photo_uri", null);
-    }
-
-    static void setArtPhotoUri(Context context, String uriString) {
-        prefs(context).edit().putString("art_photo_uri", uriString).apply();
-    }
-
-    static float getArtPhotoFocusX(Context context) {
-        return prefs(context).getFloat("art_photo_focus_x", 0.5f);
-    }
-
-    static float getArtPhotoFocusY(Context context) {
-        return prefs(context).getFloat("art_photo_focus_y", 0.5f);
-    }
-
-    static float getArtPhotoZoom(Context context) {
-        return prefs(context).getFloat("art_photo_zoom", 1f);
-    }
-
-    static void setArtPhotoCrop(Context context, float focusX, float focusY, float zoom) {
-        prefs(context).edit()
-                .putFloat("art_photo_focus_x", focusX)
-                .putFloat("art_photo_focus_y", focusY)
-                .putFloat("art_photo_zoom", zoom)
-                .apply();
-    }
-
     static void setGifScene(Context context, GifScene scene) {
         prefs(context).edit().putString("pixel_gif_scene", scene.name()).apply();
     }
 
-    static boolean isPixelArtEnabled(Context context) {
-        return prefs(context).getBoolean("pixel_art_enabled", true);
+    // --- home art: mode -----------------------------------------
+
+    /** "off" | "on". "on" = show the current item in the selection (1 = static, 2+ = slideshow). */
+    static String getArtMode(Context context) {
+        migrateArt(context);
+        return prefs(context).getString("art_mode", "on");
     }
 
-    static void setPixelArtEnabled(Context context, boolean enabled) {
-        prefs(context).edit().putBoolean("pixel_art_enabled", enabled).apply();
+    static void setArtMode(Context context, String mode) {
+        prefs(context).edit().putString("art_mode", mode).apply();
+    }
+
+    // --- home art: per-scene crop + colour ("fx,fy,zoom,gray") --
+
+    static float[] getSceneCrop(Context context, GifScene scene) {
+        String v = prefs(context).getString("art_scene_crop_" + scene.name(), "0.5,0.5,1,1");
+        String[] p = v.split(",");
+        try {
+            return new float[]{
+                    Float.parseFloat(p[0]), Float.parseFloat(p[1]), Float.parseFloat(p[2]),
+                    p.length > 3 ? Float.parseFloat(p[3]) : 1f};
+        } catch (Exception e) {
+            return new float[]{0.5f, 0.5f, 1f, 1f};
+        }
+    }
+
+    static void setSceneCrop(Context context, GifScene scene, float fx, float fy, float zoom) {
+        float gray = getSceneCrop(context, scene)[3];
+        prefs(context).edit().putString("art_scene_crop_" + scene.name(),
+                fx + "," + fy + "," + zoom + "," + gray).apply();
+    }
+
+    static void setSceneGray(Context context, GifScene scene, boolean gray) {
+        float[] c = getSceneCrop(context, scene);
+        prefs(context).edit().putString("art_scene_crop_" + scene.name(),
+                c[0] + "," + c[1] + "," + c[2] + "," + (gray ? 1 : 0)).apply();
+    }
+
+    // --- home art: gallery -------------------------------------
+
+    static String getArtGalleryJson(Context context) {
+        return prefs(context).getString("art_gallery", "[]");
+    }
+
+    static void setArtGalleryJson(Context context, String json) {
+        prefs(context).edit().putString("art_gallery", json).apply();
+    }
+
+    static java.util.List<String> getArtSelected(Context context) {
+        java.util.List<String> out = new ArrayList<>();
+        for (String s : prefs(context).getString("art_gallery_selected", "").split(",")) {
+            if (!s.isEmpty()) out.add(s);
+        }
+        return out;
+    }
+
+    static void setArtSelected(Context context, java.util.List<String> ids) {
+        prefs(context).edit().putString("art_gallery_selected", String.join(",", ids)).apply();
+    }
+
+    // --- home art: slideshow ----------------------------------
+
+    static int getArtSlideshowMinutes(Context context) {
+        return prefs(context).getInt("art_slideshow_minutes", 5);
+    }
+
+    static void setArtSlideshowMinutes(Context context, int minutes) {
+        prefs(context).edit().putInt("art_slideshow_minutes", minutes).apply();
+    }
+
+    static int getArtSlideIndex(Context context) {
+        return prefs(context).getInt("art_slide_index", 0);
+    }
+
+    static void setArtSlideIndex(Context context, int index) {
+        prefs(context).edit().putInt("art_slide_index", index).apply();
+    }
+
+    static long getArtSlideLastAdvance(Context context) {
+        return prefs(context).getLong("art_slide_last_advance", 0L);
+    }
+
+    static void setArtSlideLastAdvance(Context context, long millis) {
+        prefs(context).edit().putLong("art_slide_last_advance", millis).apply();
+    }
+
+    // --- home art: one-shot migration from the single-slot model ---
+
+    static void migrateArt(Context context) {
+        android.content.SharedPreferences p = prefs(context);
+        if (p.getBoolean("art_migrated", false)) return;
+        p.edit().putBoolean("art_migrated", true).apply();
+
+        boolean enabled = p.getBoolean("pixel_art_enabled", true);
+        String source = p.getString("art_source", "gif");
+        float fx = p.getFloat("art_photo_focus_x", 0.5f);
+        float fy = p.getFloat("art_photo_focus_y", 0.5f);
+        float zoom = p.getFloat("art_photo_zoom", 1f);
+
+        if (!enabled) {
+            p.edit().putString("art_mode", "off").apply();
+            return;
+        }
+        p.edit().putString("art_mode", "on").apply();
+
+        if ("photo".equals(source)) {
+            String uri = p.getString("art_photo_uri", null);
+            if (uri != null) {
+                ArtItem it = ArtGallery.addFromUri(context, android.net.Uri.parse(uri), false);
+                if (it != null) {
+                    it.fx = fx; it.fy = fy; it.zoom = zoom; it.gray = true;
+                    ArtGallery.replace(context, it);
+                    p.edit().putString("art_gallery_selected", it.id).apply();
+                    return;
+                }
+            }
+        } else if ("customgif".equals(source)) {
+            java.io.File old = new java.io.File(context.getFilesDir(), "art_custom.gif");
+            if (old.exists()) {
+                ArtItem it = ArtGallery.addFromFile(context, old, true, fx, fy, zoom, true);
+                old.delete();
+                if (it != null) {
+                    p.edit().putString("art_gallery_selected", it.id).apply();
+                    return;
+                }
+            }
+        }
+        // Scenes had no crop before — a scene selection becomes "scene:<NAME>".
+        try {
+            GifScene s = GifScene.valueOf(p.getString("pixel_gif_scene", GifScene.CITY.name()));
+            p.edit().putString("art_gallery_selected", "scene:" + s.name()).apply();
+        } catch (Exception ignored) {
+        }
     }
 
     static FontChoice getFontChoice(Context context) {
