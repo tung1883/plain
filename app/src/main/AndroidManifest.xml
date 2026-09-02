@@ -312,8 +312,19 @@
             android:exported="false"
             android:theme="@style/Theme.PlainPhone" />
 
+        <activity
+            android:name=".PluginLockPromptActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <service
             android:name=".VaultUnlockService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <service
+            android:name=".VaultJobService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
