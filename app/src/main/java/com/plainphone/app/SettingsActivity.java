@@ -25,7 +25,7 @@ public class SettingsActivity extends Activity {
     static final String EXTRA_DESTINATION = "destination";
 
     private static final List<String> SECTION_ORDER =
-            Arrays.asList("Appearance", "Notes", "To-do", "Vault", "Apps", "Search", "Permissions");
+            Arrays.asList("Appearance", "Apps", "Search", "Plugins", "Permissions");
 
     private LinearLayout root;
     private Typeface georgia;
@@ -95,16 +95,16 @@ entries.add(new Entry("Appearance", "Home screen art", row("Home screen art",
         entries.add(new Entry("Appearance", "Tips, quotes and warnings", row("Tips, quotes and warnings",
                 v -> startActivity(new Intent(this, TipsSettingsActivity.class)))));
 
-        entries.add(new Entry("Notes", "Notes", row("Notes",
+        entries.add(new Entry("Plugins", "1 Notes", row("Notes",
                 v -> startActivity(new Intent(this, NoteSettingsActivity.class)))));
 
-        entries.add(new Entry("To-do", "To-do", row("To-do",
+        entries.add(new Entry("Plugins", "2 To-do", row("To-do",
                 v -> startActivity(new Intent(this, TodoSettingsActivity.class)))));
 
-        entries.add(new Entry("Voice recorder", "Voice recorder", row("Voice recorder",
+        entries.add(new Entry("Plugins", "3 Voice recorder", row("Voice recorder",
                 v -> startActivity(new Intent(this, RecorderSettingsActivity.class)))));
 
-        entries.add(new Entry("Vault", "Vault", row("Vault",
+        entries.add(new Entry("Plugins", "4 Vault", row("Vault",
                 v -> startActivity(new Intent(this, VaultSettingsActivity.class)))));
 
         entries.add(new Entry("Apps", "Lock app list", row(
