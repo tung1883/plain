@@ -32,6 +32,7 @@ import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.ProgressBar;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -809,7 +810,8 @@ public class MainActivity extends Activity {
     }
 
     private List<SearchResult> noteBrowseResults() {
-        List<Note> notes = Config.getNotes(this);
+        List<Note> notes = new ArrayList<>(Config.getNotes(this));
+        notes.addAll(Notes.vaultNotes(this));
         Collections.sort(notes, (a, b) -> Long.compare(b.updatedAt, a.updatedAt));
         List<SearchResult> results = new ArrayList<>();
         for (int i = 0; i < notes.size(); i++) {
@@ -817,13 +819,22 @@ public class MainActivity extends Activity {
             results.add(new SearchResult(SearchResult.Kind.NOTE, note.title(), note.preview(), i,
                     () -> openNote(note.id), note));
         }
+        if (!VaultSession.get().isUnlocked() && VaultFormat.exists(VaultSession.vaultRoot(this))
+                && Config.getVaultNoteCount(this) > 0) {
+            int n = Config.getVaultNoteCount(this);
+            results.add(new SearchResult(SearchResult.Kind.NOTE,
+                    n + (n == 1 ? " note in the vault" : " notes in the vault"), "Unlock to read", -1,
+                    () -> startActivity(new Intent(this, VaultActivity.class))));
+        }
         return results;
     }
 
     private List<SearchResult> noteResults(String needle) {
         if (Lock.NOTES.gateActive(this)) return new ArrayList<>();
         List<SearchResult> results = new ArrayList<>();
-        for (Note note : Config.getNotes(this)) {
+        List<Note> all = new ArrayList<>(Config.getNotes(this));
+        all.addAll(Notes.vaultNotes(this));
+        for (Note note : all) {
             int score = TextMatch.score(note.text, currentSearch);
             if (score == TextMatch.NO_MATCH) continue;
             results.add(new SearchResult(SearchResult.Kind.NOTE, note.title(), note.preview(), score,
@@ -858,13 +869,61 @@ public class MainActivity extends Activity {
         rows.add(new SearchResult(SearchResult.Kind.NOTE,
                 "Locked: " + (Lock.NOTES.isLocked(this) ? "On" : "Off"), null, -1,
                 () -> Lock.NOTES.toggleLock(this, () -> filter(search.getText().toString()))));
+
+        int plainCount = Config.getNotes(this).size();
+        if (plainCount > 0 && VaultFormat.exists(VaultSession.vaultRoot(this))) {
+            rows.add(new SearchResult(SearchResult.Kind.NOTE,
+                    "Move all notes to vault", null, -1, () -> {
+                if (!VaultSession.get().isUnlocked()) {
+                    Toast.makeText(this, "Unlock the vault first", Toast.LENGTH_SHORT).show();
+                    startActivity(new Intent(this, VaultActivity.class));
+                    return;
+                }
+                VaultUi.confirm(this, "Move " + plainCount + " note"
+                                + (plainCount == 1 ? "" : "s") + " to the vault?",
+                        "They'll be encrypted and only readable while the vault is unlocked.",
+                        "Move", () -> {
+                            int moved = Notes.moveAllToVault(this);
+                            Toast.makeText(this, "Moved " + moved + " to the vault",
+                                    Toast.LENGTH_SHORT).show();
+                            filter(search.getText().toString());
+                        }, "Cancel", null);
+            }));
+        }
     }
 
     private void openNote(String id) {
+        if (Notes.isVaulted(id)) {
+            startActivity(new Intent(this, VaultTextViewerActivity.class)
+                    .putExtra("docId", Notes.docIdOf(id))
+                    .putExtra("name", Notes.vaultNoteName(this, id)));
+            return;
+        }
         if (Lock.NOTES.isLocked(this)) Lock.NOTES.keepUnlocked(this);
         Intent intent = new Intent(this, NoteEditActivity.class);
         intent.putExtra("noteId", id);
         startActivity(intent);
+    }
+
+    private void moveNoteToVault(Note note) {
+        if (!VaultFormat.exists(VaultSession.vaultRoot(this))) {
+            VaultUi.confirm(this, "Set up the vault?",
+                    "Notes you move in are encrypted with your vault password.",
+                    "Set up", () -> startActivity(new Intent(this, VaultActivity.class)),
+                    "Cancel", null);
+            return;
+        }
+        if (!VaultSession.get().isUnlocked()) {
+            Toast.makeText(this, "Unlock the vault first", Toast.LENGTH_SHORT).show();
+            startActivity(new Intent(this, VaultActivity.class));
+            return;
+        }
+        if (Notes.moveToVault(this, note)) {
+            Toast.makeText(this, "Moved to the vault", Toast.LENGTH_SHORT).show();
+        } else {
+            Toast.makeText(this, "Couldn't move to the vault", Toast.LENGTH_SHORT).show();
+        }
+        filter(search.getText().toString());
     }
 
     private void openNoteExport(String id) {
@@ -899,14 +958,35 @@ public class MainActivity extends Activity {
             dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
         }
 
-        root.addView(optionRow(georgia, "Export", v -> {
-            dialog.dismiss();
-            openNoteExport(note.id);
-        }));
-        root.addView(optionRow(georgia, "Delete", v -> {
-            dialog.dismiss();
-            Notes.confirmDelete(this, note, () -> filter(search.getText().toString()));
-        }));
+        if (Notes.isVaulted(note.id)) {
+            root.addView(optionRow(georgia, "Move out of vault", v -> {
+                dialog.dismiss();
+                if (Notes.moveOutOfVault(this, note.id)) {
+                    Toast.makeText(this, "Moved out of the vault", Toast.LENGTH_SHORT).show();
+                }
+                filter(search.getText().toString());
+            }));
+            root.addView(optionRow(georgia, "Delete", v -> {
+                dialog.dismiss();
+                VaultUi.confirm(this, "Delete this note?", null, "Delete", () -> {
+                    Notes.deleteVaultNote(this, note.id);
+                    filter(search.getText().toString());
+                }, "Cancel", null);
+            }));
+        } else {
+            root.addView(optionRow(georgia, "Move to vault", v -> {
+                dialog.dismiss();
+                moveNoteToVault(note);
+            }));
+            root.addView(optionRow(georgia, "Export", v -> {
+                dialog.dismiss();
+                openNoteExport(note.id);
+            }));
+            root.addView(optionRow(georgia, "Delete", v -> {
+                dialog.dismiss();
+                Notes.confirmDelete(this, note, () -> filter(search.getText().toString()));
+            }));
+        }
 
         dialog.show();
         if (dialog.getWindow() != null) {

@@ -355,6 +355,7 @@ public class VaultActivity extends Activity {
 
     private void loadListing() {
         VaultUnlockService.touch(this);
+        if (currentDocId.equals(VaultStore.ROOT_DOC_ID)) Notes.ensureVaultFolder(this);
         try {
             entries = VaultStore.list(this, currentDocId);
             VaultStore.sort(entries, Config.getVaultSort(this), Config.isVaultSortDesc(this));
@@ -480,10 +481,16 @@ public class VaultActivity extends Activity {
         openViewer(entry);
     }
 
+    private boolean isManagedFolder(VaultStore.Entry e) {
+        return e != null && e.isDir && query.isEmpty()
+                && currentDocId.equals(VaultStore.ROOT_DOC_ID)
+                && e.name.equalsIgnoreCase(Notes.VAULT_FOLDER);
+    }
+
     private boolean onRowLongPressed(int pos) {
         if (hasUpRow() && pos == 0) return false;
         VaultStore.Entry entry = shown().get(pos - (hasUpRow() ? 1 : 0));
-        if (isImportingRow(entry)) return false;
+        if (isImportingRow(entry) || isManagedFolder(entry)) return false;
         if (!selecting) {
             selecting = true;
             selected.clear();
@@ -609,14 +616,20 @@ public class VaultActivity extends Activity {
     private void confirmDeleteSelected() {
         List<String> ids = new ArrayList<>(selected);
         confirm("Delete " + ids.size() + " item(s)?", null, "Delete", () -> {
-            for (String id : ids) {
-                try {
-                    VaultStore.delete(this, id);
-                } catch (Exception ignored) {
+            showBusy("Deleting…");
+            new Thread(() -> {
+                for (String id : ids) {
+                    try {
+                        VaultStore.delete(this, id);
+                    } catch (Exception ignored) {
+                    }
                 }
-            }
-            exitSelection();
-            loadListing();
+                main.post(() -> {
+                    hideBusy();
+                    exitSelection();
+                    loadListing();
+                });
+            }).start();
         });
     }
 
@@ -830,6 +843,11 @@ public class VaultActivity extends Activity {
 
     private void showEntryOptions(VaultStore.Entry entry) {
         Typeface font = Fonts.current(this);
+        // The "Plain Notes" folder is managed — renaming / moving / deleting it would
+        // orphan every vaulted note, so only Export is offered.
+        boolean managed = entry.isDir && currentDocId.equals(VaultStore.ROOT_DOC_ID)
+                && entry.name.equalsIgnoreCase(Notes.VAULT_FOLDER);
+
         LinearLayout box = popupBox();
         box.addView(popupTitle(font, entry.name));
         android.app.AlertDialog dialog = popupDialog(box);
@@ -843,6 +861,11 @@ public class VaultActivity extends Activity {
                         .setType(entry.mimeType == null ? "application/octet-stream" : entry.mimeType)
                         .putExtra(Intent.EXTRA_TITLE, entry.name), REQ_EXPORT);
             }));
+        }
+        if (managed) {
+            box.addView(readonlyNote(font, "Special folder for Notes plugin. No changes allowed."));
+            showPopup(dialog);
+            return;
         }
         box.addView(option(font, "Move", v -> {
             dialog.dismiss();
@@ -864,12 +887,21 @@ public class VaultActivity extends Activity {
         box.addView(option(font, "Delete", v -> {
             dialog.dismiss();
             confirm("Delete " + entry.name + "?", null, "Delete", () -> {
-                try {
-                    VaultStore.delete(this, entry.docId);
-                } catch (Exception e) {
-                    Toast.makeText(this, "Delete failed", Toast.LENGTH_SHORT).show();
-                }
-                loadListing();
+                showBusy("Deleting…");
+                new Thread(() -> {
+                    boolean ok = true;
+                    try {
+                        VaultStore.delete(this, entry.docId);
+                    } catch (Exception e) {
+                        ok = false;
+                    }
+                    boolean done = ok;
+                    main.post(() -> {
+                        hideBusy();
+                        if (!done) Toast.makeText(this, "Delete failed", Toast.LENGTH_SHORT).show();
+                        loadListing();
+                    });
+                }).start();
             });
         }));
         showPopup(dialog);
@@ -1175,6 +1207,16 @@ public class VaultActivity extends Activity {
         title.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
         title.setPadding(48, 8, 48, 16);
         return title;
+    }
+
+    private TextView readonlyNote(Typeface font, String text) {
+        TextView t = new TextView(this);
+        t.setText(text);
+        t.setTextColor(Color.GRAY);
+        t.setTextSize(13);
+        t.setTypeface(font);
+        t.setPadding(48, 8, 48, 20);
+        return t;
     }
 
     private android.app.AlertDialog popupDialog(View content) {

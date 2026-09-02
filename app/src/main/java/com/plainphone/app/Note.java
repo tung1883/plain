@@ -32,6 +32,15 @@ class Note {
         return new Note(UUID.randomUUID().toString());
     }
 
+    /** A transient note backed by a vault file — id is {@code "vault:" + docId}. */
+    static Note forVault(String id, String text, long mtime) {
+        Note n = new Note(id);
+        n.text = text;
+        n.createdAt = mtime;
+        n.updatedAt = mtime;
+        return n;
+    }
+
     static Note findById(List<Note> notes, String id) {
         if (id == null) return null;
         for (Note note : notes) {
