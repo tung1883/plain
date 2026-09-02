@@ -10,17 +10,17 @@ public class VaultAutoLockActivity extends StepperActivity {
 
     @Override
     protected String stepLabel() {
-        return "30s";
+        return "1 min";
     }
 
     @Override
     protected int step() {
-        return 30;
+        return 60;
     }
 
     @Override
     protected int min() {
-        return 30;
+        return 60;
     }
 
     @Override
