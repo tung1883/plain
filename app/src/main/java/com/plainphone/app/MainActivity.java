@@ -222,7 +222,13 @@ public class MainActivity extends Activity {
             exitSelection();
             return;
         }
-        super.onBackPressed();
+        if (search.getText().length() > 0) {
+            search.setText("");
+            return;
+        }
+        // Nothing behind the home screen — swallow the press. Calling super here
+        // finishes this activity, which drops the user onto whatever app was last
+        // open; a launcher's Home is meant to be the floor.
     }
 
     @Override
