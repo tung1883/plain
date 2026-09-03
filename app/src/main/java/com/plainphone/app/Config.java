@@ -116,7 +116,14 @@ class Config {
     }
 
     static boolean isContactSearchEnabled(Context context) {
-        return prefs(context).getBoolean("contact_search_enabled", true);
+        android.content.SharedPreferences p = prefs(context);
+        // One-shot repair: an earlier build silently flipped this off when the
+        // READ_CONTACTS prompt was denied. Undo that once.
+        if (!p.getBoolean("contact_search_repair_v1", false)) {
+            p.edit().putBoolean("contact_search_repair_v1", true)
+                    .putBoolean("contact_search_enabled", true).apply();
+        }
+        return p.getBoolean("contact_search_enabled", true);
     }
 
     static void setContactSearchEnabled(Context context, boolean enabled) {

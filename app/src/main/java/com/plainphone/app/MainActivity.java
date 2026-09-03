@@ -812,6 +812,7 @@ public class MainActivity extends Activity {
 
     private List<SearchResult> resultsFor(SearchResult.Kind kind, String needle) {
         switch (kind) {
+            case ACTION: return QuickActions.results(this, currentSearch);
             case NOTE: return noteResults(needle);
             case TODO: return todoResults(needle);
             case RECORDING: return recordingResults(needle);
@@ -1994,18 +1995,8 @@ public class MainActivity extends Activity {
 
         if (grantResults.length == 0) return;
 
-        boolean granted = false;
-        for (int result : grantResults) {
-            if (result == PackageManager.PERMISSION_GRANTED) granted = true;
-        }
-        if (!granted) {
-            if (requestCode == DeviceSearch.REQUEST_FILES) {
-                Config.setFileSearchEnabled(this, false);
-            } else {
-                Config.setContactSearchEnabled(this, false);
-            }
-        }
-
+        // A denied prompt no longer disables the toggle — the "Tap to allow"
+        // row stays so search keeps offering contacts / files.
         deviceQuery = "";
         filter(search.getText().toString());
     }
