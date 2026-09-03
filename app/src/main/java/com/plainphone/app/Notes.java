@@ -18,7 +18,9 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -240,6 +242,34 @@ class Notes {
             if (moveToVault(c, n)) moved++;
         }
         return moved;
+    }
+
+    // --- import: one note per picked text file -----------------------------
+
+    /** Create one note from the text of a picked file. Returns true if it was added. */
+    static boolean importOne(Context c, Uri uri) {
+        String text = readTextUri(c, uri);
+        if (text == null) return false;
+        if (!text.isEmpty() && text.charAt(0) == 0xFEFF) text = text.substring(1);
+        Note n = Note.create();
+        n.text = text;
+        List<Note> notes = Config.getNotes(c);
+        notes.add(n);
+        Config.setNotes(c, notes);
+        return true;
+    }
+
+    static String readTextUri(Context c, Uri uri) {
+        try (InputStream in = c.getContentResolver().openInputStream(uri)) {
+            if (in == null) return null;
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buf = new byte[4096];
+            int n;
+            while ((n = in.read(buf)) != -1) out.write(buf, 0, n);
+            return out.toString(StandardCharsets.UTF_8.name());
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     // --- default export folder ---------------------------------------------

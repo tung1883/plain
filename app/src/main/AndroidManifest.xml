@@ -350,6 +350,11 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
+        <service
+            android:name=".ImportJobService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
         <!-- Exposes the unlocked vault in the system file picker. Disabled until the
              user creates a vault (VaultActivity.enableProvider), so it never shows an
              empty location. -->

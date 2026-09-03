@@ -48,6 +48,9 @@ import java.util.Set;
  */
 public class VaultActivity extends Activity {
 
+    /** Caller only wants the vault unlocked — return RESULT_OK and finish, don't show the browser. */
+    static final String EXTRA_UNLOCK_ONLY = "unlock_only";
+
     private static final int REQ_ADD = 7101;
     private static final int REQ_EXPORT = 7102;
     private static final int REQ_IMPORT_TREE = 7103;
@@ -149,6 +152,9 @@ public class VaultActivity extends Activity {
             showGate("Choose a vault password", true);
         } else if (!VaultSession.get().isUnlocked()) {
             showGate("Enter your vault password", false);
+        } else if (getIntent().getBooleanExtra(EXTRA_UNLOCK_ONLY, false)) {
+            setResult(RESULT_OK);
+            finish();
         } else {
             applyStartDocId();
             showBrowser();

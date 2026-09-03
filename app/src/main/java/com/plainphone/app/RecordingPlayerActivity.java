@@ -102,6 +102,11 @@ public class RecordingPlayerActivity extends Activity {
             return;
         }
         total.setText(fmt(player.getDuration()));
+        if (docId != null) {
+            Config.setVaultRecDuration(this, docId, player.getDuration());
+        } else {
+            Recorder.healDuration(this, recId, player.getDuration());
+        }
         player.setOnCompletionListener(mp -> {
             mp.seekTo(0);
             wave.setProgress(0f);

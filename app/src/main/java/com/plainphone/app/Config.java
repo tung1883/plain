@@ -5,6 +5,7 @@ import android.content.SharedPreferences;
 
 import org.json.JSONArray;
 import org.json.JSONException;
+import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -354,6 +355,41 @@ class Config {
 
     static int getRecordingCount(Context context) {
         return prefs(context).getInt("recording_count", 0);
+    }
+
+    // Durations of vaulted recordings, keyed by vault docId (the audio file itself
+    // carries none for PCM WAV / some m4a, and the encrypted blob can't be probed
+    // without decrypting). { "<docId>": <durationMs> }.
+    static JSONObject getVaultRecMeta(Context context) {
+        String s = prefs(context).getString("vault_rec_meta", null);
+        if (s == null) return new JSONObject();
+        try {
+            return new JSONObject(s);
+        } catch (JSONException e) {
+            return new JSONObject();
+        }
+    }
+
+    static long getVaultRecDuration(Context context, String docId) {
+        return getVaultRecMeta(context).optLong(docId, 0L);
+    }
+
+    static void setVaultRecDuration(Context context, String docId, long durationMs) {
+        if (docId == null || durationMs <= 0) return;
+        JSONObject root = getVaultRecMeta(context);
+        try {
+            root.put(docId, durationMs);
+        } catch (JSONException ignored) {
+            return;
+        }
+        prefs(context).edit().putString("vault_rec_meta", root.toString()).apply();
+    }
+
+    static void removeVaultRecDuration(Context context, String docId) {
+        JSONObject root = getVaultRecMeta(context);
+        if (!root.has(docId)) return;
+        root.remove(docId);
+        prefs(context).edit().putString("vault_rec_meta", root.toString()).apply();
     }
 
     static boolean isRecorderNoiseReduction(Context context) {
