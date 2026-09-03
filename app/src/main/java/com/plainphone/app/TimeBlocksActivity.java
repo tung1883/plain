@@ -34,7 +34,7 @@ public class TimeBlocksActivity extends Activity {
         listView.setDivider(null);
         listView.setDividerHeight(0);
         listView.addHeaderView(newBlockRow(georgia), null, false);
-        setContentView(listView);
+        UiKit.screen(this, "Time blocks", listView);
 
         blocks = Config.getTimeBlocks(this);
         adapter = new ArrayAdapter<TimeBlock>(this, android.R.layout.simple_list_item_1, blocks) {
@@ -89,7 +89,7 @@ public class TimeBlocksActivity extends Activity {
 
     private TextView newBlockRow(Typeface georgia) {
         TextView row = new TextView(this);
-        row.setText("+ New Time Block");
+        row.setText("+ New time block");
         row.setTextColor(Color.WHITE);
         row.setTextSize(20);
         row.setPadding(48, 32, 48, 32);

@@ -45,7 +45,7 @@ public class VaultSettingsActivity extends Activity {
         stack.setBackgroundColor(Color.BLACK);
         stack.addView(scroller, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        setContentView(stack);
+        UiKit.screen(this, "Vault", stack);
     }
 
     @Override
@@ -61,20 +61,11 @@ public class VaultSettingsActivity extends Activity {
         boolean created = VaultFormat.exists(VaultSession.vaultRoot(this));
         boolean unlocked = VaultSession.get().isUnlocked();
 
-        root.addView(sectionHeader("Status"));
-        root.addView(readout(!created ? "Not set up"
-                : unlocked ? "Unlocked" : "Locked"));
-
-        root.addView(sectionHeader("Home"));
         boolean hidden = Config.isVaultHiddenFromHome(this);
         root.addView(row("Show on home screen: " + (hidden ? "Off" : "On"), v -> {
             Config.setVaultHiddenFromHome(this, !hidden);
             render();
         }));
-        if (hidden) {
-            root.addView(readout("Hidden from the home tabs and search. The file-picker "
-                    + "location is unaffected — reach the vault from here."));
-        }
 
         if (!created) {
             root.addView(row("Set up the vault", v ->
@@ -82,24 +73,18 @@ public class VaultSettingsActivity extends Activity {
             return;
         }
 
-        root.addView(sectionHeader("Security"));
         if (unlocked) {
             root.addView(row("Change password", v ->
                     startActivity(new Intent(this, VaultChangePasswordActivity.class))));
-        } else {
-            root.addView(readout("Unlock the vault to change the password"));
         }
         root.addView(row("Auto-lock: " + formatTimeout(Config.getVaultAutoLockSeconds(this)),
                 v -> startActivity(new Intent(this, VaultAutoLockActivity.class))));
 
-        root.addView(sectionHeader("Location"));
-        root.addView(readout(VaultLocation.label(this)));
         root.addView(row("Change location", v -> pickLocation()));
         if (Config.getVaultLocationPath(this) != null) {
             root.addView(row("Move back to internal", v -> moveBackToInternal()));
         }
 
-        root.addView(sectionHeader("Session"));
         root.addView(row("Open vault", v ->
                 startActivity(new Intent(this, VaultActivity.class))));
         if (unlocked) {
@@ -112,17 +97,15 @@ public class VaultSettingsActivity extends Activity {
             })));
         }
 
-        root.addView(sectionHeader("Danger"));
-        root.addView(row("Reset vault — delete everything", v -> confirmReset()));
+        root.addView(row("Reset vault", v -> confirmReset()));
     }
 
     private static final int REQ_PICK_VAULT_DIR = 6601;
     private static final int REQ_CONFIRM_RESET = 6602;
 
     private void confirmReset() {
-        VaultUi.confirm(this, "Reset the vault?",
-                "Deletes the vault and every file in it. Nothing can be recovered without the "
-                        + "password — this is the way out if you've forgotten it.",
+        VaultUi.confirm(this, "Reset vault?",
+                "Deletes every file in the vault.",
                 "Continue", this::promptCredentialThenWipe, "Cancel", null);
     }
 
@@ -271,27 +254,6 @@ public class VaultSettingsActivity extends Activity {
     private static String formatTimeout(int seconds) {
         if (seconds % 60 == 0) return (seconds / 60) + " min";
         return seconds + " s";
-    }
-
-    private TextView sectionHeader(String label) {
-        TextView header = new TextView(this);
-        header.setText(label.toUpperCase());
-        header.setTextColor(Color.GRAY);
-        header.setTextSize(13);
-        header.setLetterSpacing(0.15f);
-        header.setTypeface(font);
-        header.setPadding(48, 36, 48, 12);
-        return header;
-    }
-
-    private TextView readout(String label) {
-        TextView view = new TextView(this);
-        view.setText(label);
-        view.setTextColor(Color.GRAY);
-        view.setTextSize(15);
-        view.setTypeface(font);
-        view.setPadding(48, 16, 48, 16);
-        return view;
     }
 
     private TextView row(String label, View.OnClickListener listener) {

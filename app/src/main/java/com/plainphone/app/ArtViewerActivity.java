@@ -96,18 +96,11 @@ public class ArtViewerActivity extends Activity {
             return true;
         });
 
-        Typeface georgia = Fonts.current(this);
-        Button close = new Button(this);
-        close.setText("X");
-        UiKit.style(this, close);
-        close.setTypeface(georgia);
-        close.setOnClickListener(v -> finish());
         FrameLayout.LayoutParams closeParams = new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT);
-        closeParams.gravity = Gravity.TOP | Gravity.END;
-        closeParams.topMargin = 48;
-        closeParams.rightMargin = 48;
-        root.addView(close, closeParams);
+                UiKit.backWidth(this), UiKit.backHeight(this));
+        closeParams.gravity = Gravity.TOP | Gravity.START;
+        closeParams.topMargin = UiKit.dp(this, 8);
+        root.addView(UiKit.backButton(this, this::finish), closeParams);
 
         setContentView(root);
     }

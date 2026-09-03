@@ -48,7 +48,7 @@ class SearchTargets {
     private static final PlainTarget[] PLAIN = {
             new PlainTarget("Stats", "Screen time for today", StatsActivity.class, false,
                     "usage", "screen time", "statistics", "minutes"),
-            new PlainTarget("Time Blocks", "Scheduled app restrictions", TimeBlocksActivity.class, false,
+            new PlainTarget("Time blocks", "Scheduled app restrictions", TimeBlocksActivity.class, false,
                     "schedule", "focus", "block", "study", "sleep"),
             new PlainTarget("Settings", "All of Plain's settings", SettingsActivity.class, true,
                     "preferences", "options", "config"),

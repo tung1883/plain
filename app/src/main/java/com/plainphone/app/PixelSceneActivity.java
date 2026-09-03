@@ -24,8 +24,8 @@ import java.util.Map;
 
 /**
  * Home-screen art picker. Check any mix of gallery items and scenes — one checked
- * = static, two or more = a slideshow. Tap a thumbnail (or the row) to crop; tap
- * the <code>[ ]</code> box to add / remove from the rotation; long-press for
+ * = static, two or more = a slideshow. Tap the row (or the <code>[ ]</code> box)
+ * to add / remove from the rotation; tap the thumbnail to crop; long-press for
  * options.
  */
 public class PixelSceneActivity extends Activity {
@@ -64,7 +64,7 @@ public class PixelSceneActivity extends Activity {
         scroller.setBackgroundColor(Color.BLACK);
         scroller.addView(list, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        setContentView(scroller);
+        UiKit.screen(this, "Home screen art", scroller);
     }
 
     @Override
@@ -279,7 +279,13 @@ public class PixelSceneActivity extends Activity {
     private void plainRow(String labelText, String marker, View.OnClickListener onTap) {
         LinearLayout row = newRow();
         TextView mk = markerView(marker);
-        row.addView(mk, markerParams());
+        if (marker.trim().isEmpty()) {
+            // Off / Slideshow: no marker box — the label sits flush with the ← arrow.
+            mk.setVisibility(View.GONE);
+            row.addView(mk, new LinearLayout.LayoutParams(0, 0));
+        } else {
+            row.addView(mk, markerParams());
+        }
         TextView label = labelView(labelText);
         row.addView(label, labelParams());
         row.setOnClickListener(onTap);
@@ -304,7 +310,8 @@ public class PixelSceneActivity extends Activity {
         TextView label = labelView(labelText);
         row.addView(label, labelParams());
 
-        row.setOnClickListener(onEdit);
+        // Tap anywhere on the row (bar the thumbnail) to add / remove from the rotation.
+        row.setOnClickListener(v -> toggle(key));
         row.setOnLongClickListener(v -> { onLong.run(); return true; });
 
         list.addView(row, rowParams());

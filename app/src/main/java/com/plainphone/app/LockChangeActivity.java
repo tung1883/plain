@@ -9,7 +9,7 @@ public class LockChangeActivity extends FrictionGateActivity {
 
     @Override
     protected String describeAction() {
-        return lock().frictionLabel;
+        return "";
     }
 
     @Override

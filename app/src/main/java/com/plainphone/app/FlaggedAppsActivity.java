@@ -52,7 +52,7 @@ public class FlaggedAppsActivity extends Activity {
         listView.setDivider(null);
         listView.setDividerHeight(0);
         listView.addHeaderView(buildHeader(georgia), null, false);
-        setContentView(listView);
+        UiKit.screen(this, "Flagged apps", listView);
 
         labels = new ArrayList<>();
         for (ResolveInfo info : apps) {

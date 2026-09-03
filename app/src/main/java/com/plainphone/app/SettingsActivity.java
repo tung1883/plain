@@ -55,7 +55,7 @@ public class SettingsActivity extends Activity {
         scroller.setBackgroundColor(Color.BLACK);
         scroller.addView(root, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        setContentView(scroller);
+        UiKit.screen(this, "Settings", scroller);
 
         if (savedInstanceState == null) {
             openDeepLinkedScreen(getIntent().getStringExtra(EXTRA_DESTINATION));
@@ -124,7 +124,7 @@ entries.add(new Entry("Appearance", "Home screen art", row("Home screen art",
                 "Settings wait time: " + Config.getSettingsWaitSeconds(this) + "s",
                 v -> startActivity(new Intent(this, SettingsWaitTimeActivity.class)))));
 
-        entries.add(new Entry("Apps", "Time Blocks", row("Time Blocks",
+        entries.add(new Entry("Apps", "Time blocks", row("Time blocks",
                 v -> startActivity(new Intent(this, TimeBlocksActivity.class)))));
 
         entries.add(new Entry("Search", "Search", row("Search",

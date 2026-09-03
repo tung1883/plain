@@ -43,17 +43,12 @@ public class VaultImageViewerActivity extends Activity {
             return;
         }
 
-        TextView close = new TextView(this);
-        close.setText("✕");
-        close.setTextColor(Color.WHITE);
-        close.setTextSize(20);
-        close.setTypeface(Fonts.current(this));
-        close.setPadding(40, 32, 40, 32);
-        close.setOnClickListener(v -> finish());
-        FrameLayout.LayoutParams closeParams = new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
-                Gravity.TOP | Gravity.END);
-        root.addView(close, closeParams);
+        String name = getIntent().getStringExtra("name");
+        android.widget.LinearLayout headerBar = UiKit.header(this, name == null ? "Image" : name);
+        FrameLayout.LayoutParams headerParams = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.TOP);
+        root.addView(headerBar, headerParams);
 
         setContentView(root);
         VaultUnlockService.touch(this);

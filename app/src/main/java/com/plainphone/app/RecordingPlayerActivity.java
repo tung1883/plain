@@ -8,6 +8,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.Gravity;
+import android.view.View;
 import android.view.WindowManager;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -113,32 +114,22 @@ public class RecordingPlayerActivity extends Activity {
     private TextView total;
 
     private void buildUi(String name, String meta, int[] envelope) {
+        LinearLayout outer = new LinearLayout(this);
+        outer.setOrientation(LinearLayout.VERTICAL);
+        outer.setBackgroundColor(Color.BLACK);
+        outer.addView(UiKit.header(this, name), new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        View hair = new View(this);
+        hair.setBackgroundColor(0xFF1C1C1C);
+        outer.addView(hair, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 1));
+
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(Color.BLACK);
-        root.setPadding(48, 40, 48, 44);
-
-        LinearLayout bar = new LinearLayout(this);
-        bar.setOrientation(LinearLayout.HORIZONTAL);
-        bar.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = new TextView(this);
-        title.setText(name);
-        title.setTextColor(Color.WHITE);
-        title.setTextSize(15);
-        title.setTypeface(font);
-        title.setSingleLine(true);
-        title.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
-        bar.addView(title, new LinearLayout.LayoutParams(0,
-                LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-        TextView close = new TextView(this);
-        close.setText("✕");
-        close.setTextColor(Color.WHITE);
-        close.setTextSize(16);
-        close.setTypeface(font);
-        close.setPadding(24, 8, 8, 8);
-        close.setOnClickListener(v -> finish());
-        bar.addView(close);
-        root.addView(bar);
+        root.setPadding(48, 24, 48, 44);
+        outer.addView(root, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
 
         TextView metaView = new TextView(this);
         metaView.setText(meta);
@@ -185,7 +176,7 @@ public class RecordingPlayerActivity extends Activity {
                 LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
         root.addView(times, tp);
 
-        setContentView(root);
+        setContentView(outer);
     }
 
     private TextView smallTime(String s) {

@@ -46,7 +46,7 @@ public class TimeBlockAppsActivity extends Activity {
         listView.setBackgroundColor(Color.BLACK);
         listView.setDivider(null);
         listView.setDividerHeight(0);
-        setContentView(listView);
+        UiKit.screen(this, "Time block apps", listView);
 
         labels = new ArrayList<>();
         for (ResolveInfo info : apps) {

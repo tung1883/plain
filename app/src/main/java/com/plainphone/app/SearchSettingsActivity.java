@@ -46,7 +46,7 @@ public class SearchSettingsActivity extends Activity {
         scroller.setBackgroundColor(Color.BLACK);
         scroller.addView(root, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        setContentView(scroller);
+        UiKit.screen(this, "Search", scroller);
     }
 
     @Override

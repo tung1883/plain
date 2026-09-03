@@ -35,7 +35,7 @@ public class FontActivity extends Activity {
         ScrollView scrollView = new ScrollView(this);
         scrollView.addView(list, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        setContentView(scrollView);
+        UiKit.screen(this, "Font", scrollView);
     }
 
     private void addRow(LinearLayout list, FontChoice font) {

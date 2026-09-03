@@ -12,6 +12,7 @@ import android.view.ScaleGestureDetector;
 import android.view.View;
 import android.widget.Button;
 import android.widget.FrameLayout;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 
 /**
@@ -127,19 +128,11 @@ public class PhotoCropActivity extends Activity {
 
         Typeface font = Fonts.current(this);
 
-        TextView close = new TextView(this);
-        close.setText("✕");
-        close.setTextColor(Color.WHITE);
-        close.setTextSize(22);
-        close.setTypeface(font);
-        close.setPadding(24, 24, 24, 24);
-        close.setOnClickListener(v -> finish());
-        FrameLayout.LayoutParams closeParams = new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT);
-        closeParams.gravity = Gravity.TOP | Gravity.END;
-        closeParams.topMargin = 24;
-        closeParams.rightMargin = 24;
-        root.addView(close, closeParams);
+        LinearLayout headerBar = UiKit.header(this, "Crop");
+        FrameLayout.LayoutParams headerParams = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT);
+        headerParams.gravity = Gravity.TOP;
+        root.addView(headerBar, headerParams);
 
         TextView grayToggle = new TextView(this);
         grayToggle.setTextColor(Color.WHITE);
@@ -155,9 +148,9 @@ public class PhotoCropActivity extends Activity {
         });
         FrameLayout.LayoutParams grayParams = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT);
-        grayParams.gravity = Gravity.TOP | Gravity.START;
-        grayParams.topMargin = 24;
-        grayParams.leftMargin = 24;
+        grayParams.gravity = Gravity.TOP | Gravity.END;
+        grayParams.topMargin = UiKit.dp(this, 6);
+        grayParams.rightMargin = UiKit.dp(this, 4);
         root.addView(grayToggle, grayParams);
 
         Button set = new Button(this);
