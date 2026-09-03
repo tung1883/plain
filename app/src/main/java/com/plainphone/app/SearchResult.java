@@ -4,6 +4,7 @@ class SearchResult {
 
     enum Kind {
         APP("Apps"),
+        ACTION("Actions"),
         NOTE("Notes"),
         TODO("To-do"),
         RECORDING("Recordings"),
