@@ -1,5 +1,8 @@
 package com.plainphone.app;
 
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
+import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.app.WallpaperManager;
 import android.content.Context;
@@ -73,11 +76,19 @@ public class MainActivity extends Activity {
     private LinearLayout menuRow;
     private View menuDivider;
     private android.widget.HorizontalScrollView modeToggleScroller;
-    private LinearLayout headerStrip;
+    private VDragStrip headerStrip;
     private TextView chevLeft, chevRight;
     private LinearLayout tipRow;
     private TextView tipKicker;
     private TextView tipBody;
+
+    /** Swipe-away header: 0 = all shown, 1 = menu section hidden, 2 = search hidden too. */
+    private LinearLayout headerZone;
+    private int collapseStage = 0;
+    private int headerFullH, headerSearchH;
+    private float headerOffset;               // px currently folded away (0 .. headerFullH)
+    private boolean headerDragging;
+    private ValueAnimator headerAnim;
     private HomeMode homeMode = HomeMode.APPS;
     private List<HomeMode> modeOrder = new ArrayList<>();
     private TextView draggingTab;
@@ -426,6 +437,15 @@ public class MainActivity extends Activity {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(Color.BLACK);
 
+        // Collapsible header: search on top, then the menu section. A vertical
+        // swipe on the tab strip folds it away, clipping from the bottom.
+        headerZone = new LinearLayout(this);
+        headerZone.setOrientation(LinearLayout.VERTICAL);
+        headerZone.setBackgroundColor(Color.BLACK);
+        headerZone.setClipChildren(true);
+        root.addView(headerZone, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
         search = new EditText(this);
         search.setHint("Search");
         search.setHintTextColor(Color.GRAY);
@@ -453,11 +473,11 @@ public class MainActivity extends Activity {
             return false;
         });
 
-        root.addView(search, new LinearLayout.LayoutParams(
+        headerZone.addView(search, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
         tipRow = buildTipRow(georgia);
-        root.addView(tipRow, new LinearLayout.LayoutParams(
+        headerZone.addView(tipRow, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
         Tips.advance(this);
         refreshTipRow();
@@ -508,17 +528,17 @@ public class MainActivity extends Activity {
         applyPixelArtSelection();
         scheduleArtRotation();
 
-        root.addView(menuRow, new LinearLayout.LayoutParams(
+        headerZone.addView(menuRow, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
         timeBlockRow = buildRow(georgia, "");
         timeBlockRow.setVisibility(View.GONE);
         timeBlockRow.setOnClickListener(v -> startActivity(new Intent(this, TimeBlocksActivity.class)));
-        root.addView(timeBlockRow, new LinearLayout.LayoutParams(
+        headerZone.addView(timeBlockRow, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
         menuDivider = divider();
-        root.addView(menuDivider);
+        headerZone.addView(menuDivider);
 
         modeToggle = buildModeToggle(georgia);
         modeToggleScroller = new EdgeSnapScrollView(this);
@@ -531,10 +551,15 @@ public class MainActivity extends Activity {
 
         chevLeft = headerChevron("‹");
         chevRight = headerChevron("›");
-        headerStrip = new LinearLayout(this);
+        headerStrip = new VDragStrip(this);
         headerStrip.setOrientation(LinearLayout.HORIZONTAL);
         headerStrip.setGravity(Gravity.CENTER_VERTICAL);
         headerStrip.setBackgroundColor(Color.BLACK);
+        headerStrip.setDragListener(new VDragStrip.Listener() {
+            @Override public void onDragStart() { onHeaderDragStart(); }
+            @Override public void onDragBy(float dy) { onHeaderDragBy(dy); }
+            @Override public void onDragEnd(float velocityY) { onHeaderDragEnd(velocityY); }
+        });
         headerStrip.addView(chevLeft);
         headerStrip.addView(modeToggleScroller, new LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
@@ -702,6 +727,121 @@ public class MainActivity extends Activity {
         return line;
     }
 
+    // --- swipe-away header ------------------------------------------------
+
+    private int dp(float v) {
+        return Math.round(v * getResources().getDisplayMetrics().density);
+    }
+
+    private boolean collapseEligible() {
+        return homeUiBuilt && currentQuery.isEmpty() && selectMode == null
+                && (listView.getVisibility() == View.VISIBLE || statsPanelShown);
+    }
+
+    /** Re-measure the header's natural full height and the search band height. */
+    private void measureHeader() {
+        ViewGroup.LayoutParams lp = headerZone.getLayoutParams();
+        lp.height = ViewGroup.LayoutParams.WRAP_CONTENT;
+        headerZone.setLayoutParams(lp);
+        int w = headerZone.getWidth() > 0 ? headerZone.getWidth()
+                : getResources().getDisplayMetrics().widthPixels;
+        headerZone.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+        headerFullH = headerZone.getMeasuredHeight();
+        headerSearchH = search.getMeasuredHeight() > 0 ? search.getMeasuredHeight()
+                : search.getHeight();
+        if (headerSearchH <= 0) headerSearchH = dp(56);
+        applyHeaderOffset();
+    }
+
+    private void applyHeaderOffset() {
+        if (headerZone == null) return;
+        ViewGroup.LayoutParams lp = headerZone.getLayoutParams();
+        if (headerOffset <= 0f) {
+            lp.height = ViewGroup.LayoutParams.WRAP_CONTENT;
+        } else {
+            lp.height = Math.max(0, Math.round(headerFullH - headerOffset));
+        }
+        headerZone.setLayoutParams(lp);
+    }
+
+    private float snapForStage(int stage) {
+        if (stage <= 0) return 0f;
+        if (stage == 1) return Math.max(0, headerFullH - headerSearchH);
+        return headerFullH;
+    }
+
+    private int stageForOffset(float offset) {
+        float s1 = snapForStage(1);
+        if (offset < s1 / 2f) return 0;
+        if (offset < (s1 + headerFullH) / 2f) return 1;
+        return 2;
+    }
+
+
+    private void onHeaderDragStart() {
+        if (!collapseEligible()) { headerDragging = false; return; }
+        if (headerAnim != null) { headerAnim.cancel(); headerAnim = null; }
+        measureHeader();
+        headerDragging = true;
+    }
+
+    private void onHeaderDragBy(float dy) {
+        if (!headerDragging) return;
+        float next = headerOffset - dy;                    // drag up (dy < 0) folds more
+        if (next < 0f) next *= 0.3f;                       // rubber-band past the ends
+        else if (next > headerFullH) next = headerFullH + (next - headerFullH) * 0.3f;
+        headerOffset = next;
+        applyHeaderOffset();
+    }
+
+    private void onHeaderDragEnd(float velocityY) {
+        if (!headerDragging) return;
+        headerDragging = false;
+        float bounded = Math.max(0f, Math.min(headerFullH, headerOffset));
+        int target = stageForOffset(bounded);
+        if (velocityY < -dp(700)) target = Math.min(2, target + 1);
+        else if (velocityY > dp(700)) target = Math.max(0, target - 1);
+        animateHeaderToStage(target);
+    }
+
+    private void animateHeaderToStage(int stage) {
+        collapseStage = stage;
+        final float to = snapForStage(stage);
+        if (headerAnim != null) headerAnim.cancel();
+        headerAnim = ValueAnimator.ofFloat(headerOffset, to);
+        headerAnim.setDuration(160);
+        headerAnim.setInterpolator(new android.view.animation.DecelerateInterpolator());
+        headerAnim.addUpdateListener(a -> {
+            headerOffset = (float) a.getAnimatedValue();
+            applyHeaderOffset();
+        });
+        headerAnim.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator anim) {
+                headerAnim = null;
+                headerOffset = to;
+                applyHeaderOffset();
+            }
+        });
+        headerAnim.start();
+    }
+
+    /** Force the header fully open (searching / selecting / stats). */
+    private void setCollapseStage(int stage) {
+        if (headerAnim != null) { headerAnim.cancel(); headerAnim = null; }
+        collapseStage = Math.max(0, Math.min(2, stage));
+        headerDragging = false;
+        if (collapseStage == 0) {
+            headerOffset = 0f;
+            applyHeaderOffset();
+            return;
+        }
+        measureHeader();
+        headerOffset = snapForStage(collapseStage);
+        applyHeaderOffset();
+    }
+
     private void filter(String query) {
         currentSearch = TextMatch.prepare(query);
         currentQuery = currentSearch.folded;
@@ -762,6 +902,7 @@ public class MainActivity extends Activity {
             }
         }
         if (showStats) {
+            if (!collapseEligible()) setCollapseStage(0);
             adapter.notifyDataSetChanged();
             return;
         }
@@ -808,6 +949,9 @@ public class MainActivity extends Activity {
         }
 
         adapter.notifyDataSetChanged();
+
+        // Searching / selecting / stats: the header must be fully visible again.
+        if (!collapseEligible()) setCollapseStage(0);
     }
 
     private List<SearchResult> resultsFor(SearchResult.Kind kind, String needle) {
