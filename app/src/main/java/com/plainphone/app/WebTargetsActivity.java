@@ -44,7 +44,7 @@ public class WebTargetsActivity extends Activity {
         scroller.setBackgroundColor(Color.BLACK);
         scroller.addView(root, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-        setContentView(scroller);
+        UiKit.screen(this, "Web shortcuts", scroller);
 
         render();
     }

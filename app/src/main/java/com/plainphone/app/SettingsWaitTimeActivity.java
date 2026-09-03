@@ -8,7 +8,7 @@ public class SettingsWaitTimeActivity extends StepperActivity {
 
     @Override
     protected String title() {
-        return "Wait time before opening Settings";
+        return "Settings wait time";
     }
 
     @Override

@@ -268,14 +268,17 @@ public class VaultActivity extends Activity {
         bar.setOrientation(LinearLayout.HORIZONTAL);
         bar.setGravity(Gravity.CENTER_VERTICAL);
 
+        bar.addView(UiKit.backButton(this, this::onBackPressed),
+                new LinearLayout.LayoutParams(UiKit.backWidth(this), UiKit.backHeight(this)));
+
         crumb = new TextView(this);
-        crumb.setTextColor(Color.GRAY);
-        crumb.setTextSize(13);
-        crumb.setLetterSpacing(0.1f);
+        crumb.setTextColor(Color.WHITE);
+        crumb.setTextSize(19);
+        crumb.setLetterSpacing(0.02f);
         crumb.setTypeface(font);
         crumb.setSingleLine(true);
         crumb.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
-        crumb.setPadding(48, 36, 24, 12);
+        crumb.setPadding(UiKit.dp(this, 4), 0, UiKit.dp(this, 12), 0);
         bar.addView(crumb, new LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 

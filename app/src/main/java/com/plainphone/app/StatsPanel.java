@@ -163,10 +163,14 @@ class StatsPanel {
         String span = r.label;
 
         addSectionTitle(content, georgia, "Flagged apps — " + span, 32);
-        if (snap.flaggedDaily != null) {
-            addDailyChart(content, georgia, snap.flaggedDaily);
+        if (snap.flaggedApps.isEmpty() && !hasDailyUsage(snap.flaggedDaily)) {
+            content.addView(emptyText(georgia, "(no usage)"));
+        } else {
+            if (snap.flaggedDaily != null) {
+                addDailyChart(content, georgia, snap.flaggedDaily);
+            }
+            addUsageSection(content, georgia, snap.flaggedApps);
         }
-        addUsageSection(content, georgia, snap.flaggedApps);
 
         addSectionTitle(content, georgia, "All apps — " + span, 48);
         if (!snap.hasUsageAccess) {
@@ -185,10 +189,14 @@ class StatsPanel {
                     host.startActivity(new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)));
             content.addView(grant);
         } else {
-            if (snap.allDaily != null) {
-                addDailyChart(content, georgia, snap.allDaily);
+            if (snap.allApps.isEmpty() && !hasDailyUsage(snap.allDaily)) {
+                content.addView(emptyText(georgia, "(no usage data yet)"));
+            } else {
+                if (snap.allDaily != null) {
+                    addDailyChart(content, georgia, snap.allDaily);
+                }
+                addAllAppsSection(content, georgia, snap.allApps);
             }
-            addAllAppsSection(content, georgia, snap.allApps);
         }
     }
 
@@ -253,6 +261,12 @@ class StatsPanel {
             content.addView(buildBarRow(georgia, caption, e.millis, max));
         }
         content.addView(totalText(georgia, totalMillis));
+    }
+
+    private static boolean hasDailyUsage(List<UsageStore.DayTotal> days) {
+        if (days == null) return false;
+        for (UsageStore.DayTotal d : days) if (d.millis > 0) return true;
+        return false;
     }
 
     private void addDailyChart(LinearLayout content, Typeface georgia, List<UsageStore.DayTotal> days) {

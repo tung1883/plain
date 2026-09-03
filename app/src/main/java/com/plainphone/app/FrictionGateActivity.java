@@ -66,17 +66,10 @@ public abstract class FrictionGateActivity extends Activity {
         root.addView(countdownView, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
-        int px = (int) (getResources().getDisplayMetrics().density * 48);
-        ImageView close = new ImageView(this);
-        close.setImageDrawable(MiniIcons.cross((int) (getResources().getDisplayMetrics().density * 20),
-                Color.WHITE));
-        close.setScaleType(ImageView.ScaleType.CENTER);
-        close.setOnClickListener(v -> finish());
-        FrameLayout.LayoutParams closeParams = new FrameLayout.LayoutParams(px, px,
-                Gravity.TOP | Gravity.END);
-        closeParams.topMargin = px / 4;
-        closeParams.rightMargin = px / 6;
-        root.addView(close, closeParams);
+        FrameLayout.LayoutParams backParams = new FrameLayout.LayoutParams(
+                UiKit.backWidth(this), UiKit.backHeight(this), Gravity.TOP | Gravity.START);
+        backParams.topMargin = (int) (getResources().getDisplayMetrics().density * 8);
+        root.addView(UiKit.backButton(this, this::finish), backParams);
 
         setContentView(root);
         UiKit.hideSystemBars(this);
@@ -100,7 +93,7 @@ public abstract class FrictionGateActivity extends Activity {
             }
             return;
         }
-        countdownText.setText(describeAction() + "\nWait " + secondsLeft + "s...");
+        countdownText.setText("Wait " + secondsLeft + "s...");
         handler.postDelayed(() -> startCountdown(secondsLeft - 1), 1000);
     }
 

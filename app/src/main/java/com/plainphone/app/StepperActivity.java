@@ -43,14 +43,6 @@ public abstract class StepperActivity extends Activity {
         root.setBackgroundColor(Color.BLACK);
         root.setPadding(48, 48, 48, 48);
 
-        TextView titleView = new TextView(this);
-        titleView.setTextColor(Color.WHITE);
-        titleView.setTextSize(20);
-        titleView.setTypeface(georgia);
-        titleView.setGravity(Gravity.CENTER);
-        titleView.setText(title());
-        root.addView(titleView);
-
         valueText = new TextView(this);
         valueText.setTextColor(Color.WHITE);
         valueText.setTextSize(36);
@@ -92,7 +84,7 @@ public abstract class StepperActivity extends Activity {
         saveParams.topMargin = 48;
         root.addView(save, saveParams);
 
-        setContentView(root);
+        UiKit.screen(this, title(), root);
         updateValueText();
     }
 

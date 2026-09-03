@@ -59,7 +59,7 @@ public class RecordActivity extends Activity {
         root.setBackgroundColor(Color.BLACK);
         root.setGravity(Gravity.CENTER);
         root.setPadding(60, 60, 60, 60);
-        setContentView(root);
+        UiKit.screen(this, "Recording", root);
 
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO)
                 != PackageManager.PERMISSION_GRANTED) {

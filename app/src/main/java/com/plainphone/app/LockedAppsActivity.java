@@ -59,83 +59,68 @@ public class LockedAppsActivity extends Activity {
         listView.setDivider(null);
         listView.setDividerHeight(0);
         listView.addHeaderView(buildPinHeader());
-        setContentView(listView);
+        UiKit.screen(this, "App lock", listView);
 
         adapter = new ArrayAdapter<String>(this, android.R.layout.simple_list_item_1, labels) {
             @Override
             public View getView(int position, View convertView, ViewGroup parent) {
                 LinearLayout row;
                 TextView label;
-                CheckBox checkBox;
+                TextView mark;
                 if (convertView instanceof LinearLayout) {
                     row = (LinearLayout) convertView;
                     label = (TextView) row.getChildAt(0);
-                    checkBox = (CheckBox) row.getChildAt(1);
+                    mark = (TextView) row.getChildAt(1);
                 } else {
-                    Typeface georgia = Fonts.current(LockedAppsActivity.this);
+                    Typeface font = Fonts.current(LockedAppsActivity.this);
 
                     row = new LinearLayout(LockedAppsActivity.this);
                     row.setOrientation(LinearLayout.HORIZONTAL);
                     row.setGravity(Gravity.CENTER_VERTICAL);
                     row.setBackground(rowBackground());
-                    row.setPadding(48, 32, 48, 32);
+                    row.setPadding(48, 30, 48, 30);
 
                     label = new TextView(LockedAppsActivity.this);
                     label.setTextColor(Color.WHITE);
                     label.setTextSize(20);
-                    label.setTypeface(georgia);
+                    label.setTypeface(font);
                     label.setGravity(Gravity.START);
                     row.addView(label, new LinearLayout.LayoutParams(
                             0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
-                    checkBox = new CheckBox(LockedAppsActivity.this);
-                    checkBox.setButtonTintList(ColorStateList.valueOf(Color.WHITE));
-                    row.addView(checkBox, new LinearLayout.LayoutParams(
-                            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-
-                    row.setTag(checkBox);
+                    mark = new TextView(LockedAppsActivity.this);
+                    mark.setTextSize(18);
+                    mark.setTypeface(font);
+                    mark.setGravity(Gravity.CENTER);
+                    row.addView(mark, new LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT));
                 }
 
                 String pkg = apps.get(position).activityInfo.packageName;
-                String appLabel = labels.get(position);
-                label.setText(appLabel);
-
-                checkBox.setOnCheckedChangeListener(null);
-                checkBox.setChecked(Config.getLockedPackages(LockedAppsActivity.this).contains(pkg));
-                checkBox.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
-                    @Override
-                    public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
-                        if (isChecked) {
-
-                            Set<String> locked = Config.getLockedPackages(LockedAppsActivity.this);
-                            locked.add(pkg);
-                            Config.setLockedPackages(LockedAppsActivity.this, locked);
-                            if (!Config.isPinSet(LockedAppsActivity.this)) {
-                                promptSetPin();
-                            }
-                        } else {
-
-                            buttonView.setOnCheckedChangeListener(null);
-                            buttonView.setChecked(true);
-                            buttonView.setOnCheckedChangeListener(this);
-
-                            Intent intent = new Intent(LockedAppsActivity.this, LockedAppChangeActivity.class);
-                            intent.putExtra("package", pkg);
-                            intent.putExtra("label", appLabel);
-                            startActivity(intent);
-                        }
-                    }
-                });
-
+                label.setText(labels.get(position));
+                boolean locked = Config.getLockedPackages(LockedAppsActivity.this).contains(pkg);
+                mark.setText(locked ? "[x]" : "[ ]");
+                mark.setTextColor(locked ? Color.WHITE : Color.GRAY);
                 return row;
             }
         };
         listView.setAdapter(adapter);
 
         listView.setOnItemClickListener((parent, view, position, id) -> {
-            Object tag = view.getTag();
-            if (tag instanceof CheckBox) {
-                ((CheckBox) tag).performClick();
+            int p = position - listView.getHeaderViewsCount();
+            if (p < 0 || p >= apps.size()) return;
+            String pkg = apps.get(p).activityInfo.packageName;
+            String appLabel = labels.get(p);
+            if (Config.getLockedPackages(this).contains(pkg)) {
+                startActivity(new Intent(this, LockedAppChangeActivity.class)
+                        .putExtra("package", pkg).putExtra("label", appLabel));
+            } else {
+                Set<String> locked = Config.getLockedPackages(this);
+                locked.add(pkg);
+                Config.setLockedPackages(this, locked);
+                if (!Config.isPinSet(this)) promptSetPin();
+                adapter.notifyDataSetChanged();
             }
         });
     }
@@ -154,12 +139,7 @@ public class LockedAppsActivity extends Activity {
         header.setBackgroundColor(Color.BLACK);
         header.setPadding(48, 48, 48, 32);
 
-        TextView title = new TextView(this);
-        title.setTextColor(Color.WHITE);
-        title.setTextSize(20);
-        title.setTypeface(georgia);
-        title.setText("App-lock PIN");
-        header.addView(title);
+        header.addView(sectionLabel("App-lock PIN"));
 
         header.setGravity(Gravity.CENTER_HORIZONTAL);
 
@@ -196,17 +176,23 @@ public class LockedAppsActivity extends Activity {
         statusParams.topMargin = 16;
         header.addView(pinStatusText, statusParams);
 
-        TextView listTitle = new TextView(this);
-        listTitle.setTextColor(Color.WHITE);
-        listTitle.setTextSize(20);
-        listTitle.setTypeface(georgia);
-        listTitle.setText("Locked apps");
+        TextView listTitle = sectionLabel("Locked apps");
         LinearLayout.LayoutParams listTitleParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         listTitleParams.topMargin = 32;
         header.addView(listTitle, listTitleParams);
 
         return header;
+    }
+
+    private TextView sectionLabel(String text) {
+        TextView label = new TextView(this);
+        label.setText(text.toUpperCase());
+        label.setTextColor(Color.GRAY);
+        label.setTextSize(13);
+        label.setLetterSpacing(0.15f);
+        label.setTypeface(Fonts.current(this));
+        return label;
     }
 
     private EditText pinField(Typeface georgia, String hint) {

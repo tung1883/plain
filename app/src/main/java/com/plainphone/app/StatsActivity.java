@@ -39,7 +39,7 @@ public class StatsActivity extends Activity {
             }
         }
 
-        setContentView(panel.view());
+        UiKit.screen(this, "Stats", panel.view());
     }
 
     @Override

@@ -45,7 +45,7 @@ public class TipsSettingsActivity extends Activity {
         scroller.setBackgroundColor(Color.BLACK);
         scroller.addView(root, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        setContentView(scroller);
+        UiKit.screen(this, "Tips, quotes and warnings", scroller);
     }
 
     @Override
@@ -57,6 +57,11 @@ public class TipsSettingsActivity extends Activity {
     private void render() {
         font = Fonts.current(this);
         root.removeAllViews();
+
+        root.addView(sectionHeader("Rotation"));
+        int rotate = Config.getTipRotateMinutes(this);
+        root.addView(row("Change every: " + (rotate <= 0 ? "On tap only" : rotate + " min"),
+                v -> startActivity(new Intent(this, TipRotateActivity.class))));
 
         root.addView(sectionHeader("Tips"));
         root.addView(row("Tips: " + (Config.isTipsEnabled(this) ? "On" : "Off"), v -> {
@@ -77,11 +82,6 @@ public class TipsSettingsActivity extends Activity {
                 startActivity(TipsListEditActivity.forQuotes(this, true))));
         root.addView(row("Import quotes from file", v -> pickImportFile(REQUEST_IMPORT_QUOTES)));
         root.addView(row("Reset quotes to default", v -> confirmReset(true)));
-
-        root.addView(sectionHeader("Rotation"));
-        int rotate = Config.getTipRotateMinutes(this);
-        root.addView(row("Change every: " + (rotate <= 0 ? "On tap only" : rotate + " min"),
-                v -> startActivity(new Intent(this, TipRotateActivity.class))));
 
         root.addView(sectionHeader("Warnings"));
         root.addView(row("Warning: " + (Config.isAccessWarnEnabled(this) ? "On" : "Off"), v -> {

@@ -78,7 +78,7 @@ public class TipsListEditActivity extends Activity {
         root.addView(input, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
 
-        setContentView(root);
+        UiKit.screen(this, quotes ? "Edit quotes" : "Edit tips", root);
 
         input.addTextChangedListener(new TextWatcher() {
             @Override

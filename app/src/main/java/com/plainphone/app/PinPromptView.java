@@ -151,16 +151,11 @@ class PinPromptView extends FrameLayout {
         addView(column, columnParams);
 
         if (showClose) {
-            ImageView close = new ImageView(context);
-            close.setImageDrawable(MiniIcons.cross(dp(20), Color.WHITE));
-            close.setScaleType(ImageView.ScaleType.CENTER);
-            close.setBackground(pressBackground());
-            close.setOnClickListener(v -> listener.onCancel());
-            FrameLayout.LayoutParams closeParams = new FrameLayout.LayoutParams(
-                    dp(48), dp(48), Gravity.TOP | Gravity.END);
-            closeParams.topMargin = dp(12);
-            closeParams.rightMargin = dp(8);
-            addView(close, closeParams);
+            FrameLayout.LayoutParams backParams = new FrameLayout.LayoutParams(
+                    UiKit.backWidth(context), UiKit.backHeight(context),
+                    Gravity.TOP | Gravity.START);
+            backParams.topMargin = dp(8);
+            addView(UiKit.backButton(context, listener::onCancel), backParams);
         }
     }
 

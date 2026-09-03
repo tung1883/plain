@@ -101,7 +101,7 @@ public class NoteEditActivity extends Activity {
         root.addView(footer, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        setContentView(root);
+        UiKit.screen(this, "Note", root);
 
         titleInput.addTextChangedListener(new SaveWatcher());
         bodyInput.addTextChangedListener(new SaveWatcher());

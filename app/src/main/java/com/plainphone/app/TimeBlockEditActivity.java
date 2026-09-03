@@ -41,7 +41,7 @@ public class TimeBlockEditActivity extends Activity {
         ScrollView scroll = new ScrollView(this);
         scroll.setBackgroundColor(Color.BLACK);
         scroll.addView(root);
-        setContentView(scroll);
+        UiKit.screen(this, "Time block", scroll);
     }
 
     @Override

@@ -46,7 +46,7 @@ public class TodoListEditActivity extends Activity {
         input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
         input.setSingleLine(false);
         input.setPadding(48, 40, 48, 40);
-        setContentView(input);
+        UiKit.screen(this, "Edit as text", input);
 
         input.addTextChangedListener(new TextWatcher() {
             @Override

@@ -48,39 +48,22 @@ public class VaultTextViewerActivity extends Activity {
         column.setOrientation(LinearLayout.VERTICAL);
         column.setBackgroundColor(Color.BLACK);
 
-        LinearLayout bar = new LinearLayout(this);
-        bar.setOrientation(LinearLayout.HORIZONTAL);
-        bar.setGravity(Gravity.CENTER_VERTICAL);
-
-        TextView name = new TextView(this);
-        name.setText(getIntent().getStringExtra("name"));
-        name.setTextColor(Color.GRAY);
-        name.setTextSize(13);
-        name.setTypeface(font);
-        name.setSingleLine(true);
-        name.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
-        name.setPadding(48, 36, 24, 20);
-        bar.addView(name, new LinearLayout.LayoutParams(0,
-                LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-
+        LinearLayout bar = UiKit.header(this, getIntent().getStringExtra("name"));
         saveButton = new TextView(this);
         saveButton.setText("SAVE");
         saveButton.setTextColor(Color.DKGRAY);
         saveButton.setTextSize(13);
+        saveButton.setLetterSpacing(0.1f);
         saveButton.setTypeface(font);
-        saveButton.setPadding(24, 36, 24, 20);
+        saveButton.setPadding(UiKit.dp(this, 16), UiKit.dp(this, 14),
+                UiKit.dp(this, 18), UiKit.dp(this, 14));
         saveButton.setOnClickListener(v -> save());
         bar.addView(saveButton);
-
-        TextView close = new TextView(this);
-        close.setText("✕");
-        close.setTextColor(Color.WHITE);
-        close.setTextSize(16);
-        close.setTypeface(font);
-        close.setPadding(24, 32, 40, 20);
-        close.setOnClickListener(v -> onBackPressed());
-        bar.addView(close);
         column.addView(bar);
+        View hair = new View(this);
+        hair.setBackgroundColor(0xFF1C1C1C);
+        column.addView(hair, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 1));
 
         editor = new EditText(this);
         editor.setBackgroundColor(Color.BLACK);

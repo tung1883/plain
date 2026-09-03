@@ -81,7 +81,7 @@ public class OnboardingActivity extends Activity {
                 addButton("Next", v -> nextStep());
                 break;
             case 2:
-                title.setText("2. Enable the Accessibility Service");
+                title.setText("2. Enable the accessibility service");
                 body.setText("This lets Plain add a wait screen before addictive apps and lock the "
                         + "screen. Tap below, go to Installed Apps\n\n"
                         + "If it won't turn on: go to Settings → Apps → Plain, tap the ⋮ menu in the "
