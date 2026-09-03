@@ -77,7 +77,7 @@ public class RecordingPlayerActivity extends Activity {
             }
             source = temp;
             meta = ext.toUpperCase(Locale.US);
-            envelope = new int[0];
+            envelope = Recording.peaksFrom(Config.getVaultRecEnvelope(this, docId));
         } else {
             Recording r = Recording.findById(Config.getRecordings(this), recId);
             if (r == null) {

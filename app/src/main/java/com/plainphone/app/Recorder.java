@@ -60,6 +60,57 @@ final class Recorder {
         save(c, list);
     }
 
+    private static final java.util.Set<String> vaultDurTried =
+            java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /**
+     * Background-fill missing durations for vaulted recordings that were added
+     * straight into the vault (not via "move to vault", which already stores it).
+     * Each docId is probed at most once per session; {@code onChange} runs on a
+     * worker thread when at least one duration was filled in.
+     */
+    static void healVaultDurations(Context c, Runnable onChange) {
+        if (!vaultReady(c)) return;
+        String folder = vaultFolderIfPresent(c);
+        if (folder == null) return;
+        java.util.List<String> todo = new java.util.ArrayList<>();
+        try {
+            for (VaultStore.Entry e : VaultStore.list(c, folder)) {
+                if (e.isDir || !isAudioFile(e.name)) continue;
+                boolean haveDur = Config.getVaultRecDuration(c, e.docId) > 0;
+                boolean haveEnv = !Config.getVaultRecEnvelope(c, e.docId).isEmpty();
+                if (haveDur && haveEnv) continue;
+                if (vaultDurTried.add(e.docId)) todo.add(e.docId);
+            }
+        } catch (Exception ignored) {
+            return;
+        }
+        if (todo.isEmpty()) return;
+        new Thread(() -> {
+            boolean any = false;
+            for (String docId : todo) {
+                File tmp = new File(c.getCacheDir(), "durprobe-" + System.nanoTime() + ".tmp");
+                try {
+                    VaultStore.decryptToFile(c, docId, tmp);
+                    long d = probeDuration(tmp);
+                    String env = null;
+                    if (Config.getVaultRecEnvelope(c, docId).isEmpty()) {
+                        int[] pk = WaveformExtractor.peaks(tmp);
+                        if (pk.length > 0) env = Recording.peaksToString(pk);
+                    }
+                    if (d > 0 || env != null) {
+                        Config.setVaultRecMeta(c, docId, d, env);
+                        any = true;
+                    }
+                } catch (Exception ignored) {
+                } finally {
+                    tmp.delete();
+                }
+            }
+            if (any && onChange != null) onChange.run();
+        }, "vault-dur-heal").start();
+    }
+
     /** Fill in a missing duration once the player has discovered the real one. */
     static void healDuration(Context c, String id, long durationMs) {
         if (id == null || isVaulted(id) || durationMs <= 0) return;
@@ -152,12 +203,12 @@ final class Recorder {
         String folder = vaultFolderIfPresent(c);
         if (folder == null) return out;
         try {
-            org.json.JSONObject meta = Config.getVaultRecMeta(c);
             for (VaultStore.Entry e : VaultStore.list(c, folder)) {
                 if (e.isDir || !isAudioFile(e.name)) continue;
                 Recording r = Recording.forVault(VAULT_PREFIX + e.docId, baseOf(e.name),
                         extOf(e.name), e.lastModified);
-                r.durationMs = meta.optLong(e.docId, 0L);
+                r.durationMs = Config.getVaultRecDuration(c, e.docId);
+                r.envelope = Config.getVaultRecEnvelope(c, e.docId);
                 out.add(r);
             }
         } catch (Exception ignored) {
@@ -184,7 +235,7 @@ final class Recorder {
             String name = safeName(r.displayName()) + "." + r.format;
             long duration = r.durationMs > 0 ? r.durationMs : probeDuration(local);
             String docId = VaultStore.importStream(c, folder, name, in);
-            Config.setVaultRecDuration(c, docId, duration);
+            Config.setVaultRecMeta(c, docId, duration, r.envelope);
             local.delete();
             List<Recording> list = all(c);
             list.removeIf(x -> x.id.equals(r.id));
@@ -209,6 +260,7 @@ final class Recorder {
             VaultStore.decryptToFile(c, docId, dest);
             long known = Config.getVaultRecDuration(c, docId);
             r.durationMs = known > 0 ? known : probeDuration(dest);
+            r.envelope = Config.getVaultRecEnvelope(c, docId);
             List<Recording> list = all(c);
             list.add(0, r);
             save(c, list);
@@ -255,6 +307,8 @@ final class Recorder {
             return false;
         }
         r.durationMs = probeDuration(dest);
+        int[] pk = WaveformExtractor.peaks(dest);
+        if (pk.length > 0) r.envelope = Recording.peaksToString(pk);
         List<Recording> list = all(c);
         list.add(0, r);
         save(c, list);

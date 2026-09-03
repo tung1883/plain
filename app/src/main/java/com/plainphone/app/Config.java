@@ -357,9 +357,10 @@ class Config {
         return prefs(context).getInt("recording_count", 0);
     }
 
-    // Durations of vaulted recordings, keyed by vault docId (the audio file itself
-    // carries none for PCM WAV / some m4a, and the encrypted blob can't be probed
-    // without decrypting). { "<docId>": <durationMs> }.
+    // Duration + waveform of vaulted recordings, keyed by vault docId (the audio
+    // file carries no duration for PCM WAV / some m4a, has no capture-time
+    // envelope, and the encrypted blob can't be inspected without decrypting).
+    // { "<docId>": {"d": <durationMs>, "e": "<peaks csv>"} }.
     static JSONObject getVaultRecMeta(Context context) {
         String s = prefs(context).getString("vault_rec_meta", null);
         if (s == null) return new JSONObject();
@@ -370,19 +371,42 @@ class Config {
         }
     }
 
-    static long getVaultRecDuration(Context context, String docId) {
-        return getVaultRecMeta(context).optLong(docId, 0L);
+    private static JSONObject vaultRecEntry(Context context, String docId) {
+        Object v = getVaultRecMeta(context).opt(docId);
+        if (v instanceof JSONObject) return (JSONObject) v;
+        JSONObject o = new JSONObject();
+        if (v instanceof Number) {                       // migrate the bare-long form
+            try { o.put("d", ((Number) v).longValue()); } catch (JSONException ignored) {}
+        }
+        return o;
     }
 
-    static void setVaultRecDuration(Context context, String docId, long durationMs) {
-        if (docId == null || durationMs <= 0) return;
+    static long getVaultRecDuration(Context context, String docId) {
+        return vaultRecEntry(context, docId).optLong("d", 0L);
+    }
+
+    static String getVaultRecEnvelope(Context context, String docId) {
+        return vaultRecEntry(context, docId).optString("e", "");
+    }
+
+    /** Merge in whichever of duration / envelope is supplied (0 / null = leave). */
+    static void setVaultRecMeta(Context context, String docId, long durationMs, String envelope) {
+        if (docId == null) return;
         JSONObject root = getVaultRecMeta(context);
+        JSONObject entry = vaultRecEntry(context, docId);
         try {
-            root.put(docId, durationMs);
+            if (durationMs > 0) entry.put("d", durationMs);
+            if (envelope != null && !envelope.isEmpty()) entry.put("e", envelope);
+            if (entry.length() == 0) return;
+            root.put(docId, entry);
         } catch (JSONException ignored) {
             return;
         }
         prefs(context).edit().putString("vault_rec_meta", root.toString()).apply();
+    }
+
+    static void setVaultRecDuration(Context context, String docId, long durationMs) {
+        setVaultRecMeta(context, docId, durationMs, null);
     }
 
     static void removeVaultRecDuration(Context context, String docId) {
