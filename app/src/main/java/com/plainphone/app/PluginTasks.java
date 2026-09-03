@@ -48,6 +48,14 @@ final class PluginTasks {
             public boolean running(Context c) { return VaultJobs.anyPending(c); }
             public String detail(Context c) { return VaultJobs.activeLabel(c); }
         });
+        for (HomeMode m : new HomeMode[]{HomeMode.NOTES, HomeMode.TODOS, HomeMode.RECORDER}) {
+            final HomeMode plugin = m;
+            sources.add(new Source() {
+                public HomeMode plugin() { return plugin; }
+                public boolean running(Context c) { return ImportJobs.pendingForPlugin(c, plugin); }
+                public String detail(Context c) { return ImportJobs.detailForPlugin(c, plugin); }
+            });
+        }
     }
 
     static void register(Source s) {

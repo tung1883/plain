@@ -43,10 +43,21 @@ enum Lock {
      */
     static void lockAllSections(Context context) {
         for (Lock lock : values()) {
+            if (lock.importing(context)) continue;   // a pending import keeps its section unlocked
             lock.setLocked(context, true);
             Config.setUnlockUntil(context, lock.area, 0L);
         }
         Config.clearAppUnlocks(context);
+    }
+
+    /** True while this section has a background import queued or running. */
+    boolean importing(Context context) {
+        switch (this) {
+            case NOTES:    return ImportJobs.pendingForPlugin(context, HomeMode.NOTES);
+            case TODOS:    return ImportJobs.pendingForPlugin(context, HomeMode.TODOS);
+            case RECORDER: return ImportJobs.pendingForPlugin(context, HomeMode.RECORDER);
+            default:       return false;
+        }
     }
 
     boolean isLocked(Context context) {
@@ -70,7 +81,8 @@ enum Lock {
     }
 
     boolean gateActive(Context context) {
-        return isLocked(context) && !isUnlocked(context) && Config.isPinSet(context);
+        return isLocked(context) && !isUnlocked(context) && Config.isPinSet(context)
+                && !importing(context);
     }
 
     Intent pinGate(Context context) {

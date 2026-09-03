@@ -105,6 +105,12 @@ public class MainActivity extends Activity {
     private static final int REQUEST_APPS_UNLOCK = 4305;
     private static final int REQUEST_SEARCH_UNLOCK = 4306;
     private static final int REQUEST_RECORDER_UNLOCK = 4307;
+    private static final int REQUEST_IMPORT_NOTES = 4308;
+    private static final int REQUEST_IMPORT_TODOS = 4309;
+    private static final int REQUEST_IMPORT_RECORDINGS = 4310;
+    private static final int REQUEST_VAULT_UNLOCK = 4311;
+    /** Deferred action to run once the vault is unlocked (move-to-vault). */
+    private Runnable afterVaultUnlock;
     private FrameLayout artFrame;
     private boolean showingHomeReminder = false;
     private boolean homeUiBuilt = false;
@@ -157,7 +163,77 @@ public class MainActivity extends Activity {
                 android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_SHORT).show();
             }
             filter(search.getText().toString());
+        } else if (requestCode == REQUEST_IMPORT_NOTES && resultCode == RESULT_OK) {
+            startImportJob(HomeMode.NOTES, urisFrom(data));
+        } else if (requestCode == REQUEST_IMPORT_TODOS && resultCode == RESULT_OK) {
+            startImportJob(HomeMode.TODOS, urisFrom(data));
+        } else if (requestCode == REQUEST_IMPORT_RECORDINGS && resultCode == RESULT_OK) {
+            startImportJob(HomeMode.RECORDER, urisFrom(data));
+        } else if (requestCode == REQUEST_VAULT_UNLOCK) {
+            Runnable action = afterVaultUnlock;
+            afterVaultUnlock = null;
+            if (resultCode == RESULT_OK && action != null && VaultSession.get().isUnlocked()) {
+                action.run();
+            }
         }
+    }
+
+    /** Unlock the vault without leaving this screen, then run {@code action}. */
+    private void unlockVaultThen(Runnable action) {
+        afterVaultUnlock = action;
+        startActivityForResult(new Intent(this, VaultActivity.class)
+                .putExtra(VaultActivity.EXTRA_UNLOCK_ONLY, true), REQUEST_VAULT_UNLOCK);
+    }
+
+    /** Hand a picked file set to {@link ImportJobService} and show its progress row. */
+    private void startImportJob(HomeMode plugin, List<Uri> uris) {
+        if (uris.isEmpty()) return;
+        for (Uri u : uris) {
+            try {
+                getContentResolver().takePersistableUriPermission(
+                        u, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            } catch (SecurityException ignored) {
+            }
+        }
+        int n = uris.size();
+        ImportJobs.start(this, plugin, uris, n + (n == 1 ? " file" : " files"));
+        if (homeUiBuilt) filter(search.getText().toString());
+    }
+
+    private void toast(String message) {
+        android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_SHORT).show();
+    }
+
+    private SearchResult inertRow(SearchResult.Kind kind, String title) {
+        return new SearchResult(kind, title, null, -1, () -> {});
+    }
+
+    /** Open a multi-select document picker for the given MIME type. */
+    private void pickImport(String mime, int requestCode) {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType(mime);
+        intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+        try {
+            startActivityForResult(intent, requestCode);
+        } catch (android.content.ActivityNotFoundException e) {
+            toast("No file picker available");
+        }
+    }
+
+    private static List<Uri> urisFrom(Intent data) {
+        List<Uri> out = new ArrayList<>();
+        if (data == null) return out;
+        android.content.ClipData clip = data.getClipData();
+        if (clip != null) {
+            for (int i = 0; i < clip.getItemCount(); i++) {
+                Uri u = clip.getItemAt(i).getUri();
+                if (u != null) out.add(u);
+            }
+        } else if (data.getData() != null) {
+            out.add(data.getData());
+        }
+        return out;
     }
 
     @Override
@@ -189,6 +265,9 @@ public class MainActivity extends Activity {
         super.onResume();
         VaultJobs.resumeIfPending(this);
         VaultJobs.addListener(vaultJobListener);
+        ImportJobs.resumeIfPending(this);
+        ImportJobs.addListener(importJobListener);
+        importJobListener.onImportJobChanged();   // pick up a result from while we were away
         if (showingHomeReminder && isDefaultHomeApp()) {
             showingHomeReminder = false;
             startLoadingHomeUi();
@@ -221,10 +300,24 @@ public class MainActivity extends Activity {
         tipHandler.removeCallbacks(tipRotate);
         artHandler.removeCallbacks(artRotate);
         VaultJobs.removeListener(vaultJobListener);
+        ImportJobs.removeListener(importJobListener);
     }
 
     private final VaultJobs.Listener vaultJobListener = () -> runOnUiThread(() -> {
         if (!isFinishing() && !isDestroyed() && homeUiBuilt) filter(search.getText().toString());
+    });
+
+    private final ImportJobs.Listener importJobListener = () -> runOnUiThread(() -> {
+        if (isFinishing() || isDestroyed() || !homeUiBuilt) return;
+        ImportJobs.Result done = ImportJobs.takeResult();
+        if (done != null) {
+            int n = done.added;
+            String noun = done.plugin == HomeMode.NOTES ? "note"
+                    : done.plugin == HomeMode.TODOS ? "task" : "recording";
+            toast(n == 0 ? "Nothing imported"
+                    : "Imported " + n + " " + noun + (n == 1 ? "" : "s"));
+        }
+        filter(search.getText().toString());
     });
 
     @Override
@@ -952,6 +1045,13 @@ public class MainActivity extends Activity {
                 } else {
                     if (Lock.NOTES.isLocked(this)) Lock.NOTES.keepUnlocked(this);
                     renderNoteSettingsGroup();
+                    if (ImportJobs.pendingForPlugin(this, HomeMode.NOTES)) {
+                        rows.add(inertRow(SearchResult.Kind.NOTE,
+                                ImportJobs.progressLine(this, HomeMode.NOTES)));
+                    } else {
+                        rows.add(new SearchResult(SearchResult.Kind.NOTE, "+ Import files",
+                                null, -1, () -> pickImport("text/*", REQUEST_IMPORT_NOTES)));
+                    }
                     rows.add(newNoteRow());
                     rows.addAll(noteBrowseResults());
                 }
@@ -1073,7 +1173,7 @@ public class MainActivity extends Activity {
             int n = Config.getVaultNoteCount(this);
             results.add(new SearchResult(SearchResult.Kind.NOTE,
                     n + (n == 1 ? " note in the vault" : " notes in the vault"), "Unlock to read", -1,
-                    () -> startActivity(new Intent(this, VaultActivity.class))));
+                    () -> unlockVaultThen(() -> filter(search.getText().toString()))));
         }
         return results;
     }
@@ -1122,23 +1222,24 @@ public class MainActivity extends Activity {
         int plainCount = Config.getNotes(this).size();
         if (plainCount > 0 && VaultFormat.exists(VaultSession.vaultRoot(this))) {
             rows.add(new SearchResult(SearchResult.Kind.NOTE,
-                    "Move all notes to vault", null, -1, () -> {
-                if (!VaultSession.get().isUnlocked()) {
-                    Toast.makeText(this, "Unlock the vault first", Toast.LENGTH_SHORT).show();
-                    startActivity(new Intent(this, VaultActivity.class));
-                    return;
-                }
-                VaultUi.confirm(this, "Move " + plainCount + " note"
-                                + (plainCount == 1 ? "" : "s") + " to the vault?",
-                        "They'll be encrypted and only readable while the vault is unlocked.",
-                        "Move", () -> {
-                            int moved = Notes.moveAllToVault(this);
-                            Toast.makeText(this, "Moved " + moved + " to the vault",
-                                    Toast.LENGTH_SHORT).show();
-                            filter(search.getText().toString());
-                        }, "Cancel", null);
-            }));
+                    "Move all notes to vault", null, -1,
+                    () -> confirmMoveAllNotesToVault(plainCount)));
         }
+    }
+
+    private void confirmMoveAllNotesToVault(int count) {
+        if (!VaultSession.get().isUnlocked()) {
+            unlockVaultThen(() -> confirmMoveAllNotesToVault(count));
+            return;
+        }
+        VaultUi.confirm(this, "Move " + count + " note" + (count == 1 ? "" : "s") + " to the vault?",
+                "They'll be encrypted and only readable while the vault is unlocked.",
+                "Move", () -> {
+                    int moved = Notes.moveAllToVault(this);
+                    Toast.makeText(this, "Moved " + moved + " to the vault",
+                            Toast.LENGTH_SHORT).show();
+                    filter(search.getText().toString());
+                }, "Cancel", null);
     }
 
     private void openNote(String id) {
@@ -1195,25 +1296,18 @@ public class MainActivity extends Activity {
             int local = Recorder.all(this).size();
             if (local > 0 && VaultFormat.exists(VaultSession.vaultRoot(this))) {
                 rows.add(new SearchResult(SearchResult.Kind.RECORDING,
-                        "Move all recordings to vault", null, -1, () -> {
-                    if (!VaultSession.get().isUnlocked()) {
-                        Toast.makeText(this, "Unlock the vault first", Toast.LENGTH_SHORT).show();
-                        startActivity(new Intent(this, VaultActivity.class));
-                        return;
-                    }
-                    VaultUi.confirm(this, "Move " + local + " recording"
-                                    + (local == 1 ? "" : "s") + " to the vault?",
-                            "They'll be encrypted and only playable while the vault is unlocked.",
-                            "Move", () -> {
-                                int moved = Recorder.moveAllToVault(this);
-                                Toast.makeText(this, "Moved " + moved + " to the vault",
-                                        Toast.LENGTH_SHORT).show();
-                                filter(search.getText().toString());
-                            }, "Cancel", null);
-                }));
+                        "Move all recordings to vault", null, -1,
+                        () -> confirmMoveAllRecordingsToVault(local)));
             }
         }
 
+        if (ImportJobs.pendingForPlugin(this, HomeMode.RECORDER)) {
+            rows.add(inertRow(SearchResult.Kind.RECORDING,
+                    ImportJobs.progressLine(this, HomeMode.RECORDER)));
+        } else {
+            rows.add(new SearchResult(SearchResult.Kind.RECORDING, "+ Import audio", null, -1,
+                    () -> pickImport("audio/*", REQUEST_IMPORT_RECORDINGS)));
+        }
         rows.add(new SearchResult(SearchResult.Kind.RECORDING, "+ New recording", null, -1,
                 () -> startActivity(new Intent(this, RecordActivity.class))));
         rows.addAll(recorderBrowseResults());
@@ -1233,7 +1327,7 @@ public class MainActivity extends Activity {
             results.add(new SearchResult(SearchResult.Kind.RECORDING,
                     n + (n == 1 ? " recording in the vault" : " recordings in the vault"),
                     "Unlock to play", -1,
-                    () -> startActivity(new Intent(this, VaultActivity.class))));
+                    () -> unlockVaultThen(() -> filter(search.getText().toString()))));
         }
         return results;
     }
@@ -1398,8 +1492,7 @@ public class MainActivity extends Activity {
             return;
         }
         if (!VaultSession.get().isUnlocked()) {
-            Toast.makeText(this, "Unlock the vault first", Toast.LENGTH_SHORT).show();
-            startActivity(new Intent(this, VaultActivity.class));
+            unlockVaultThen(() -> recorderMoveToVault(sel));
             return;
         }
         int moved = 0;
@@ -1408,6 +1501,33 @@ public class MainActivity extends Activity {
         }
         Toast.makeText(this, "Moved " + moved + " to the vault", Toast.LENGTH_SHORT).show();
         exitSelection();
+    }
+
+    private void noteMoveToVault(List<Note> sel) {
+        if (!VaultSession.get().isUnlocked()) {
+            unlockVaultThen(() -> noteMoveToVault(sel));
+            return;
+        }
+        int moved = 0;
+        for (Note n : sel) if (!Notes.isVaulted(n.id) && Notes.moveToVault(this, n)) moved++;
+        Toast.makeText(this, "Moved " + moved + " to the vault", Toast.LENGTH_SHORT).show();
+        exitSelection();
+    }
+
+    private void confirmMoveAllRecordingsToVault(int count) {
+        if (!VaultSession.get().isUnlocked()) {
+            unlockVaultThen(() -> confirmMoveAllRecordingsToVault(count));
+            return;
+        }
+        VaultUi.confirm(this, "Move " + count + " recording" + (count == 1 ? "" : "s")
+                        + " to the vault?",
+                "They'll be encrypted and only playable while the vault is unlocked.",
+                "Move", () -> {
+                    int moved = Recorder.moveAllToVault(this);
+                    Toast.makeText(this, "Moved " + moved + " to the vault",
+                            Toast.LENGTH_SHORT).show();
+                    filter(search.getText().toString());
+                }, "Cancel", null);
     }
 
     private void recorderExport(List<Recording> sel) {
@@ -1456,17 +1576,7 @@ public class MainActivity extends Activity {
 
         List<BarAction> actions = new ArrayList<>();
         if (locals > 0 && VaultFormat.exists(VaultSession.vaultRoot(this))) {
-            actions.add(new BarAction("Move to vault", () -> {
-                if (!VaultSession.get().isUnlocked()) {
-                    Toast.makeText(this, "Unlock the vault first", Toast.LENGTH_SHORT).show();
-                    startActivity(new Intent(this, VaultActivity.class));
-                    return;
-                }
-                int moved = 0;
-                for (Note n : sel) if (!Notes.isVaulted(n.id) && Notes.moveToVault(this, n)) moved++;
-                Toast.makeText(this, "Moved " + moved + " to the vault", Toast.LENGTH_SHORT).show();
-                exitSelection();
-            }));
+            actions.add(new BarAction("Move to vault", () -> noteMoveToVault(sel)));
         }
         if (vaulted > 0) {
             actions.add(new BarAction("Move out", () -> {
@@ -1736,6 +1846,13 @@ public class MainActivity extends Activity {
                     () -> startActivity(new Intent(this, TodoGuideActivity.class))));
         }
 
+        if (ImportJobs.pendingForPlugin(this, HomeMode.TODOS)) {
+            rows.add(inertRow(SearchResult.Kind.TODO,
+                    ImportJobs.progressLine(this, HomeMode.TODOS)));
+        } else {
+            rows.add(new SearchResult(SearchResult.Kind.TODO, "+ Import files", null, -1,
+                    () -> pickImport("text/*", REQUEST_IMPORT_TODOS)));
+        }
         rows.add(new SearchResult(SearchResult.Kind.TODO, "+ New task", null, -1,
                 this::promptNewTask));
 

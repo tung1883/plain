@@ -258,6 +258,25 @@ class Todos {
         return "Linked — your tasks were written to the file";
     }
 
+    /**
+     * Append the tasks in a picked text file to the current list (does not link
+     * the file). Returns how many tasks were added, 0 if the file held none, or
+     * -1 if it couldn't be read.
+     */
+    static int importFromFile(Context context, Uri uri) {
+        String text = readFile(context, uri);
+        if (text == null) return -1;
+        List<Todo> incoming = fromText(text);
+        if (incoming.isEmpty()) return 0;
+        List<Todo> todos = load(context);
+        for (Todo t : incoming) {
+            if (t.creationDate == null && !t.done) t.creationDate = Todo.today();
+            todos.add(t);
+        }
+        save(context, todos);
+        return incoming.size();
+    }
+
     static void unlink(Context context) {
         String uriString = Config.getTodoFileUri(context);
         if (uriString != null) {
