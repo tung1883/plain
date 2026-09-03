@@ -1311,6 +1311,14 @@ public class MainActivity extends Activity {
         rows.add(new SearchResult(SearchResult.Kind.RECORDING, "+ New recording", null, -1,
                 () -> startActivity(new Intent(this, RecordActivity.class))));
         rows.addAll(recorderBrowseResults());
+
+        // Vault recordings added straight into the vault carry no duration — probe
+        // them once in the background, then refresh the list.
+        Recorder.healVaultDurations(this, () -> runOnUiThread(() -> {
+            if (!isFinishing() && !isDestroyed() && homeUiBuilt) {
+                filter(search.getText().toString());
+            }
+        }));
     }
 
     private List<SearchResult> recorderBrowseResults() {

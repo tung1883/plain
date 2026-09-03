@@ -76,6 +76,10 @@ class Recording {
     }
 
     int[] envelopePeaks() {
+        return peaksFrom(envelope);
+    }
+
+    static int[] peaksFrom(String envelope) {
         if (envelope == null || envelope.isEmpty()) return new int[0];
         String[] parts = envelope.split(",");
         int[] out = new int[parts.length];
