@@ -150,6 +150,8 @@ class SearchTargets {
         }
 
         for (PlainTarget target : PLAIN) {
+            // Stats lives behind the app-list lock — hide it from search while locked.
+            if (target.destination == StatsActivity.class && Lock.APPS.gateActive(host)) continue;
             int score = TextMatch.score(target.title, target.keywords, query);
             if (score == TextMatch.NO_MATCH) continue;
             results.add(new SearchResult(SearchResult.Kind.PLAIN, target.title, target.subtitle,

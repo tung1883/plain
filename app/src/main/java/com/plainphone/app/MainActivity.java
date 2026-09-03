@@ -84,7 +84,8 @@ public class MainActivity extends Activity {
 
     /** Swipe-away header: 0 = all shown, 1 = menu section hidden, 2 = search hidden too. */
     private LinearLayout headerZone;
-    private int collapseStage = 0;
+    private int collapseStage = 0;            // stage currently applied to the view
+    private int keepStage = 0;                // stage the user last chose; restored after search / selection / stats force it open
     private int headerFullH, headerSearchH;
     private float headerOffset;               // px currently folded away (0 .. headerFullH)
     private boolean headerDragging;
@@ -119,8 +120,18 @@ public class MainActivity extends Activity {
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
+        setIntent(intent);
 
-        recreate();
+        // Default-launcher Home button re-delivers ACTION_MAIN here. If the home UI
+        // is already up, pressing Home must NOT rebuild it (that reloads the whole
+        // screen and drops the swipe-away header stage). Just return to a clean
+        // base view: exit selection, clear search — the header stage is kept.
+        if (!homeUiBuilt) {
+            recreate();
+            return;
+        }
+        if (selectMode != null) exitSelection();
+        if (search.getText().length() > 0) search.setText("");
     }
 
     @Override
@@ -808,6 +819,7 @@ public class MainActivity extends Activity {
         int target = stageForOffset(bounded);
         if (velocityY < -dp(700)) target = Math.min(2, target + 1);
         else if (velocityY > dp(700)) target = Math.max(0, target - 1);
+        keepStage = target;               // deliberate choice — survives search / selection
         animateHeaderToStage(target);
     }
 
@@ -846,6 +858,19 @@ public class MainActivity extends Activity {
         measureHeader();
         headerOffset = snapForStage(collapseStage);
         applyHeaderOffset();
+    }
+
+    /** Keep the header open while it can't collapse (search / selection / stats);
+     *  otherwise return it to the stage the user last chose. Called after render. */
+    private void syncHeaderCollapse() {
+        if (!collapseEligible()) {
+            if (collapseStage != 0) setCollapseStage(0);
+        } else if (collapseStage != keepStage) {
+            // Snap, don't animate: while search was open the header was at stage 0
+            // (menu section shown). Animating back from there flashes the full menu
+            // for one frame before it folds away.
+            setCollapseStage(keepStage);
+        }
     }
 
     private void filter(String query) {
@@ -896,7 +921,9 @@ public class MainActivity extends Activity {
         refreshTipRow();
         if (tipRow != null && selecting) tipRow.setVisibility(View.GONE);
 
-        boolean showStats = homeMode == HomeMode.STATS && needle.isEmpty();
+        // Stats sits behind the app-list lock — same PIN, same grace window.
+        boolean statsLocked = homeMode == HomeMode.STATS && Lock.APPS.gateActive(this);
+        boolean showStats = homeMode == HomeMode.STATS && needle.isEmpty() && !statsLocked;
         if (statsPanel != null) {
             statsPanel.view().setVisibility(showStats ? View.VISIBLE : View.GONE);
             listView.setVisibility(showStats ? View.GONE : View.VISIBLE);
@@ -908,7 +935,8 @@ public class MainActivity extends Activity {
             }
         }
         if (showStats) {
-            if (!collapseEligible()) setCollapseStage(0);
+            if (Lock.APPS.isLocked(this)) Lock.APPS.keepUnlocked(this);
+            syncHeaderCollapse();
             adapter.notifyDataSetChanged();
             return;
         }
@@ -933,6 +961,10 @@ public class MainActivity extends Activity {
                 renderRecorderSection();
             } else if (homeMode == HomeMode.VAULT) {
                 renderVaultSection();
+            } else if (homeMode == HomeMode.STATS) {
+                rows.add(new SearchResult(SearchResult.Kind.APP, "App list is locked",
+                        "Tap to unlock", -1, () -> startActivityForResult(
+                        Lock.APPS.pinGate(this), REQUEST_APPS_UNLOCK)));
             } else if (Lock.APPS.gateActive(this)) {
                 rows.add(new SearchResult(SearchResult.Kind.APP, "App list is locked",
                         "Tap to unlock", -1, () -> startActivityForResult(
@@ -956,8 +988,9 @@ public class MainActivity extends Activity {
 
         adapter.notifyDataSetChanged();
 
-        // Searching / selecting / stats: the header must be fully visible again.
-        if (!collapseEligible()) setCollapseStage(0);
+        // Searching / selecting / stats force the header open; otherwise restore
+        // the user's chosen stage.
+        syncHeaderCollapse();
     }
 
     private List<SearchResult> resultsFor(SearchResult.Kind kind, String needle) {
