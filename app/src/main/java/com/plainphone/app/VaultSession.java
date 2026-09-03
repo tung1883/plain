@@ -67,6 +67,12 @@ final class VaultSession {
         notifyChanged(context);
     }
 
+    /** Adopt a just-created vault's master key directly — no second KDF pass. */
+    synchronized void adoptCreated(Context context, byte[] key) {
+        adoptKey(context, key);
+        notifyChanged(context);
+    }
+
     synchronized void adoptKey(Context context, byte[] key) {
         this.masterKey = key;
         this.contentKey = VaultCrypto.subKey(key, "content");

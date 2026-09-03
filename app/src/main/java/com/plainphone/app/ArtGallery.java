@@ -175,6 +175,10 @@ final class ArtGallery {
         Config.setArtSelected(context, sel);
     }
 
+    static void clearSelection(Context context) {
+        Config.setArtSelected(context, new ArrayList<>());
+    }
+
     // --- slideshow ---------------------------------------
 
     /** The id (gallery id or "scene:NAME") to show right now, or null when nothing is selected. */

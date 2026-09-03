@@ -48,8 +48,18 @@ final class VaultFormat {
         createVault(vaultRoot, passphrase, null);
     }
 
-    /** Generate salt + master key, wrap the master key under the passphrase, write the header. */
     static void createVault(File vaultRoot, char[] passphrase, VaultCrypto.Progress progress)
+            throws IOException, GeneralSecurityException {
+        VaultCrypto.zeroize(createVaultKey(vaultRoot, passphrase, progress));
+    }
+
+    /**
+     * Generate salt + master key, wrap the master key under the passphrase, write the
+     * header, and return the live master key so the caller can adopt it without a
+     * second KDF pass (an unlock right after creation used to re-derive the whole
+     * PBKDF2 — ~4 s wasted at 100%).
+     */
+    static byte[] createVaultKey(File vaultRoot, char[] passphrase, VaultCrypto.Progress progress)
             throws IOException, GeneralSecurityException {
         if (!vaultRoot.isDirectory() && !vaultRoot.mkdirs()) {
             throw new IOException("Can't create vault dir " + vaultRoot);
@@ -64,7 +74,6 @@ final class VaultFormat {
             wrapped = VaultCrypto.wrap(VaultCrypto.aesKey(passRaw), masterKey);
         } finally {
             VaultCrypto.zeroize(passRaw);
-            VaultCrypto.zeroize(masterKey);
         }
 
         JSONObject json = new JSONObject();
@@ -78,6 +87,7 @@ final class VaultFormat {
             throw new IOException(e);
         }
         writeAtomically(headerFile(vaultRoot), json.toString().getBytes(StandardCharsets.UTF_8));
+        return masterKey;
     }
 
     static Header readHeader(File vaultRoot) throws IOException {
@@ -113,11 +123,17 @@ final class VaultFormat {
         }
     }
 
-    /** Re-wrap the same master key under a new passphrase (phase 2). */
     static void changePassphrase(File vaultRoot, byte[] masterKey, char[] newPassphrase)
             throws IOException, GeneralSecurityException {
+        changePassphrase(vaultRoot, masterKey, newPassphrase, null);
+    }
+
+    /** Re-wrap the same master key under a new passphrase (phase 2). */
+    static void changePassphrase(File vaultRoot, byte[] masterKey, char[] newPassphrase,
+                                 VaultCrypto.Progress progress)
+            throws IOException, GeneralSecurityException {
         byte[] salt = VaultCrypto.randomBytes(SALT_LEN);
-        byte[] passRaw = VaultCrypto.deriveKey(newPassphrase, salt, PBKDF2_ITERATIONS);
+        byte[] passRaw = VaultCrypto.deriveKey(newPassphrase, salt, PBKDF2_ITERATIONS, progress);
         byte[] wrapped;
         try {
             wrapped = VaultCrypto.wrap(VaultCrypto.aesKey(passRaw), masterKey);
