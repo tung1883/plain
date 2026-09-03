@@ -541,7 +541,7 @@ public class MainActivity extends Activity {
         headerStrip.addView(chevRight);
         root.addView(headerStrip, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-        modeToggleScroller.post(this::updateHeaderChevrons);
+        modeToggleScroller.post(this::scrollActiveTabIntoView);
 
         selectionBar = new LinearLayout(this);
         selectionBar.setOrientation(LinearLayout.VERTICAL);
@@ -1857,7 +1857,30 @@ public class MainActivity extends Activity {
     }
 
     private void refreshModeToggle() {
-        if (modeToggle != null) refreshTabColors(modeToggle);
+        if (modeToggle == null) return;
+        refreshTabColors(modeToggle);
+        modeToggle.post(this::scrollActiveTabIntoView);
+    }
+
+    /** Bring the active section's tab fully into the strip (past the dimmed clip edge). */
+    private void scrollActiveTabIntoView() {
+        if (modeToggle == null || modeToggleScroller == null) return;
+        int pad = (int) (24 * getResources().getDisplayMetrics().density);
+        int viewStart = modeToggleScroller.getScrollX();
+        int viewW = modeToggleScroller.getWidth();
+        for (int i = 0; i < modeToggle.getChildCount(); i++) {
+            View tab = modeToggle.getChildAt(i);
+            if (tab.getTag() != homeMode) continue;
+            int target = viewStart;
+            if (tab.getLeft() - pad < viewStart) {
+                target = tab.getLeft() - pad;
+            } else if (tab.getRight() + pad > viewStart + viewW) {
+                target = tab.getRight() + pad - viewW;
+            }
+            if (target != viewStart) modeToggleScroller.smoothScrollTo(Math.max(0, target), 0);
+            break;
+        }
+        modeToggleScroller.post(this::updateHeaderChevrons);
     }
 
     private HomeMode sectionAt(int dir) {
@@ -1873,9 +1896,12 @@ public class MainActivity extends Activity {
     }
 
     private void refreshTabColors(LinearLayout row) {
+        Typeface base = Fonts.current(this);
         for (int i = 0; i < row.getChildCount(); i++) {
             TextView tab = (TextView) row.getChildAt(i);
-            tab.setTextColor(tab.getTag() == homeMode ? Color.WHITE : Color.DKGRAY);
+            boolean active = tab.getTag() == homeMode;
+            tab.setTextColor(active ? Color.WHITE : Color.DKGRAY);
+            tab.setTypeface(Typeface.create(base, active ? Typeface.BOLD : Typeface.NORMAL));
         }
     }
 
