@@ -189,6 +189,7 @@ public class VaultActivity extends Activity {
                 finish();
             }
         });
+        gate.setProgressVerb(creating ? "Setting up" : "Unlocking");
         root.addView(gate, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
     }
@@ -203,10 +204,13 @@ public class VaultActivity extends Activity {
             String otherError = null;
             try {
                 if (creating) {
-                    VaultFormat.createVault(VaultSession.vaultRoot(this), passphrase, progress);
+                    byte[] mk = VaultFormat.createVaultKey(
+                            VaultSession.vaultRoot(this), passphrase, progress);
                     enableProvider(this);
+                    VaultSession.get().adoptCreated(this, mk);
+                } else {
+                    VaultSession.get().unlock(this, passphrase, progress);
                 }
-                VaultSession.get().unlock(this, passphrase, creating ? null : progress);
             } catch (VaultFormat.WrongPassphrase e) {
                 wrong = true;
             } catch (Exception e) {

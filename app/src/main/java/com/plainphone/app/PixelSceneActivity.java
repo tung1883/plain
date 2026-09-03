@@ -80,7 +80,11 @@ public class PixelSceneActivity extends Activity {
         previewByKey.clear();
         focusedKey = ArtGallery.currentId(this);
 
-        plainRow("Off", " ", v -> { Config.setArtMode(this, "off"); refresh(); });
+        plainRow("Off", " ", v -> {
+            ArtGallery.clearSelection(this);
+            Config.setArtMode(this, "off");
+            refresh();
+        });
         plainRow("Slideshow: " + slideshowLabel(), " ",
                 v -> startActivity(new Intent(this, ArtSlideshowActivity.class)));
 
