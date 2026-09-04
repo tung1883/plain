@@ -89,11 +89,13 @@ enum Lock {
         return new Intent(context, LockPinGateActivity.class).putExtra(EXTRA_LOCK, name());
     }
 
-    /** Settings-row toggle: friction gate to turn off, straight flip to turn on. */
+    /** Settings-row toggle: straight flip both ways — reaching this row already
+     *  required the section's PIN. */
     void toggleLock(Activity host, Runnable after) {
         if (isLocked(host)) {
-            host.startActivity(new Intent(host, LockChangeActivity.class)
-                    .putExtra(EXTRA_LOCK, name()));
+            setLocked(host, false);
+            Config.setUnlockUntil(host, area, 0L);
+            if (after != null) after.run();
         } else if (!Config.isPinSet(host)) {
             Toast.makeText(host, "Set an App-lock PIN first (Settings → App lock)",
                     Toast.LENGTH_LONG).show();
