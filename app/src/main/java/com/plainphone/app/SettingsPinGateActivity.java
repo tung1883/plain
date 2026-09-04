@@ -17,7 +17,7 @@ public class SettingsPinGateActivity extends Activity {
             @Override
             public void onPin(String pin) {
                 if (submitted) return;
-                if (pin.length() >= 4 && Config.checkLockPin(SettingsPinGateActivity.this, pin)) {
+                if (pin.length() >= 4 && Config.checkPin(SettingsPinGateActivity.this, "settings", pin)) {
                     submitted = true;
                     Intent settings = new Intent(SettingsPinGateActivity.this, SettingsActivity.class);
                     settings.putExtra(SettingsActivity.EXTRA_DESTINATION,

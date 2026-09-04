@@ -33,14 +33,6 @@ class Config {
         prefs(context).edit().putInt("wait_seconds", seconds).apply();
     }
 
-    static int getSettingsWaitSeconds(Context context) {
-        return prefs(context).getInt("settings_wait_seconds", 0);
-    }
-
-    static void setSettingsWaitSeconds(Context context, int seconds) {
-        prefs(context).edit().putInt("settings_wait_seconds", seconds).apply();
-    }
-
     static int getBudgetMinutes(Context context) {
         return prefs(context).getInt("budget_minutes", 5);
     }
@@ -270,8 +262,40 @@ class Config {
         prefs(context).edit().putLong(area + "_unlock_until", millis).apply();
     }
 
-    /** Grace window during which a PIN-unlocked app / feature won't re-prompt. */
-    static final long UNLOCK_GRACE_MS = 30_000L;
+    // --- re-lock timing: how long a PIN-unlocked lock stays open after you leave ---
+    // "relock_seconds" is the global default; "relock_seconds_<id>" overrides it for
+    // one lock (section area, or "applock"). See RelockPicker for the offered values.
+
+    static final int DEFAULT_RELOCK_SECONDS = 120;
+
+    static int getRelockSeconds(Context context) {
+        return prefs(context).getInt("relock_seconds", DEFAULT_RELOCK_SECONDS);
+    }
+
+    static void setRelockSeconds(Context context, int seconds) {
+        prefs(context).edit().putInt("relock_seconds", seconds).apply();
+    }
+
+    static boolean hasRelockOverride(Context context, String id) {
+        return prefs(context).contains("relock_seconds_" + id);
+    }
+
+    static int getRelockSeconds(Context context, String id) {
+        return prefs(context).getInt("relock_seconds_" + id, getRelockSeconds(context));
+    }
+
+    static void setRelockSeconds(Context context, String id, int seconds) {
+        prefs(context).edit().putInt("relock_seconds_" + id, seconds).apply();
+    }
+
+    static void clearRelock(Context context, String id) {
+        prefs(context).edit().remove("relock_seconds_" + id).apply();
+    }
+
+    /** Grace window for the per-app App lock, in millis. */
+    static long appGraceMs(Context context) {
+        return getRelockSeconds(context, "applock") * 1000L;
+    }
 
     static boolean isAppRecentlyUnlocked(Context context, String packageName) {
         return System.currentTimeMillis()
@@ -290,7 +314,7 @@ class Config {
 
     static void markAppUnlocked(Context context, String packageName) {
         if (packageName == null) return;
-        long until = System.currentTimeMillis() + UNLOCK_GRACE_MS;
+        long until = System.currentTimeMillis() + appGraceMs(context);
         String key = "app_unlock_until_" + packageName;
         if (until - prefs(context).getLong(key, 0L) > 5_000L) {
             prefs(context).edit().putLong(key, until).apply();
@@ -849,6 +873,97 @@ class Config {
         String storedHash = prefs(context).getString("lock_pin_hash", null);
         if (salt == null || storedHash == null) return false;
         return storedHash.equals(hashPin(pin, salt));
+    }
+
+    // --- per-lock PINs (fallback model) --------------------------------
+    // A lock identified by <id> uses the master PIN above unless it has its own
+    // custom PIN in "pin_hash_<id>" / "pin_salt_<id>". Section locks use their
+    // Lock.area as the id; the per-app App lock uses "applock"; Settings uses
+    // "settings".
+
+    static boolean hasCustomPin(Context context, String id) {
+        return prefs(context).getString("pin_hash_" + id, null) != null;
+    }
+
+    static void setCustomPin(Context context, String id, String pin) {
+        String salt = generateSalt();
+        prefs(context).edit()
+                .putString("pin_salt_" + id, salt)
+                .putString("pin_hash_" + id, hashPin(pin, salt))
+                .apply();
+    }
+
+    static void clearCustomPin(Context context, String id) {
+        prefs(context).edit()
+                .remove("pin_salt_" + id)
+                .remove("pin_hash_" + id)
+                .apply();
+    }
+
+    /** True when this lock can prompt — it has a custom PIN, or a master PIN is set. */
+    static boolean isPinSet(Context context, String id) {
+        return hasCustomPin(context, id) || isPinSet(context);
+    }
+
+    /** Check {@code pin} against this lock's custom PIN, else the master PIN. */
+    static boolean checkPin(Context context, String id, String pin) {
+        if (hasCustomPin(context, id)) {
+            String salt = prefs(context).getString("pin_salt_" + id, null);
+            String storedHash = prefs(context).getString("pin_hash_" + id, null);
+            if (salt == null || storedHash == null) return false;
+            return storedHash.equals(hashPin(pin, salt));
+        }
+        return checkLockPin(context, pin);
+    }
+
+    // --- lock toggles ------------------------------------------------
+
+    /** Global master switch. Off ⇒ no lock prompts anywhere; config is kept. */
+    static boolean isLocksEnabled(Context context) {
+        return prefs(context).getBoolean("locks_enabled", true);
+    }
+
+    static void setLocksEnabled(Context context, boolean enabled) {
+        prefs(context).edit().putBoolean("locks_enabled", enabled).apply();
+    }
+
+    /** Turning the master switch off wipes every lock setting — a clean reset. */
+    static void wipeLockSettings(Context context) {
+        SharedPreferences p = prefs(context);
+        SharedPreferences.Editor e = p.edit();
+        e.remove("lock_pin_hash").remove("lock_pin_salt")
+                .remove("relock_seconds")
+                .remove("applock_enabled").remove("settings_lock_enabled")
+                .remove("locked_packages");
+        for (String area : new String[]{"notes", "todos", "recorder", "apps", "search"}) {
+            e.remove(area + "_locked").remove(area + "_unlock_until");
+        }
+        for (String key : p.getAll().keySet()) {
+            if (key.startsWith("pin_hash_") || key.startsWith("pin_salt_")
+                    || key.startsWith("relock_seconds_")
+                    || key.startsWith("app_unlock_until_")) {
+                e.remove(key);
+            }
+        }
+        e.apply();
+    }
+
+    /** Settings gate. Absent ⇒ on whenever a master PIN exists (legacy behaviour). */
+    static boolean isSettingsLockEnabled(Context context) {
+        return prefs(context).getBoolean("settings_lock_enabled", isPinSet(context));
+    }
+
+    static void setSettingsLockEnabled(Context context, boolean enabled) {
+        prefs(context).edit().putBoolean("settings_lock_enabled", enabled).apply();
+    }
+
+    /** Per-app App lock. Absent ⇒ on whenever any app is in the locked list. */
+    static boolean isApplockEnabled(Context context) {
+        return prefs(context).getBoolean("applock_enabled", !getLockedPackages(context).isEmpty());
+    }
+
+    static void setApplockEnabled(Context context, boolean enabled) {
+        prefs(context).edit().putBoolean("applock_enabled", enabled).apply();
     }
 
     private static String generateSalt() {

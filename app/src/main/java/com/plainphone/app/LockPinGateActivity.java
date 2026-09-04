@@ -15,11 +15,11 @@ public class LockPinGateActivity extends Activity {
         super.onCreate(savedInstanceState);
         lock = Lock.from(getIntent());
 
-        pad = new PinPromptView(this, new PinPromptView.Listener() {
+        pad = new PinPromptView(this, lock.frictionLabel, true, 6, true, new PinPromptView.Listener() {
             @Override
             public void onPin(String pin) {
                 if (submitted) return;
-                if (pin.length() >= 4 && Config.checkLockPin(LockPinGateActivity.this, pin)) {
+                if (pin.length() >= 4 && Config.checkPin(LockPinGateActivity.this, lock.area, pin)) {
                     submitted = true;
                     lock.keepUnlocked(LockPinGateActivity.this);
                     setResult(RESULT_OK);

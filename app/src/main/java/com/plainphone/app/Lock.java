@@ -21,9 +21,6 @@ enum Lock {
 
     static final String EXTRA_LOCK = "lock";
 
-    /** Grace window during which an unlocked area won't re-prompt. */
-    private static final long UNLOCK_GRACE_MS = 30_000L;
-
     final String area;
     final String frictionLabel;
 
@@ -34,6 +31,19 @@ enum Lock {
 
     static Lock from(Intent intent) {
         return valueOf(intent.getStringExtra(EXTRA_LOCK));
+    }
+
+    /** The section lock with this prefs area, or null (e.g. "applock" / "settings"). */
+    static Lock byArea(String area) {
+        for (Lock lock : values()) {
+            if (lock.area.equals(area)) return lock;
+        }
+        return null;
+    }
+
+    /** How long this section stays unlocked after you leave it, in millis. */
+    long graceMs(Context context) {
+        return Config.getRelockSeconds(context, area) * 1000L;
     }
 
     /**
@@ -74,15 +84,15 @@ enum Lock {
 
     /** Call on a successful PIN entry, and while the area is actively shown. */
     void keepUnlocked(Context context) {
-        long until = System.currentTimeMillis() + UNLOCK_GRACE_MS;
+        long until = System.currentTimeMillis() + graceMs(context);
         if (until - Config.getUnlockUntil(context, area) > 5_000L) {
             Config.setUnlockUntil(context, area, until);
         }
     }
 
     boolean gateActive(Context context) {
-        return isLocked(context) && !isUnlocked(context) && Config.isPinSet(context)
-                && !importing(context);
+        return isLocked(context) && !isUnlocked(context) && Config.isPinSet(context, area)
+                && Config.isLocksEnabled(context) && !importing(context);
     }
 
     Intent pinGate(Context context) {
@@ -96,8 +106,8 @@ enum Lock {
             setLocked(host, false);
             Config.setUnlockUntil(host, area, 0L);
             if (after != null) after.run();
-        } else if (!Config.isPinSet(host)) {
-            Toast.makeText(host, "Set an App-lock PIN first (Settings → App lock)",
+        } else if (!Config.isPinSet(host, area)) {
+            Toast.makeText(host, "Set a master PIN first (Settings → Lock settings)",
                     Toast.LENGTH_LONG).show();
         } else {
             setLocked(host, true);

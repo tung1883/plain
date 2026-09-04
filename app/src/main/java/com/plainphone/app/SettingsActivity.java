@@ -107,9 +107,8 @@ entries.add(new Entry("Appearance", "Home screen art", row("Home screen art",
         entries.add(new Entry("Plugins", "4 Vault", row("Vault",
                 v -> startActivity(new Intent(this, VaultSettingsActivity.class)))));
 
-        entries.add(new Entry("Apps", "Lock app list", row(
-                "Lock app list: " + (Lock.APPS.isLocked(this) ? "On" : "Off"),
-                v -> Lock.APPS.toggleLock(this, this::render))));
+        entries.add(new Entry("Apps", "Lock settings", row("Lock settings",
+                v -> startActivity(new Intent(this, LockSettingsActivity.class)))));
 
         entries.add(new Entry("Apps", "App lock", row("App lock",
                 v -> startActivity(new Intent(this, LockedAppsActivity.class)))));
@@ -119,10 +118,6 @@ entries.add(new Entry("Appearance", "Home screen art", row("Home screen art",
 
         entries.add(new Entry("Apps", "Hide apps from app list", row("Hide apps from app list",
                 v -> startActivity(new Intent(this, HiddenAppsActivity.class)))));
-
-        entries.add(new Entry("Apps", "Settings wait time", row(
-                "Settings wait time: " + Config.getSettingsWaitSeconds(this) + "s",
-                v -> startActivity(new Intent(this, SettingsWaitTimeActivity.class)))));
 
         entries.add(new Entry("Apps", "Time blocks", row("Time blocks",
                 v -> startActivity(new Intent(this, TimeBlocksActivity.class)))));

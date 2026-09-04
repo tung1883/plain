@@ -21,7 +21,7 @@ public class PinGateActivity extends Activity {
             @Override
             public void onPin(String pin) {
                 if (submitted) return;
-                if (pin.length() >= 4 && Config.checkLockPin(PinGateActivity.this, pin)) {
+                if (pin.length() >= 4 && Config.checkPin(PinGateActivity.this, "applock", pin)) {
                     submitted = true;
                     Config.markAppUnlocked(PinGateActivity.this, packageName);
                     AppMonitorService.skipGateFor(packageName);
