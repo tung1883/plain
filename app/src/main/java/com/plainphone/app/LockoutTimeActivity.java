@@ -32,6 +32,16 @@ public class LockoutTimeActivity extends StepperActivity {
     }
 
     @Override
+    protected String unitLabel() {
+        return "min";
+    }
+
+    @Override
+    protected int[] chips() {
+        return new int[]{5, 15, 30, 60, 120};
+    }
+
+    @Override
     protected int currentValue() {
         return Config.getLockoutMinutes(this);
     }

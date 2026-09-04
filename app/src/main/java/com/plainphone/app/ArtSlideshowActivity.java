@@ -29,6 +29,16 @@ public class ArtSlideshowActivity extends StepperActivity {
     }
 
     @Override
+    protected String unitLabel() {
+        return "min";
+    }
+
+    @Override
+    protected int[] chips() {
+        return new int[]{1, 5, 10, 15, 30};
+    }
+
+    @Override
     protected int currentValue() {
         return Config.getArtSlideshowMinutes(this);
     }

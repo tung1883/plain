@@ -44,6 +44,16 @@ public class SessionLengthActivity extends StepperActivity {
     }
 
     @Override
+    protected String unitLabel() {
+        return "min";
+    }
+
+    @Override
+    protected int[] chips() {
+        return new int[]{15, 25, 45, 60, 90};
+    }
+
+    @Override
     protected int currentValue() {
         return DEFAULT_MINUTES;
     }

@@ -107,7 +107,7 @@ enum Lock {
             Config.setUnlockUntil(host, area, 0L);
             if (after != null) after.run();
         } else if (!Config.isPinSet(host, area)) {
-            Toast.makeText(host, "Set a master PIN first (Settings → Lock settings)",
+            Toast.makeText(host, "Set a master PIN first (Settings → Locker)",
                     Toast.LENGTH_LONG).show();
         } else {
             setLocked(host, true);

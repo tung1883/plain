@@ -1718,13 +1718,7 @@ public class MainActivity extends Activity {
         root.setBackground(popupBackground());
         root.setPadding(0, 32, 0, 8);
 
-        TextView title = new TextView(this);
-        title.setText("Rename recording");
-        title.setTextColor(Color.WHITE);
-        title.setTextSize(18);
-        title.setTypeface(georgia);
-        title.setPadding(48, 0, 48, 16);
-        root.addView(title);
+        root.addView(UiKit.dialogTitle(this, "Rename recording"));
 
         EditText input = new EditText(this);
         input.setText(rec.displayName());
@@ -1872,15 +1866,14 @@ public class MainActivity extends Activity {
     }
 
     private void confirmArchiveTodos(int done) {
-        new android.app.AlertDialog.Builder(this)
-                .setTitle("Archive " + done + " completed task" + (done == 1 ? "" : "s") + "?")
-                .setMessage("They move out of the list into the done archive.")
-                .setPositiveButton("Archive", (d, w) -> {
+        VaultUi.confirm(this,
+                "Archive " + done + " completed task" + (done == 1 ? "" : "s") + "?",
+                "They move out of the list into the done archive.",
+                "Archive", () -> {
                     Todos.archiveCompleted(this);
                     filter(search.getText().toString());
-                })
-                .setNegativeButton("Cancel", null)
-                .show();
+                },
+                "Cancel", null);
     }
 
     private SearchResult todoRow(Todos.Item item, int rank) {
@@ -1932,13 +1925,7 @@ public class MainActivity extends Activity {
         root.setBackground(popupBackground());
         root.setPadding(0, 32, 0, 8);
 
-        TextView title = new TextView(this);
-        title.setText("New task");
-        title.setTextColor(Color.WHITE);
-        title.setTextSize(18);
-        title.setTypeface(georgia);
-        title.setPadding(48, 0, 48, 16);
-        root.addView(title);
+        root.addView(UiKit.dialogTitle(this, "New task"));
 
         EditText input = new EditText(this);
         input.setBackground(null);
@@ -2462,13 +2449,7 @@ public class MainActivity extends Activity {
         root.setBackground(popupBackground());
         root.setPadding(0, 8, 0, 8);
 
-        TextView title = new TextView(this);
-        title.setText(label);
-        title.setTextColor(Color.WHITE);
-        title.setTextSize(18);
-        title.setTypeface(georgia);
-        title.setPadding(48, 32, 48, 24);
-        root.addView(title);
+        root.addView(UiKit.dialogTitle(this, label.toString()));
 
         android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
                 .setView(root)
@@ -2529,13 +2510,7 @@ public class MainActivity extends Activity {
         root.setBackground(popupBackground());
         root.setPadding(0, 8, 0, 8);
 
-        TextView titleView = new TextView(this);
-        titleView.setText(title);
-        titleView.setTextColor(Color.WHITE);
-        titleView.setTextSize(18);
-        titleView.setTypeface(georgia);
-        titleView.setPadding(48, 32, 48, 24);
-        root.addView(titleView);
+        root.addView(UiKit.dialogTitle(this, title));
 
         android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
                 .setView(root)

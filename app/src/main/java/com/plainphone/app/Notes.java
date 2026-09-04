@@ -40,13 +40,7 @@ class Notes {
         root.setBackground(popupBackground());
         root.setPadding(0, 32, 0, 8);
 
-        TextView title = new TextView(host);
-        title.setText("Delete this note?");
-        title.setTextColor(Color.WHITE);
-        title.setTextSize(18);
-        title.setTypeface(font);
-        title.setPadding(48, 0, 48, 8);
-        root.addView(title);
+        root.addView(UiKit.dialogTitle(host, "Delete this note?"));
 
         TextView body = new TextView(host);
         body.setText(note.title());
@@ -316,13 +310,7 @@ class Notes {
         root.setBackground(popupBackground());
         root.setPadding(0, 32, 0, 8);
 
-        TextView title = new TextView(host);
-        title.setText("Default export folder");
-        title.setTextColor(Color.WHITE);
-        title.setTextSize(18);
-        title.setTypeface(font);
-        title.setPadding(48, 0, 48, 16);
-        root.addView(title);
+        root.addView(UiKit.dialogTitle(host, "Default export folder"));
 
         AlertDialog dialog = new AlertDialog.Builder(host).setView(root).create();
         if (dialog.getWindow() != null) {
@@ -406,13 +394,7 @@ class Notes {
         root.setBackground(popupBackground());
         root.setPadding(0, 32, 0, 8);
 
-        TextView title = new TextView(host);
-        title.setText("Export note");
-        title.setTextColor(Color.WHITE);
-        title.setTextSize(18);
-        title.setTypeface(font);
-        title.setPadding(48, 0, 48, 16);
-        root.addView(title);
+        root.addView(UiKit.dialogTitle(host, "Export note"));
 
         AlertDialog dialog = new AlertDialog.Builder(host).setView(root).create();
         if (dialog.getWindow() != null) {

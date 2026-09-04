@@ -22,6 +22,11 @@ public class TimeBlockStartTimeActivity extends StepperActivity {
     }
 
     @Override
+    protected boolean listStyle() {
+        return true;   // a clock face, not a number to type
+    }
+
+    @Override
     protected String stepLabel() {
         return STEP_MINUTES + "m";
     }

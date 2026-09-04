@@ -155,13 +155,8 @@ public class TipsSettingsActivity extends Activity {
         popup.setBackground(box);
         popup.setPadding(0, 32, 0, 8);
 
-        TextView title = new TextView(this);
-        title.setText("Reset " + (quotes ? "quotes" : "tips") + " to default?");
-        title.setTextColor(Color.WHITE);
-        title.setTextSize(18);
-        title.setTypeface(font);
-        title.setPadding(48, 0, 48, 16);
-        popup.addView(title);
+        popup.addView(UiKit.dialogTitle(this, "Reset " + (quotes ? "quotes" : "tips")
+                + " to default?"));
 
         AlertDialog dialog = new AlertDialog.Builder(this).setView(popup).create();
         if (dialog.getWindow() != null) {

@@ -90,10 +90,11 @@ public class LockDetailActivity extends Activity {
 
             boolean override = Config.hasRelockOverride(this, id);
             String relock = override
-                    ? RelockPicker.format(Config.getRelockSeconds(this, id))
-                    : "Default · " + RelockPicker.format(Config.getRelockSeconds(this));
+                    ? RelockTimeActivity.fmt(Config.getRelockSeconds(this, id))
+                    : "Default · " + RelockTimeActivity.fmt(Config.getRelockSeconds(this));
             root.addView(row("Re-lock after", relock, override ? AMBER : MUTED,
-                    v -> RelockPicker.show(this, id, name, this::render)));
+                    v -> startActivity(new Intent(this, RelockTimeActivity.class)
+                            .putExtra(RelockTimeActivity.EXTRA_LOCK_ID, id))));
         }
 
         if (isApplock()) {
@@ -108,7 +109,7 @@ public class LockDetailActivity extends Activity {
         VaultUi.confirm(this, name + " PIN", null,
                 "Use master PIN", () -> {
                     if (!Config.isPinSet(this)) {
-                        Toast.makeText(this, "Set a master PIN first (Lock settings)",
+                        Toast.makeText(this, "Set a master PIN first (Locker)",
                                 Toast.LENGTH_LONG).show();
                         return;
                     }
@@ -127,7 +128,7 @@ public class LockDetailActivity extends Activity {
         }
         boolean on = enabled();
         if (!on && !pinAvailable()) {
-            Toast.makeText(this, "Set a master PIN first (Lock settings)",
+            Toast.makeText(this, "Set a master PIN first (Locker)",
                     Toast.LENGTH_LONG).show();
             return;
         }

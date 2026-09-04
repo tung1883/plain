@@ -117,7 +117,7 @@ public class LockedAppsActivity extends Activity {
                 Config.setLockedPackages(this, locked);
                 if (!Config.isPinSet(this, "applock")) {
                     android.widget.Toast.makeText(this,
-                            "Set a master PIN in Settings → Lock settings",
+                            "Set a master PIN in Settings → Locker",
                             android.widget.Toast.LENGTH_LONG).show();
                 }
                 adapter.notifyDataSetChanged();

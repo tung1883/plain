@@ -135,16 +135,8 @@ final class VaultUi {
         }
     }
 
-    /** Gray, uppercase, letter-spaced — the same look as a Settings section header. */
     private static TextView titleRow(Activity host, Typeface font, String title) {
-        TextView view = new TextView(host);
-        view.setText(title.toUpperCase());
-        view.setTextColor(Color.GRAY);
-        view.setTextSize(13);
-        view.setLetterSpacing(0.15f);
-        view.setTypeface(font);
-        view.setPadding(48, 12, 48, 14);
-        return view;
+        return UiKit.dialogTitle(host, title);
     }
 
     private static TextView option(Activity host, Typeface font, String label, Choice onClick) {

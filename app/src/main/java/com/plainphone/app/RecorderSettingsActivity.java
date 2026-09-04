@@ -129,14 +129,8 @@ public class RecorderSettingsActivity extends Activity {
         GradientDrawable bg = new GradientDrawable();
         bg.setColor(Color.BLACK);
         box.setBackground(bg);
-        box.setPadding(0, 24, 0, 8);
-        TextView t = new TextView(this);
-        t.setText(title);
-        t.setTextColor(Color.WHITE);
-        t.setTextSize(18);
-        t.setTypeface(font);
-        t.setPadding(48, 8, 48, 16);
-        box.addView(t);
+        box.setPadding(0, 16, 0, 8);
+        box.addView(UiKit.dialogTitle(this, title));
         return box;
     }
 

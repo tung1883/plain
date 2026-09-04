@@ -101,15 +101,14 @@ public class TodoSettingsActivity extends Activity {
     }
 
     private void confirmArchive(int done) {
-        new AlertDialog.Builder(this)
-                .setTitle("Archive " + done + " completed task" + (done == 1 ? "" : "s") + "?")
-                .setMessage("They move out of the list into the done archive.")
-                .setPositiveButton("Archive", (d, w) -> {
+        VaultUi.confirm(this,
+                "Archive " + done + " completed task" + (done == 1 ? "" : "s") + "?",
+                "They move out of the list into the done archive.",
+                "Archive", () -> {
                     Todos.archiveCompleted(this);
                     render();
-                })
-                .setNegativeButton("Cancel", null)
-                .show();
+                },
+                "Cancel", null);
     }
 
     private TextView row(String label, View.OnClickListener listener) {

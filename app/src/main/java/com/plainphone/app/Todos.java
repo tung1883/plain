@@ -301,12 +301,7 @@ class Todos {
         root.setBackground(popupBackground());
         root.setPadding(0, 32, 0, 8);
 
-        TextView title = new TextView(host);
-        title.setText(linked ? fileLabel(host) : "Todo file");
-        title.setTextColor(Color.WHITE);
-        title.setTextSize(18);
-        title.setTypeface(font);
-        title.setPadding(48, 0, 48, 16);
+        TextView title = UiKit.dialogTitle(host, linked ? fileLabel(host) : "Todo file");
         title.setSingleLine(true);
         title.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
         root.addView(title);

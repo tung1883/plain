@@ -32,6 +32,16 @@ public class BudgetTimeActivity extends StepperActivity {
     }
 
     @Override
+    protected String unitLabel() {
+        return "min";
+    }
+
+    @Override
+    protected int[] chips() {
+        return new int[]{1, 2, 5, 10, 30, 60};
+    }
+
+    @Override
     protected int currentValue() {
         return Config.getBudgetMinutes(this);
     }

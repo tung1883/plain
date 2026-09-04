@@ -264,7 +264,7 @@ class Config {
 
     // --- re-lock timing: how long a PIN-unlocked lock stays open after you leave ---
     // "relock_seconds" is the global default; "relock_seconds_<id>" overrides it for
-    // one lock (section area, or "applock"). See RelockPicker for the offered values.
+    // one lock (section area, or "applock"). See RelockTimeActivity for the offered values.
 
     static final int DEFAULT_RELOCK_SECONDS = 120;
 
