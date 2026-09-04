@@ -984,7 +984,7 @@ public class MainActivity extends Activity {
             search.setText("");
             filter("");
             android.widget.Toast.makeText(this,
-                    Config.isPinSet(this) ? "Locked" : "Locked — set an App-lock PIN to take effect",
+                    Config.isPinSet(this) ? "Locked" : "Locked — set a master PIN to take effect",
                     android.widget.Toast.LENGTH_SHORT).show();
         });
     }
@@ -2419,7 +2419,9 @@ public class MainActivity extends Activity {
             return;
         }
 
-        if (Config.getLockedPackages(this).contains(pkg)
+        if (Config.isLocksEnabled(this)
+                && Config.isApplockEnabled(this)
+                && Config.getLockedPackages(this).contains(pkg)
                 && !Config.isAppRecentlyUnlocked(this, pkg)) {
             Intent gate = new Intent(this, PinGateActivity.class);
             gate.putExtra("package", pkg);

@@ -218,7 +218,9 @@ public class AppMonitorService extends AccessibilityService {
             return;
         }
 
-        boolean locked = Config.getLockedPackages(this).contains(packageName);
+        boolean locked = Config.isLocksEnabled(this)
+                && Config.isApplockEnabled(this)
+                && Config.getLockedPackages(this).contains(packageName);
         boolean flagged = Config.getFlaggedPackages(this).contains(packageName);
 
         if (!locked && !flagged) {
@@ -244,7 +246,8 @@ public class AppMonitorService extends AccessibilityService {
      * the flag gate follows.
      */
     private void enforce(String packageName) {
-        if (Config.getLockedPackages(this).contains(packageName)) {
+        if (Config.isLocksEnabled(this) && Config.isApplockEnabled(this)
+                && Config.getLockedPackages(this).contains(packageName)) {
             if (!Config.isAppRecentlyUnlocked(this, packageName)) {
                 showPinOverlay(packageName);
                 return;
@@ -323,7 +326,7 @@ public class AppMonitorService extends AccessibilityService {
         pad[0] = new PinPromptView(this, new PinPromptView.Listener() {
             @Override
             public void onPin(String pin) {
-                if (pin.length() >= 4 && Config.checkLockPin(AppMonitorService.this, pin)) {
+                if (pin.length() >= 4 && Config.checkPin(AppMonitorService.this, "applock", pin)) {
                     Config.markAppUnlocked(AppMonitorService.this, packageName);
                     removeOverlay();
                     if (Config.getFlaggedPackages(AppMonitorService.this).contains(packageName)) {

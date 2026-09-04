@@ -107,15 +107,25 @@
         <activity
             android:name=".SettingsGateActivity"
             android:exported="false"
-            android:theme="@style/Theme.PlainPhone" />
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
         <activity
-            android:name=".SettingsWaitTimeActivity"
+            android:name=".LockedAppsActivity"
             android:exported="false"
             android:theme="@style/Theme.PlainPhone" />
 
         <activity
-            android:name=".LockedAppsActivity"
+            android:name=".LockSettingsActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
+            android:name=".LockDetailActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
+            android:name=".PinSetupActivity"
             android:exported="false"
             android:theme="@style/Theme.PlainPhone" />
 

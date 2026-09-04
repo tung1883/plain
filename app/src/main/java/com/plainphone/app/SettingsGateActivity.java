@@ -1,34 +1,29 @@
 package com.plainphone.app;
 
+import android.app.Activity;
 import android.content.Intent;
+import android.os.Bundle;
 
-public class SettingsGateActivity extends FrictionGateActivity {
-
-    @Override
-    protected int waitSeconds() {
-        return Config.getSettingsWaitSeconds(this);
-    }
-
-    @Override
-    protected boolean requiresMathChallenge() {
-        return false;
-    }
+/**
+ * Routes into Settings — straight to {@link SettingsActivity}, or via
+ * {@link SettingsPinGateActivity} when the Settings lock is on. No wait: it shows
+ * nothing and finishes immediately.
+ */
+public class SettingsGateActivity extends Activity {
 
     @Override
-    protected String describeAction() {
-        return "Opening Settings";
-    }
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
 
-    @Override
-    protected void onConfirmed() {
+        boolean gated = Config.isLocksEnabled(this) && Config.isSettingsLockEnabled(this);
+        Intent next = new Intent(this,
+                gated ? SettingsPinGateActivity.class : SettingsActivity.class);
 
-        Intent next = new Intent(this, Config.isPinSet(this)
-                ? SettingsPinGateActivity.class
-                : SettingsActivity.class);
-
-        next.putExtra(SettingsActivity.EXTRA_DESTINATION,
-                getIntent().getStringExtra(SettingsActivity.EXTRA_DESTINATION));
+        String dest = getIntent().getStringExtra(SettingsActivity.EXTRA_DESTINATION);
+        if (dest != null) {
+            next.putExtra(SettingsActivity.EXTRA_DESTINATION, dest);
+        }
         startActivity(next);
+        finish();
     }
 }
-

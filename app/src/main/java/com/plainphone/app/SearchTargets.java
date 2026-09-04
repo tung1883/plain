@@ -58,8 +58,6 @@ class SearchTargets {
                     LockedAppsActivity.class, true, "lock", "pin", "password", "protect"),
             new PlainTarget("Hide apps from app list", "Keep apps out of the home list",
                     HiddenAppsActivity.class, true, "hide", "hidden", "remove from list"),
-            new PlainTarget("Settings wait time", "How long the settings gate waits",
-                    SettingsWaitTimeActivity.class, true, "wait", "delay", "friction", "gate"),
             new PlainTarget("Home screen art", "Pick the pixel art scene",
                     PixelSceneActivity.class, true, "art", "pixel", "animation", "wallpaper", "gif"),
             new PlainTarget("Search", "Files, contacts, web, and web searches",

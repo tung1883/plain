@@ -36,13 +36,7 @@ final class VaultUi {
         box.setBackground(bg);
         box.setPadding(0, 24, 0, 8);
 
-        TextView titleView = new TextView(host);
-        titleView.setText(title);
-        titleView.setTextColor(Color.WHITE);
-        titleView.setTextSize(18);
-        titleView.setTypeface(font);
-        titleView.setPadding(48, 8, 48, 16);
-        box.addView(titleView);
+        box.addView(titleRow(host, font, title));
 
         if (message != null) {
             TextView body = new TextView(host);
@@ -91,13 +85,7 @@ final class VaultUi {
         box.setBackground(bg);
         box.setPadding(0, 24, 0, 8);
 
-        TextView titleView = new TextView(host);
-        titleView.setText(title);
-        titleView.setTextColor(Color.WHITE);
-        titleView.setTextSize(18);
-        titleView.setTypeface(font);
-        titleView.setPadding(48, 8, 48, 16);
-        box.addView(titleView);
+        box.addView(titleRow(host, font, title));
 
         TextView list = new TextView(host);
         list.setText(android.text.TextUtils.join("\n", lines));
@@ -145,6 +133,18 @@ final class VaultUi {
             super.onMeasure(widthSpec,
                     MeasureSpec.makeMeasureSpec(maxHeight, MeasureSpec.AT_MOST));
         }
+    }
+
+    /** Gray, uppercase, letter-spaced — the same look as a Settings section header. */
+    private static TextView titleRow(Activity host, Typeface font, String title) {
+        TextView view = new TextView(host);
+        view.setText(title.toUpperCase());
+        view.setTextColor(Color.GRAY);
+        view.setTextSize(13);
+        view.setLetterSpacing(0.15f);
+        view.setTypeface(font);
+        view.setPadding(48, 12, 48, 14);
+        return view;
     }
 
     private static TextView option(Activity host, Typeface font, String label, Choice onClick) {

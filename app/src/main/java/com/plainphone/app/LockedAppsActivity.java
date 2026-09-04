@@ -39,9 +39,6 @@ public class LockedAppsActivity extends Activity {
     private List<String> labels;
     private ListView listView;
     private ArrayAdapter<String> adapter;
-    private EditText pinField;
-    private EditText confirmPinField;
-    private TextView pinStatusText;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -58,7 +55,6 @@ public class LockedAppsActivity extends Activity {
         listView.setBackgroundColor(Color.BLACK);
         listView.setDivider(null);
         listView.setDividerHeight(0);
-        listView.addHeaderView(buildPinHeader());
         UiKit.screen(this, "App lock", listView);
 
         adapter = new ArrayAdapter<String>(this, android.R.layout.simple_list_item_1, labels) {
@@ -119,7 +115,11 @@ public class LockedAppsActivity extends Activity {
                 Set<String> locked = Config.getLockedPackages(this);
                 locked.add(pkg);
                 Config.setLockedPackages(this, locked);
-                if (!Config.isPinSet(this)) promptSetPin();
+                if (!Config.isPinSet(this, "applock")) {
+                    android.widget.Toast.makeText(this,
+                            "Set a master PIN in Settings → Lock settings",
+                            android.widget.Toast.LENGTH_LONG).show();
+                }
                 adapter.notifyDataSetChanged();
             }
         });
@@ -129,107 +129,6 @@ public class LockedAppsActivity extends Activity {
     protected void onResume() {
         super.onResume();
         adapter.notifyDataSetChanged();
-    }
-
-    private View buildPinHeader() {
-        Typeface georgia = Fonts.current(this);
-
-        LinearLayout header = new LinearLayout(this);
-        header.setOrientation(LinearLayout.VERTICAL);
-        header.setBackgroundColor(Color.BLACK);
-        header.setPadding(48, 48, 48, 32);
-
-        header.addView(sectionLabel("App-lock PIN"));
-
-        header.setGravity(Gravity.CENTER_HORIZONTAL);
-
-        pinField = pinField(georgia, "PIN");
-        LinearLayout.LayoutParams pinParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        pinParams.topMargin = 24;
-        header.addView(pinField, pinParams);
-
-        confirmPinField = pinField(georgia, "Confirm");
-        LinearLayout.LayoutParams confirmParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        confirmParams.topMargin = 16;
-        header.addView(confirmPinField, confirmParams);
-
-        Button save = new Button(this);
-        save.setText("Save PIN");
-        UiKit.style(this, save);
-        save.setOnClickListener(v -> trySavePin());
-        LinearLayout.LayoutParams saveParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        saveParams.topMargin = 16;
-        header.addView(save, saveParams);
-
-        pinStatusText = new TextView(this);
-        pinStatusText.setTextColor(Color.WHITE);
-        pinStatusText.setTextSize(14);
-        pinStatusText.setTypeface(georgia);
-        if (!Config.isPinSet(this)) {
-            pinStatusText.setText("Set a PIN to protect locked apps");
-        }
-        LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        statusParams.topMargin = 16;
-        header.addView(pinStatusText, statusParams);
-
-        TextView listTitle = sectionLabel("Locked apps");
-        LinearLayout.LayoutParams listTitleParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        listTitleParams.topMargin = 32;
-        header.addView(listTitle, listTitleParams);
-
-        return header;
-    }
-
-    private TextView sectionLabel(String text) {
-        TextView label = new TextView(this);
-        label.setText(text.toUpperCase());
-        label.setTextColor(Color.GRAY);
-        label.setTextSize(13);
-        label.setLetterSpacing(0.15f);
-        label.setTypeface(Fonts.current(this));
-        return label;
-    }
-
-    private EditText pinField(Typeface georgia, String hint) {
-        EditText input = new EditText(this);
-        input.setHint(hint);
-        input.setHintTextColor(Color.GRAY);
-        input.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
-        input.setFilters(new InputFilter[]{new InputFilter.LengthFilter(6)});
-        input.setGravity(Gravity.CENTER);
-        input.setTypeface(georgia);
-        UiKit.style(this, input);
-        return input;
-    }
-
-    private void trySavePin() {
-        String pin = pinField.getText().toString();
-        String confirm = confirmPinField.getText().toString();
-
-        if (pin.length() < 4 || pin.length() > 6) {
-            pinStatusText.setText("PIN must be 4-6 digits");
-            return;
-        }
-        if (!pin.equals(confirm)) {
-            pinStatusText.setText("PINs don't match — try again");
-            confirmPinField.setText("");
-            return;
-        }
-
-        Config.setLockPin(this, pin);
-        pinField.setText("");
-        confirmPinField.setText("");
-        pinStatusText.setText("PIN saved");
-    }
-
-    private void promptSetPin() {
-        pinStatusText.setText("Set a PIN above to protect locked apps");
-        pinField.requestFocus();
     }
 
     private Drawable rowBackground() {

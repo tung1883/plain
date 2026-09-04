@@ -29,6 +29,9 @@ class PinPromptView extends FrameLayout {
         void onPin(String pin);
 
         void onCancel();
+
+        /** Fired by the on-screen "OK" key (submittable mode only), at 4-6 digits. */
+        default void onSubmit(String pin) {}
     }
 
     /** Dismiss the gate after this many idle seconds; show the countdown for the last few. */
@@ -37,10 +40,12 @@ class PinPromptView extends FrameLayout {
 
     private final int maxLen;
     private final boolean masked;
+    private final boolean submittable;
 
     private final StringBuilder pin = new StringBuilder();
     private final LinearLayout column;
     private final TextView display;
+    private TextView okKey;
     private TextView countdown;
     private final Listener listener;
     private boolean idleTimeout = true;
@@ -60,15 +65,22 @@ class PinPromptView extends FrameLayout {
 
     /** PIN mode: masked dots, 6 digits, close cross. */
     PinPromptView(Context context, Listener listener) {
-        this(context, "Enter PIN", true, 6, true, listener);
+        this(context, "Enter PIN", true, 6, true, false, listener);
     }
 
     PinPromptView(Context context, String prompt, boolean masked, int maxLen,
                   boolean showClose, Listener listener) {
+        this(context, prompt, masked, maxLen, showClose, false, listener);
+    }
+
+    /** {@code submittable} adds an on-screen OK key that fires {@link Listener#onSubmit}. */
+    PinPromptView(Context context, String prompt, boolean masked, int maxLen,
+                  boolean showClose, boolean submittable, Listener listener) {
         super(context);
         this.listener = listener;
         this.masked = masked;
         this.maxLen = maxLen;
+        this.submittable = submittable;
         setBackgroundColor(Color.BLACK);
 
         if (context instanceof android.app.Activity) {
@@ -132,7 +144,7 @@ class PinPromptView extends FrameLayout {
                 {"1", "2", "3"},
                 {"4", "5", "6"},
                 {"7", "8", "9"},
-                {"", "0", "←"},
+                {submittable ? "OK" : "", "0", "←"},
         };
         for (String[] rowKeys : keys) {
             LinearLayout row = new LinearLayout(context);
@@ -177,7 +189,14 @@ class PinPromptView extends FrameLayout {
         }
 
         key.setBackground(pressBackground());
-        if ("←".equals(label)) {
+        if ("OK".equals(label)) {
+            key.setTextSize(18);
+            okKey = key;
+            key.setOnClickListener(v -> {
+                if (pin.length() >= 4) listener.onSubmit(pin.toString());
+            });
+            refreshOk();
+        } else if ("←".equals(label)) {
             key.setOnClickListener(v -> deleteOne());
             final Runnable[] repeat = new Runnable[1];
             key.setOnLongClickListener(v -> {
@@ -255,12 +274,18 @@ class PinPromptView extends FrameLayout {
 
     private void changed() {
         updateDisplay();
+        refreshOk();
         listener.onPin(pin.toString());
+    }
+
+    private void refreshOk() {
+        if (okKey != null) okKey.setAlpha(pin.length() >= 4 ? 1f : 0.3f);
     }
 
     void reject() {
         pin.setLength(0);
         updateDisplay();
+        refreshOk();
         TranslateAnimation shake = new TranslateAnimation(0, dp(9), 0, 0);
         shake.setDuration(360);
         shake.setInterpolator(new CycleInterpolator(3));
