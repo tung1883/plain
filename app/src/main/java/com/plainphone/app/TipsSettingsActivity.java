@@ -60,7 +60,7 @@ public class TipsSettingsActivity extends Activity {
 
         root.addView(sectionHeader("Rotation"));
         int rotate = Config.getTipRotateMinutes(this);
-        root.addView(row("Change every: " + (rotate <= 0 ? "On tap only" : rotate + " min"),
+        root.addView(row("Rotate every: " + (rotate <= 0 ? "On tap only" : rotate + " min"),
                 v -> startActivity(new Intent(this, TipRotateActivity.class))));
 
         root.addView(sectionHeader("Tips"));

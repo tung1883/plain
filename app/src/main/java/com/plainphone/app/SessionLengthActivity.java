@@ -19,8 +19,7 @@ public class SessionLengthActivity extends StepperActivity {
 
     @Override
     protected String title() {
-        TimeBlock block = TimeBlock.findById(Config.getTimeBlocks(this), blockId);
-        return "Start " + (block != null ? block.name : "block") + " now for how long?";
+        return "Start now for";
     }
 
     @Override

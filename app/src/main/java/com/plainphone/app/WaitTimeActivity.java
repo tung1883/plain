@@ -8,7 +8,7 @@ public class WaitTimeActivity extends StepperActivity {
 
     @Override
     protected String title() {
-        return "Wait time before opening a flagged app";
+        return "Wait time";
     }
 
     @Override
