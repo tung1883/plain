@@ -5,7 +5,7 @@ public class TipRotateActivity extends StepperActivity {
 
     @Override
     protected String title() {
-        return "Rotate the tip / quote every";
+        return "Rotate every";
     }
 
     @Override

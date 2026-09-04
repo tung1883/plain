@@ -8,7 +8,7 @@ public class BudgetTimeActivity extends StepperActivity {
 
     @Override
     protected String title() {
-        return "Auto-close flagged apps after";
+        return "Auto-close after";
     }
 
     @Override

@@ -8,7 +8,7 @@ public class LockoutTimeActivity extends StepperActivity {
 
     @Override
     protected String title() {
-        return "Reopen lockout after auto-close";
+        return "Reopen lockout after";
     }
 
     @Override
