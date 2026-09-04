@@ -29,6 +29,21 @@ public class TipRotateActivity extends StepperActivity {
     }
 
     @Override
+    protected String unitLabel() {
+        return "min";
+    }
+
+    @Override
+    protected int[] chips() {
+        return new int[]{0, 1, 5, 15, 30};
+    }
+
+    @Override
+    protected String chipText(int value) {
+        return value == 0 ? "Off" : super.chipText(value);
+    }
+
+    @Override
     protected int currentValue() {
         return Config.getTipRotateMinutes(this);
     }

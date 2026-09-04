@@ -43,7 +43,7 @@ public class LockSettingsActivity extends Activity {
         scroller.setBackgroundColor(Color.BLACK);
         scroller.addView(root, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        UiKit.screen(this, "Lock settings", scroller);
+        UiKit.screen(this, "Locker", scroller);
     }
 
     @Override
@@ -76,8 +76,8 @@ public class LockSettingsActivity extends Activity {
                         .putExtra(PinSetupActivity.EXTRA_LOCK_ID, "master"))));
 
         root.addView(row("Re-lock after",
-                RelockPicker.format(Config.getRelockSeconds(this)), MUTED,
-                v -> RelockPicker.show(this, null, null, this::render)));
+                RelockTimeActivity.fmt(Config.getRelockSeconds(this)), MUTED,
+                v -> startActivity(new Intent(this, RelockTimeActivity.class))));
 
         root.addView(sectionHeader("What's locked"));
 

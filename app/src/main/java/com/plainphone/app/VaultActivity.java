@@ -1223,14 +1223,9 @@ public class VaultActivity extends Activity {
     }
 
     private TextView popupTitle(Typeface font, String text) {
-        TextView title = new TextView(this);
-        title.setText(text);
-        title.setTextColor(Color.WHITE);
-        title.setTextSize(18);
-        title.setTypeface(font);
+        TextView title = UiKit.dialogTitle(this, text);
         title.setSingleLine(true);
         title.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
-        title.setPadding(48, 8, 48, 16);
         return title;
     }
 

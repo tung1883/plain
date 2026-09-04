@@ -152,6 +152,19 @@ class UiKit {
         return box;
     }
 
+    /** The one popup header: gray, uppercase, letter-spaced — the Settings section-header look.
+     *  Every dialog title in the app goes through this. */
+    static android.widget.TextView dialogTitle(Context c, String text) {
+        android.widget.TextView t = new android.widget.TextView(c);
+        t.setText(text.toUpperCase());
+        t.setTextColor(Color.GRAY);
+        t.setTextSize(13);
+        t.setLetterSpacing(0.15f);
+        t.setTypeface(Fonts.current(c));
+        t.setPadding(48, 16, 48, 14);
+        return t;
+    }
+
     static void clearDialogChrome(android.app.AlertDialog dialog) {
         if (dialog.getWindow() != null) {
             dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(

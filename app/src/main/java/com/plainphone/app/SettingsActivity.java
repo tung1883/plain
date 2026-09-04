@@ -25,7 +25,7 @@ public class SettingsActivity extends Activity {
     static final String EXTRA_DESTINATION = "destination";
 
     private static final List<String> SECTION_ORDER =
-            Arrays.asList("Appearance", "Apps", "Search", "Plugins", "Permissions");
+            Arrays.asList("Appearance", "Apps", "Plugins", "Permissions");
 
     private LinearLayout root;
     private Typeface georgia;
@@ -107,11 +107,11 @@ entries.add(new Entry("Appearance", "Home screen art", row("Home screen art",
         entries.add(new Entry("Plugins", "4 Vault", row("Vault",
                 v -> startActivity(new Intent(this, VaultSettingsActivity.class)))));
 
-        entries.add(new Entry("Apps", "Lock settings", row("Lock settings",
+        entries.add(new Entry("Plugins", "5 Locker", row("Locker",
                 v -> startActivity(new Intent(this, LockSettingsActivity.class)))));
 
-        entries.add(new Entry("Apps", "App lock", row("App lock",
-                v -> startActivity(new Intent(this, LockedAppsActivity.class)))));
+        entries.add(new Entry("Plugins", "6 Search", row("Search",
+                v -> startActivity(new Intent(this, SearchSettingsActivity.class)))));
 
         entries.add(new Entry("Apps", "Flagged apps", row("Flagged apps",
                 v -> startActivity(new Intent(this, FlaggedAppsActivity.class)))));
@@ -121,9 +121,6 @@ entries.add(new Entry("Appearance", "Home screen art", row("Home screen art",
 
         entries.add(new Entry("Apps", "Time blocks", row("Time blocks",
                 v -> startActivity(new Intent(this, TimeBlocksActivity.class)))));
-
-        entries.add(new Entry("Search", "Search", row("Search",
-                v -> startActivity(new Intent(this, SearchSettingsActivity.class)))));
 
         entries.add(new Entry("Permissions", "App access", row("App access",
                 v -> startActivity(new Intent(this, AppAccessActivity.class)))));

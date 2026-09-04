@@ -32,6 +32,16 @@ public class WaitTimeActivity extends StepperActivity {
     }
 
     @Override
+    protected String unitLabel() {
+        return "sec";
+    }
+
+    @Override
+    protected int[] chips() {
+        return new int[]{10, 30, 60, 90, 120};
+    }
+
+    @Override
     protected int currentValue() {
         return Config.getWaitSeconds(this);
     }

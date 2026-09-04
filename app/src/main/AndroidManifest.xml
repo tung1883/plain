@@ -125,6 +125,11 @@
             android:theme="@style/Theme.PlainPhone" />
 
         <activity
+            android:name=".RelockTimeActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
             android:name=".PinSetupActivity"
             android:exported="false"
             android:theme="@style/Theme.PlainPhone" />
