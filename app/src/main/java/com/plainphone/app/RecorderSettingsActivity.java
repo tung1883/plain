@@ -78,9 +78,10 @@ public class RecorderSettingsActivity extends Activity {
                                 + (local == 1 ? "" : "s") + " to the vault?",
                         "They'll be encrypted and only playable while the vault is unlocked.",
                         "Move", () -> {
-                            int moved = Recorder.moveAllToVault(this);
-                            Toast.makeText(this, "Moved " + moved + " to the vault",
-                                    Toast.LENGTH_SHORT).show();
+                            java.util.List<String> ids = new java.util.ArrayList<>();
+                            for (Recording r : Recorder.all(this)) ids.add(r.id);
+                            SectionJobs.startRecorderToVault(this, ids);
+                            Toast.makeText(this, "Move queued", Toast.LENGTH_SHORT).show();
                             render();
                         }, "Cancel", null);
             }));

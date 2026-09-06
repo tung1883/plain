@@ -112,26 +112,29 @@ class FileIndex {
 
         scanning = true;
         Context appContext = context.getApplicationContext();
-        new Thread(() -> {
-            List<Entry> scanned = new ArrayList<>();
-            long startedAt = System.currentTimeMillis();
-            try {
-                walkAll(roots(appContext), scanned);
-            } catch (Exception ignored) {
+        SearchJobs.startFileIndex(appContext);
+    }
 
-            } finally {
-                android.util.Log.d("PlainFileIndex", "scan finished in "
-                        + (System.currentTimeMillis() - startedAt) + "ms, " + scanned.size() + " entries");
-                entries = scanned;
-                builtAt = System.currentTimeMillis();
-                scanning = false;
-            }
+    static synchronized int rebuildNow(Context context) {
+        scanning = true;
+        List<Entry> scanned = new ArrayList<>();
+        long startedAt = System.currentTimeMillis();
+        try {
+            walkAll(roots(context.getApplicationContext()), scanned);
+        } catch (Exception ignored) {
+        } finally {
+            android.util.Log.d("PlainFileIndex", "scan finished in "
+                    + (System.currentTimeMillis() - startedAt) + "ms, " + scanned.size() + " entries");
+            entries = scanned;
+            builtAt = System.currentTimeMillis();
+            scanning = false;
+        }
 
-            MAIN.post(() -> {
-                OnIndexed current = listener;
-                if (current != null) current.onIndexed();
-            });
-        }).start();
+        MAIN.post(() -> {
+            OnIndexed current = listener;
+            if (current != null) current.onIndexed();
+        });
+        return scanned.size();
     }
 
     private static List<File> roots(Context context) {
@@ -231,4 +234,3 @@ class FileIndex {
                 && ("data".equals(child.getName()) || "obb".equals(child.getName()));
     }
 }
-

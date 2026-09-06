@@ -289,6 +289,36 @@ final class VaultCrypto {
         }
     }
 
+    /** Decrypt a vault content blob into {@code out}, then close both streams. */
+    static void decryptStream(InputStream in, OutputStream out, SecretKey contentKey)
+            throws IOException, GeneralSecurityException {
+        try (InputStream stream = in; OutputStream dest = out) {
+            byte[] prefix = new byte[FILE_PREFIX_LEN];
+            if (readFully(stream, prefix) != FILE_PREFIX_LEN) return;
+
+            byte[] cipherChunk = new byte[CHUNK_PLAIN + GCM_TAG_LEN];
+            long index = 0;
+            int got = readFully(stream, cipherChunk);
+            while (got > 0) {
+                byte[] following = new byte[CHUNK_PLAIN + GCM_TAG_LEN];
+                int nextGot = got == cipherChunk.length ? readFully(stream, following) : 0;
+                boolean last = nextGot == 0;
+
+                Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+                cipher.init(Cipher.DECRYPT_MODE, contentKey,
+                        new GCMParameterSpec(GCM_TAG_BITS, nonce(prefix, index)));
+                cipher.updateAAD(aad(index, last));
+                dest.write(cipher.doFinal(cipherChunk, 0, got));
+                index++;
+
+                if (last) break;
+                cipherChunk = following;
+                got = nextGot;
+            }
+            dest.flush();
+        }
+    }
+
     private static int readFully(InputStream in, byte[] buf) throws IOException {
         int total = 0;
         while (total < buf.length) {

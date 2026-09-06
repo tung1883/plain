@@ -76,4 +76,32 @@ public class JobQueueTest {
         JobQueue.clearForTest(root, enqueued.id);
         assertFalse(JobQueue.pendingForTest(root).iterator().hasNext());
     }
+
+    @Test
+    public void supportsGlobalJobsWithoutLockAreas() {
+        JobQueue.enqueueForTest(root, new JobQueue.Spec("search.file-index")
+                .label("Indexing files")
+                .priority(-20));
+
+        JobQueue.Job read = JobQueue.pendingForTest(root).get(0);
+
+        assertEquals("search.file-index", read.type);
+        assertTrue(read.keepUnlockedAreas.isEmpty());
+        assertTrue(read.requiredUnlockedAreas.isEmpty());
+    }
+
+    @Test
+    public void supportsJobsThatKeepAndRequireMultipleAreas() {
+        JobQueue.enqueueForTest(root, new JobQueue.Spec("recorder.move-to-vault")
+                .keep(JobQueue.AREA_RECORDER, JobQueue.AREA_VAULT)
+                .require(JobQueue.AREA_VAULT)
+                .file("ids", "one\ntwo\n"));
+
+        JobQueue.Job read = JobQueue.pendingForTest(root).get(0);
+
+        assertTrue(read.keepUnlockedAreas.contains(JobQueue.AREA_RECORDER));
+        assertTrue(read.keepUnlockedAreas.contains(JobQueue.AREA_VAULT));
+        assertTrue(read.requiredUnlockedAreas.contains(JobQueue.AREA_VAULT));
+        assertEquals("one\ntwo\n", JobQueue.readAll(new File(new File(root, read.id), "ids")));
+    }
 }

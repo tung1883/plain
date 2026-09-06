@@ -11,7 +11,10 @@ import android.net.Uri;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.provider.DocumentsContract;
 
+import java.io.File;
+import java.io.OutputStream;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -57,8 +60,24 @@ public class JobService extends Service {
             new Thread(() -> runVaultReset(job), "job-vault-reset").start();
         } else if (VaultJobs.isImportType(job.type)) {
             new Thread(() -> runVaultImport(job), "job-vault-import").start();
+        } else if (VaultJobs.TYPE_MOVE_LOCATION.equals(job.type)) {
+            new Thread(() -> runVaultMoveLocation(job), "job-vault-location").start();
+        } else if (VaultJobs.TYPE_DELETE.equals(job.type)) {
+            new Thread(() -> runVaultDelete(job), "job-vault-delete").start();
+        } else if (VaultJobs.TYPE_MOVE.equals(job.type)) {
+            new Thread(() -> runVaultMove(job), "job-vault-move").start();
+        } else if (VaultJobs.TYPE_EXPORT_FILE.equals(job.type)) {
+            new Thread(() -> runVaultExportFile(job), "job-vault-export").start();
+        } else if (VaultJobs.TYPE_EXPORT_TREE.equals(job.type)) {
+            new Thread(() -> runVaultExportTree(job), "job-vault-export").start();
+        } else if (VaultJobs.TYPE_CHANGE_PASSWORD.equals(job.type)) {
+            new Thread(() -> runVaultChangePassword(job), "job-vault-password").start();
         } else if (ImportJobs.isImportType(job.type)) {
             new Thread(() -> runPluginImport(job), "job-import").start();
+        } else if (SectionJobs.isType(job.type)) {
+            new Thread(() -> runSectionJob(job), "job-section").start();
+        } else if (SearchJobs.isType(job.type)) {
+            new Thread(() -> runSearchJob(job), "job-search").start();
         } else {
             android.util.Log.w("JobService", "Dropping unknown job type " + job.type);
             JobQueue.clear(app, job.id);
@@ -116,6 +135,296 @@ public class JobService extends Service {
         VaultJobs.clearReset(app);
         running = false;
         main.post(this::maybeStart);
+    }
+
+    // --- section vault bridge jobs ----------------------------------------
+
+    private void runSectionJob(JobQueue.Job job) {
+        Context app = getApplicationContext();
+        List<String> ids = SectionJobs.readIds(app, job.id);
+        Set<String> done = SectionJobs.readDone(app, job.id);
+        int moved = 0;
+        int total = ids.size();
+        ImportJobs.Snapshot snap = new ImportJobs.Snapshot();
+        snap.plugin = job.type.startsWith("notes.") ? HomeMode.NOTES : HomeMode.RECORDER;
+        snap.label = job.label;
+        snap.total = total;
+        snap.done = done.size();
+        ImportJobs.snapshot = snap;
+        ImportJobs.publishNow();
+
+        for (String id : ids) {
+            if (done.contains(id)) {
+                moved++;
+                continue;
+            }
+            keepAlive(job);
+            if (runSectionOne(app, job.type, id)) moved++;
+            done.add(id);
+            snap.done = done.size();
+            snap.added = moved;
+            SectionJobs.writeDone(app, job.id, done);
+            ImportJobs.publish();
+            throttledNotif(notif(job.label, snap.done + " of " + total, pct(snap.done, total)));
+        }
+
+        SectionJobs.finish(app, job, moved);
+        ImportJobs.clearSnapshot();
+        running = false;
+        main.post(this::maybeStart);
+    }
+
+    // --- global search jobs -----------------------------------------------
+
+    private void runSearchJob(JobQueue.Job job) {
+        Context app = getApplicationContext();
+        try {
+            if (SearchJobs.TYPE_FILE_INDEX.equals(job.type)) {
+                push(notif("Indexing files", "Scanning...", 0));
+                int count = FileIndex.rebuildNow(app);
+                push(notif("Indexing files", count + " entries", 100));
+            }
+        } catch (Exception e) {
+            android.util.Log.w("JobService", "search job failed", e);
+        }
+        JobQueue.clear(app, job.id);
+        running = false;
+        main.post(this::maybeStart);
+    }
+
+    private boolean runSectionOne(Context app, String type, String id) {
+        if (SectionJobs.TYPE_NOTES_TO_VAULT.equals(type)) {
+            Note note = findNote(id);
+            return note != null && Notes.moveToVault(app, note);
+        }
+        if (SectionJobs.TYPE_NOTES_FROM_VAULT.equals(type)) {
+            return Notes.moveOutOfVault(app, id);
+        }
+        if (SectionJobs.TYPE_RECORDER_TO_VAULT.equals(type)) {
+            Recording recording = findRecording(app, id);
+            return recording != null && Recorder.moveToVault(app, recording);
+        }
+        if (SectionJobs.TYPE_RECORDER_FROM_VAULT.equals(type)) {
+            return Recorder.moveOutOfVault(app, id);
+        }
+        if (SectionJobs.TYPE_RECORDER_HEAL.equals(type)) {
+            return Recorder.healVaultMeta(app, id);
+        }
+        return false;
+    }
+
+    private Note findNote(String id) {
+        for (Note note : Config.getNotes(this)) {
+            if (note.id.equals(id)) return note;
+        }
+        return null;
+    }
+
+    private Recording findRecording(Context app, String id) {
+        for (Recording recording : Recorder.all(app)) {
+            if (recording.id.equals(id)) return recording;
+        }
+        return null;
+    }
+
+    // --- vault operations --------------------------------------------------
+
+    private void runVaultMoveLocation(JobQueue.Job job) {
+        Context app = getApplicationContext();
+        boolean ok = false;
+        String message;
+        VaultJobs.Snapshot snap = opSnapshot(job, 0, 1);
+        VaultJobs.publishNow(snap);
+        try {
+            boolean move = Boolean.parseBoolean(job.data.get("move"));
+            File current = new File(job.data.get("current"));
+            File target = new File(job.data.get("target"));
+            if (move) VaultLocation.moveVault(current, target);
+            Config.setVaultLocationPath(app, job.data.get("config"));
+            VaultLocation.ensureNoMedia(target);
+            snap.done = 1;
+            VaultJobs.publishNow(snap);
+            ok = true;
+            message = move ? "Vault moved" : "Location set";
+            push(notif("Vault", message, 100));
+        } catch (Exception e) {
+            message = "Failed: " + e.getMessage();
+            android.util.Log.e("JobService", "vault location move failed", e);
+        }
+        VaultJobs.finish(app, job, ok, message);
+        running = false;
+        main.post(this::maybeStart);
+    }
+
+    private void runVaultDelete(JobQueue.Job job) {
+        Context app = getApplicationContext();
+        List<String> ids = VaultJobs.readIds(app, job.id);
+        Set<String> done = VaultJobs.readDoneIds(app, job.id);
+        VaultJobs.Snapshot snap = opSnapshot(job, done.size(), ids.size());
+        VaultJobs.publishNow(snap);
+        int ok = done.size();
+        for (String id : ids) {
+            if (done.contains(id)) continue;
+            keepAlive(job);
+            try {
+                VaultStore.delete(app, id);
+                ok++;
+            } catch (Exception e) {
+                android.util.Log.w("JobService", "vault delete failed", e);
+            }
+            done.add(id);
+            snap.done = done.size();
+            VaultJobs.writeDoneIds(app, job.id, done);
+            VaultJobs.publish(snap);
+            throttledNotif(notif("Deleting from vault", snap.done + " of " + snap.total,
+                    pct(snap.done, snap.total)));
+        }
+        VaultJobs.finish(app, job, true, "Deleted " + ok + " item(s)");
+        running = false;
+        main.post(this::maybeStart);
+    }
+
+    private void runVaultMove(JobQueue.Job job) {
+        Context app = getApplicationContext();
+        List<String> ids = VaultJobs.readIds(app, job.id);
+        Set<String> done = VaultJobs.readDoneIds(app, job.id);
+        String dest = job.data.get("dest");
+        VaultJobs.Snapshot snap = opSnapshot(job, done.size(), ids.size());
+        VaultJobs.publishNow(snap);
+        int ok = done.size();
+        for (String id : ids) {
+            if (done.contains(id)) continue;
+            keepAlive(job);
+            try {
+                VaultStore.move(app, id, dest);
+                ok++;
+            } catch (Exception e) {
+                android.util.Log.w("JobService", "vault move failed", e);
+            }
+            done.add(id);
+            snap.done = done.size();
+            VaultJobs.writeDoneIds(app, job.id, done);
+            VaultJobs.publish(snap);
+            throttledNotif(notif("Moving vault items", snap.done + " of " + snap.total,
+                    pct(snap.done, snap.total)));
+        }
+        VaultJobs.finish(app, job, true, "Moved " + ok + " item(s)");
+        running = false;
+        main.post(this::maybeStart);
+    }
+
+    private void runVaultExportFile(JobQueue.Job job) {
+        Context app = getApplicationContext();
+        boolean ok = false;
+        String message = "Export failed";
+        VaultJobs.Snapshot snap = opSnapshot(job, 0, 1);
+        VaultJobs.publishNow(snap);
+        keepAlive(job);
+        try (OutputStream out = getContentResolver().openOutputStream(Uri.parse(job.data.get("dest")))) {
+            if (out != null) {
+                VaultStore.exportStream(app, job.data.get("doc"), out);
+                ok = true;
+                message = "Exported";
+                snap.done = 1;
+                VaultJobs.publishNow(snap);
+            }
+        } catch (Exception e) {
+            android.util.Log.w("JobService", "vault export failed", e);
+        }
+        VaultJobs.finish(app, job, ok, message);
+        running = false;
+        main.post(this::maybeStart);
+    }
+
+    private void runVaultExportTree(JobQueue.Job job) {
+        Context app = getApplicationContext();
+        List<String> ids = VaultJobs.readIds(app, job.id);
+        Set<String> done = VaultJobs.readDoneIds(app, job.id);
+        Uri treeUri = Uri.parse(job.data.get("tree"));
+        String treeDocId = DocumentsContract.getTreeDocumentId(treeUri);
+        Uri dirUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, treeDocId);
+        VaultJobs.Snapshot snap = opSnapshot(job, done.size(), ids.size());
+        VaultJobs.publishNow(snap);
+        int ok = 0;
+        for (String id : ids) {
+            if (done.contains(id)) {
+                ok++;
+                continue;
+            }
+            keepAlive(job);
+            try {
+                VaultStore.Entry entry = VaultStore.stat(app, id);
+                if (!entry.isDir) {
+                    Uri fileUri = DocumentsContract.createDocument(getContentResolver(), dirUri,
+                            entry.mimeType == null ? "application/octet-stream" : entry.mimeType,
+                            entry.name);
+                    if (fileUri != null) {
+                        try (OutputStream out = getContentResolver().openOutputStream(fileUri)) {
+                            if (out != null) {
+                                VaultStore.exportStream(app, id, out);
+                                ok++;
+                            }
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                android.util.Log.w("JobService", "vault export failed", e);
+            }
+            done.add(id);
+            snap.done = done.size();
+            VaultJobs.writeDoneIds(app, job.id, done);
+            VaultJobs.publish(snap);
+            throttledNotif(notif("Exporting vault items", snap.done + " of " + snap.total,
+                    pct(snap.done, snap.total)));
+        }
+        VaultJobs.finish(app, job, true, "Exported " + ok + " file(s)");
+        running = false;
+        main.post(this::maybeStart);
+    }
+
+    private void runVaultChangePassword(JobQueue.Job job) {
+        Context app = getApplicationContext();
+        char[] passphrase = VaultJobs.takePassphrase(job.id);
+        boolean ok = false;
+        String message = "Couldn't change password: interrupted";
+        VaultJobs.Snapshot snap = opSnapshot(job, 0, 1);
+        VaultJobs.publishNow(snap);
+        try {
+            if (passphrase == null) throw new IllegalStateException("password no longer available");
+            byte[] masterKey = VaultSession.get().masterKey();
+            if (masterKey == null) throw new IllegalStateException("vault locked");
+            VaultCrypto.Progress progress = (done, total) -> {
+                snap.done = done;
+                snap.total = total;
+                VaultJobs.publish(snap);
+                throttledNotif(notif("Changing vault password", done + " of " + total,
+                        pct(done, total)));
+            };
+            VaultFormat.changePassphrase(VaultSession.vaultRoot(app), masterKey, passphrase, progress);
+            ok = true;
+            message = "Password changed";
+        } catch (Exception e) {
+            message = "Couldn't change password: " + e.getMessage();
+            android.util.Log.w("JobService", "vault password change failed", e);
+        } finally {
+            if (passphrase != null) java.util.Arrays.fill(passphrase, '\0');
+        }
+        VaultJobs.finish(app, job, ok, message);
+        running = false;
+        main.post(this::maybeStart);
+    }
+
+    private VaultJobs.Snapshot opSnapshot(JobQueue.Job job, int done, int total) {
+        VaultJobs.Snapshot snap = new VaultJobs.Snapshot();
+        snap.type = job.type;
+        snap.label = job.label;
+        snap.done = done;
+        snap.total = total;
+        return snap;
+    }
+
+    private static int pct(int done, int total) {
+        return total > 0 ? (int) (100L * done / total) : 0;
     }
 
     // --- vault import -----------------------------------------------------

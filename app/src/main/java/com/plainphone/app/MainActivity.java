@@ -244,6 +244,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        IndexScheduler.schedule(this);
         pm = getPackageManager();
         Config.migrateArt(this);
 
@@ -311,7 +312,12 @@ public class MainActivity extends Activity {
     }
 
     private final VaultJobs.Listener vaultJobListener = () -> runOnUiThread(() -> {
-        if (!isFinishing() && !isDestroyed() && homeUiBuilt) filter(search.getText().toString());
+        if (isFinishing() || isDestroyed() || !homeUiBuilt) return;
+        VaultJobs.Result done = VaultJobs.takeResult();
+        if (done != null && done.message != null) {
+            Toast.makeText(this, done.message, done.ok ? Toast.LENGTH_SHORT : Toast.LENGTH_LONG).show();
+        }
+        filter(search.getText().toString());
     });
 
     private final ImportJobs.Listener importJobListener = () -> runOnUiThread(() -> {
@@ -323,6 +329,10 @@ public class MainActivity extends Activity {
                     : done.plugin == HomeMode.TODOS ? "task" : "recording";
             toast(n == 0 ? "Nothing imported"
                     : "Imported " + n + " " + noun + (n == 1 ? "" : "s"));
+        }
+        SectionJobs.Result sectionDone = SectionJobs.takeResult();
+        if (sectionDone != null && sectionDone.message != null) {
+            Toast.makeText(this, sectionDone.message, Toast.LENGTH_SHORT).show();
         }
         filter(search.getText().toString());
     });
@@ -1090,7 +1100,10 @@ public class MainActivity extends Activity {
                 } else {
                     if (Lock.NOTES.isLocked(this)) Lock.NOTES.keepUnlocked(this);
                     renderNoteSettingsGroup();
-                    if (ImportJobs.pendingForPlugin(this, HomeMode.NOTES)) {
+                    if (SectionJobs.pendingFor(this, HomeMode.NOTES)) {
+                        rows.add(inertRow(SearchResult.Kind.NOTE,
+                                SectionJobs.progressLine(this, HomeMode.NOTES)));
+                    } else if (ImportJobs.pendingForPlugin(this, HomeMode.NOTES)) {
                         rows.add(inertRow(SearchResult.Kind.NOTE,
                                 ImportJobs.progressLine(this, HomeMode.NOTES)));
                     } else {
@@ -1280,9 +1293,12 @@ public class MainActivity extends Activity {
         VaultUi.confirm(this, "Move " + count + " note" + (count == 1 ? "" : "s") + " to the vault?",
                 "They'll be encrypted and only readable while the vault is unlocked.",
                 "Move", () -> {
-                    int moved = Notes.moveAllToVault(this);
-                    Toast.makeText(this, "Moved " + moved + " to the vault",
-                            Toast.LENGTH_SHORT).show();
+                    List<String> ids = new ArrayList<>();
+                    for (Note n : Config.getNotes(this)) {
+                        if (!n.isBlank()) ids.add(n.id);
+                    }
+                    SectionJobs.startNotesToVault(this, ids);
+                    Toast.makeText(this, "Move queued", Toast.LENGTH_SHORT).show();
                     filter(search.getText().toString());
                 }, "Cancel", null);
     }
@@ -1346,7 +1362,10 @@ public class MainActivity extends Activity {
             }
         }
 
-        if (ImportJobs.pendingForPlugin(this, HomeMode.RECORDER)) {
+        if (SectionJobs.pendingFor(this, HomeMode.RECORDER)) {
+            rows.add(inertRow(SearchResult.Kind.RECORDING,
+                    SectionJobs.progressLine(this, HomeMode.RECORDER)));
+        } else if (ImportJobs.pendingForPlugin(this, HomeMode.RECORDER)) {
             rows.add(inertRow(SearchResult.Kind.RECORDING,
                     ImportJobs.progressLine(this, HomeMode.RECORDER)));
         } else {
@@ -1503,12 +1522,10 @@ public class MainActivity extends Activity {
         }
         if (vaulted > 0) {
             actions.add(new BarAction("Move out", () -> {
-                int moved = 0;
-                for (Recording r : sel) {
-                    if (Recorder.isVaulted(r.id) && Recorder.moveOutOfVault(this, r.id)) moved++;
-                }
-                Toast.makeText(this, "Moved " + moved + " out of the vault",
-                        Toast.LENGTH_SHORT).show();
+                List<String> moveIds = new ArrayList<>();
+                for (Recording r : sel) if (Recorder.isVaulted(r.id)) moveIds.add(r.id);
+                SectionJobs.startRecorderFromVault(this, moveIds);
+                Toast.makeText(this, "Move queued", Toast.LENGTH_SHORT).show();
                 exitSelection();
             }));
         }
@@ -1549,10 +1566,10 @@ public class MainActivity extends Activity {
             return;
         }
         int moved = 0;
-        for (Recording r : sel) {
-            if (!Recorder.isVaulted(r.id) && Recorder.moveToVault(this, r)) moved++;
-        }
-        Toast.makeText(this, "Moved " + moved + " to the vault", Toast.LENGTH_SHORT).show();
+        List<String> ids = new ArrayList<>();
+        for (Recording r : sel) if (!Recorder.isVaulted(r.id)) ids.add(r.id);
+        SectionJobs.startRecorderToVault(this, ids);
+        Toast.makeText(this, "Move queued", Toast.LENGTH_SHORT).show();
         exitSelection();
     }
 
@@ -1561,9 +1578,10 @@ public class MainActivity extends Activity {
             unlockVaultThen(() -> noteMoveToVault(sel));
             return;
         }
-        int moved = 0;
-        for (Note n : sel) if (!Notes.isVaulted(n.id) && Notes.moveToVault(this, n)) moved++;
-        Toast.makeText(this, "Moved " + moved + " to the vault", Toast.LENGTH_SHORT).show();
+        List<String> ids = new ArrayList<>();
+        for (Note n : sel) if (!Notes.isVaulted(n.id)) ids.add(n.id);
+        SectionJobs.startNotesToVault(this, ids);
+        Toast.makeText(this, "Move queued", Toast.LENGTH_SHORT).show();
         exitSelection();
     }
 
@@ -1576,9 +1594,10 @@ public class MainActivity extends Activity {
                         + " to the vault?",
                 "They'll be encrypted and only playable while the vault is unlocked.",
                 "Move", () -> {
-                    int moved = Recorder.moveAllToVault(this);
-                    Toast.makeText(this, "Moved " + moved + " to the vault",
-                            Toast.LENGTH_SHORT).show();
+                    List<String> ids = new ArrayList<>();
+                    for (Recording r : Recorder.all(this)) ids.add(r.id);
+                    SectionJobs.startRecorderToVault(this, ids);
+                    Toast.makeText(this, "Move queued", Toast.LENGTH_SHORT).show();
                     filter(search.getText().toString());
                 }, "Cancel", null);
     }
@@ -1633,9 +1652,10 @@ public class MainActivity extends Activity {
         }
         if (vaulted > 0) {
             actions.add(new BarAction("Move out", () -> {
-                int moved = 0;
-                for (Note n : sel) if (Notes.isVaulted(n.id) && Notes.moveOutOfVault(this, n.id)) moved++;
-                Toast.makeText(this, "Moved " + moved + " out of the vault", Toast.LENGTH_SHORT).show();
+                List<String> moveIds = new ArrayList<>();
+                for (Note n : sel) if (Notes.isVaulted(n.id)) moveIds.add(n.id);
+                SectionJobs.startNotesFromVault(this, moveIds);
+                Toast.makeText(this, "Move queued", Toast.LENGTH_SHORT).show();
                 exitSelection();
             }));
         }

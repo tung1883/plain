@@ -126,7 +126,7 @@ public class VaultActivity extends Activity {
 
     private void onJobChanged() {
         if (isFinishing() || isDestroyed()) return;
-        boolean stillRunning = VaultJobs.importPending(this) || VaultJobs.resetPending(this);
+        boolean stillRunning = VaultJobs.anyPending(this);
         if (stillRunning) {
             // Only redraw the visible progress row — no disk re-listing per tick.
             main.removeCallbacks(jobTick);
@@ -142,6 +142,10 @@ public class VaultActivity extends Activity {
                     + (r.filesSkipped > 0 ? ", " + r.filesSkipped + " already there" : "")
                     + (r.filesFailed > 0 ? ", " + r.filesFailed + " failed" : "");
             Toast.makeText(this, msg, Toast.LENGTH_LONG).show();
+        }
+        VaultJobs.Result result = VaultJobs.takeResult();
+        if (result != null && result.message != null) {
+            Toast.makeText(this, result.message, result.ok ? Toast.LENGTH_SHORT : Toast.LENGTH_LONG).show();
         }
     }
 
@@ -639,20 +643,9 @@ public class VaultActivity extends Activity {
     private void confirmDeleteSelected() {
         List<String> ids = new ArrayList<>(selected);
         confirm("Delete " + ids.size() + " item(s)?", null, "Delete", () -> {
-            showBusy("Deleting…");
-            new Thread(() -> {
-                for (String id : ids) {
-                    try {
-                        VaultStore.delete(this, id);
-                    } catch (Exception ignored) {
-                    }
-                }
-                main.post(() -> {
-                    hideBusy();
-                    exitSelection();
-                    loadListing();
-                });
-            }).start();
+            VaultJobs.startDelete(this, ids, "Deleting " + ids.size() + " item(s)");
+            Toast.makeText(this, "Delete queued", Toast.LENGTH_SHORT).show();
+            exitSelection();
         });
     }
 
@@ -814,50 +807,21 @@ public class VaultActivity extends Activity {
     }
 
     private void doMove(List<String> ids, String destParent) {
-        int ok = 0;
-        for (String id : ids) {
-            try {
-                VaultStore.move(this, id, destParent);
-                ok++;
-            } catch (Exception ignored) {
-            }
-        }
-        Toast.makeText(this, "Moved " + ok + " item(s)", Toast.LENGTH_SHORT).show();
+        VaultJobs.startMove(this, ids, destParent, "Moving " + ids.size() + " item(s)");
+        Toast.makeText(this, "Move queued", Toast.LENGTH_SHORT).show();
         exitSelection();
-        loadListing();
     }
 
     private void exportSelectedInto(Uri treeUri) {
         List<String> ids = new ArrayList<>(selected);
+        try {
+            getContentResolver().takePersistableUriPermission(treeUri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+        } catch (SecurityException ignored) {
+        }
         exitSelection();
-        showBusy("Exporting…");
-        new Thread(() -> {
-            String treeDocId = DocumentsContract.getTreeDocumentId(treeUri);
-            Uri dirUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, treeDocId);
-            int ok = 0;
-            for (String id : ids) {
-                try {
-                    VaultStore.Entry entry = VaultStore.stat(this, id);
-                    if (entry.isDir) continue;
-                    Uri fileUri = DocumentsContract.createDocument(getContentResolver(), dirUri,
-                            entry.mimeType == null ? "application/octet-stream" : entry.mimeType,
-                            entry.name);
-                    if (fileUri == null) continue;
-                    try (OutputStream out = getContentResolver().openOutputStream(fileUri)) {
-                        if (out != null) {
-                            VaultStore.exportStream(this, id, out);
-                            ok++;
-                        }
-                    }
-                } catch (Exception ignored) {
-                }
-            }
-            int done = ok;
-            main.post(() -> {
-                hideBusy();
-                Toast.makeText(this, "Exported " + done + " file(s)", Toast.LENGTH_SHORT).show();
-            });
-        }).start();
+        VaultJobs.startExportTree(this, ids, treeUri, "Exporting " + ids.size() + " item(s)");
+        Toast.makeText(this, "Export queued", Toast.LENGTH_SHORT).show();
     }
 
     // --- single-entry options (long-press disabled in favour of select;
@@ -912,21 +876,10 @@ public class VaultActivity extends Activity {
         box.addView(option(font, "Delete", v -> {
             dialog.dismiss();
             confirm("Delete " + entry.name + "?", null, "Delete", () -> {
-                showBusy("Deleting…");
-                new Thread(() -> {
-                    boolean ok = true;
-                    try {
-                        VaultStore.delete(this, entry.docId);
-                    } catch (Exception e) {
-                        ok = false;
-                    }
-                    boolean done = ok;
-                    main.post(() -> {
-                        hideBusy();
-                        if (!done) Toast.makeText(this, "Delete failed", Toast.LENGTH_SHORT).show();
-                        loadListing();
-                    });
-                }).start();
+                List<String> ids = new ArrayList<>();
+                ids.add(entry.docId);
+                VaultJobs.startDelete(this, ids, "Deleting " + entry.name);
+                Toast.makeText(this, "Delete queued", Toast.LENGTH_SHORT).show();
             });
         }));
         showPopup(dialog);
@@ -1078,23 +1031,13 @@ public class VaultActivity extends Activity {
         String docId = pendingExportDocId;
         pendingExportDocId = null;
         if (docId == null) return;
-        showBusy("Exporting…");
-        new Thread(() -> {
-            boolean ok = false;
-            try (OutputStream out = getContentResolver().openOutputStream(dest)) {
-                if (out != null) {
-                    VaultStore.exportStream(this, docId, out);
-                    ok = true;
-                }
-            } catch (Exception ignored) {
-            }
-            boolean done = ok;
-            main.post(() -> {
-                hideBusy();
-                Toast.makeText(this, done ? "Exported" : "Export failed",
-                        Toast.LENGTH_SHORT).show();
-            });
-        }).start();
+        try {
+            getContentResolver().takePersistableUriPermission(dest,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+        } catch (SecurityException ignored) {
+        }
+        VaultJobs.startExportFile(this, docId, dest, "Exporting");
+        Toast.makeText(this, "Export queued", Toast.LENGTH_SHORT).show();
     }
 
     private String queryName(Uri uri) {

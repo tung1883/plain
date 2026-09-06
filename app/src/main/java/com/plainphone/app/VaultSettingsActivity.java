@@ -12,7 +12,6 @@ import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
-import android.content.Context;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -25,7 +24,6 @@ public class VaultSettingsActivity extends Activity {
     private LinearLayout root;
     private FrameLayout stack;
     private Typeface font;
-    private boolean busy;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -132,55 +130,6 @@ public class VaultSettingsActivity extends Activity {
         finish();
     }
 
-    /**
-     * Run a slow filesystem job (wipe / move — hundreds of files) off the main thread
-     * behind a blocking overlay. Deleting the vault inline used to ANR ("Waited 10000ms
-     * for FocusEvent").
-     */
-    private void runBlocking(String label, Runnable work, Runnable onDone) {
-        if (busy) return;
-        busy = true;
-        View overlay = busyOverlay(label);
-        stack.addView(overlay);
-        new Thread(() -> {
-            Throwable failure = null;
-            try {
-                work.run();
-            } catch (Throwable t) {
-                failure = t;
-            }
-            final Throwable f = failure;
-            runOnUiThread(() -> {
-                busy = false;
-                stack.removeView(overlay);
-                if (isFinishing() || isDestroyed()) return;
-                if (f != null) {
-                    Toast.makeText(this, "Failed: " + f.getMessage(), Toast.LENGTH_LONG).show();
-                } else if (onDone != null) {
-                    onDone.run();
-                }
-                render();
-            });
-        }, "vault-settings-job").start();
-    }
-
-    private View busyOverlay(String label) {
-        LinearLayout box = new LinearLayout(this);
-        box.setOrientation(LinearLayout.VERTICAL);
-        box.setGravity(Gravity.CENTER);
-        box.setBackgroundColor(Color.BLACK);
-        box.setClickable(true);
-        box.addView(UiKit.spinner(this));
-        TextView text = new TextView(this);
-        text.setText(label);
-        text.setTextColor(Color.WHITE);
-        text.setTextSize(15);
-        text.setTypeface(font);
-        text.setPadding(0, 32, 0, 0);
-        box.addView(text);
-        return box;
-    }
-
     private void pickLocation() {
         if (!VaultLocation.hasStorageAccess()) {
             Toast.makeText(this, "Grant all-files access first", Toast.LENGTH_SHORT).show();
@@ -229,19 +178,12 @@ public class VaultSettingsActivity extends Activity {
         boolean haveVault = VaultFormat.exists(current);
         forceLock();
 
-        Context app = getApplicationContext();
-        runBlocking(haveVault ? "Moving the vault…" : "Setting location…",
-                () -> {
-                    try {
-                        if (haveVault) VaultLocation.moveVault(current, target);
-                    } catch (java.io.IOException e) {
-                        throw new RuntimeException(e.getMessage(), e);
-                    }
-                    Config.setVaultLocationPath(app, newConfigPath);
-                    VaultLocation.ensureNoMedia(target);
-                },
-                () -> Toast.makeText(this, haveVault ? "Vault moved" : "Location set",
-                        Toast.LENGTH_SHORT).show());
+        VaultJobs.startMoveLocation(this, current, target, newConfigPath, haveVault);
+        Toast.makeText(this, haveVault ? "Vault move queued" : "Location change queued",
+                Toast.LENGTH_SHORT).show();
+        startActivity(new Intent(this, MainActivity.class)
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP));
+        finish();
     }
 
     private void forceLock() {

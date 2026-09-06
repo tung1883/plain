@@ -102,30 +102,10 @@ public class VaultChangePasswordActivity extends Activity {
     private void apply(char[] newPassphrase) {
         view.showBusy(true);
         view.setProgressVerb("Re-encrypting");
-        VaultCrypto.Progress progress = (done, total) ->
-                main.post(() -> view.setProgress(done, total));
-        new Thread(() -> {
-            String error = null;
-            byte[] masterKey = VaultSession.get().masterKey();
-            try {
-                if (masterKey == null) throw new IllegalStateException("vault locked");
-                VaultFormat.changePassphrase(VaultSession.vaultRoot(this), masterKey,
-                        newPassphrase, progress);
-            } catch (Exception e) {
-                error = "Couldn't change password: " + e.getMessage();
-            } finally {
-                java.util.Arrays.fill(newPassphrase, '\0');
-            }
-            String message = error;
-            main.post(() -> {
-                if (message != null) {
-                    view.reject(message);
-                    return;
-                }
-                Toast.makeText(this, "Password changed", Toast.LENGTH_SHORT).show();
-                finish();
-            });
-        }).start();
+        VaultJobs.startChangePassword(this, newPassphrase);
+        java.util.Arrays.fill(newPassphrase, '\0');
+        Toast.makeText(this, "Password change queued", Toast.LENGTH_SHORT).show();
+        finish();
     }
 
     private void swap(PassphraseView next) {
