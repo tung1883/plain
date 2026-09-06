@@ -1,14 +1,9 @@
 package com.plainphone.app;
 
 import android.content.Context;
-import android.content.Intent;
 import android.net.Uri;
 
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -16,20 +11,15 @@ import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
- * Persistent, resumable background file-imports for the home plugins (Notes,
- * To-do, Rec) — the small sibling of {@link VaultJobs}. Each queued import is a
- * directory under {@code files/import-jobs/}; it exists for exactly as long as
- * the import is unfinished, so a process kill mid-import is picked up and
- * finished on next launch. One import runs at a time, executed by
- * {@link ImportJobService}; the rest queue, oldest first.
- *
- * <p>While a plugin has an import pending it is kept unlocked and the home list
- * shows an inert "Importing…" row (see {@link Lock#importing} and
- * {@code MainActivity}).
+ * Home-section import facade over the global {@link JobQueue}. Kept as the UI API.
  */
 final class ImportJobs {
 
     private ImportJobs() {}
+
+    static final String TYPE_NOTES = "notes.import";
+    static final String TYPE_TODOS = "todos.import";
+    static final String TYPE_RECORDER = "recorder.import";
 
     // --- listeners ------------------------------------------------
 
@@ -58,9 +48,7 @@ final class ImportJobs {
         Result(HomeMode plugin, int added) { this.plugin = plugin; this.added = added; }
     }
 
-    /** The just-finished import, for a one-time toast. Consumed by {@link #takeResult}. */
     private static volatile Result lastResult;
-
     private static long lastFanout;
 
     static void publish() {
@@ -68,17 +56,20 @@ final class ImportJobs {
         if (now - lastFanout < 350) return;
         lastFanout = now;
         for (Listener l : listeners) l.onImportJobChanged();
+        JobQueue.publish();
     }
 
     static void publishNow() {
         lastFanout = android.os.SystemClock.uptimeMillis();
         for (Listener l : listeners) l.onImportJobChanged();
+        JobQueue.publish();
     }
 
     static void clearSnapshot() {
         snapshot = null;
         lastFanout = 0;
         for (Listener l : listeners) l.onImportJobChanged();
+        JobQueue.publish();
     }
 
     static void setResult(HomeMode plugin, int added) {
@@ -94,29 +85,30 @@ final class ImportJobs {
     // --- state queries -------------------------------------------
 
     static boolean anyPending(Context c) {
+        migrateLegacy(c);
         return !pendingJobs(c).isEmpty();
     }
 
     static boolean pendingForPlugin(Context c, HomeMode plugin) {
+        migrateLegacy(c);
         for (Job j : pendingJobs(c)) if (j.plugin == plugin) return true;
         return false;
     }
 
-    /** e.g. "importing 3 files" for the lock-confirm dialog, or null. */
     static String detailForPlugin(Context c, HomeMode plugin) {
+        migrateLegacy(c);
         for (Job j : pendingJobs(c)) {
             if (j.plugin == plugin) return "importing " + j.label;
         }
         return null;
     }
 
-    /** Row text for the home list while a plugin's import is pending. */
     static String progressLine(Context c, HomeMode plugin) {
         Snapshot s = snapshot;
         if (s != null && s.plugin == plugin && s.total > 1) {
-            return "Importing " + Math.min(s.done + 1, s.total) + " of " + s.total + "…";
+            return "Importing " + Math.min(s.done + 1, s.total) + " of " + s.total + "...";
         }
-        return "Importing…";
+        return "Importing...";
     }
 
     // --- job record --------------------------------------------
@@ -128,163 +120,178 @@ final class ImportJobs {
         List<Uri> uris = new ArrayList<>();
     }
 
-    /** Queue an import. The SAF read grants must already be persisted by the caller. */
     static void start(Context context, HomeMode plugin, List<Uri> uris, String label) {
         if (uris == null || uris.isEmpty()) return;
-        File d = newJobDir(context);
-        writeLines(new File(d, "job"), "plugin=" + plugin.name(), "label=" + label);
         StringBuilder sb = new StringBuilder();
-        for (Uri u : uris) sb.append(u.toString()).append('\n');
-        try {
-            atomicWrite(new File(d, "uris"), sb.toString());
-        } catch (IOException e) {
-            android.util.Log.w("ImportJobs", "uris write failed", e);
-        }
-        kick(context);
+        for (Uri u : uris) sb.append(u).append('\n');
+        JobQueue.enqueue(context, new JobQueue.Spec(typeFor(plugin))
+                .label(label)
+                .keep(areaFor(plugin))
+                .put("plugin", plugin.name())
+                .put("label", label)
+                .file("uris", sb.toString()));
     }
 
     static void resumeIfPending(Context context) {
-        if (anyPending(context)) kick(context);
+        migrateLegacy(context);
+        JobQueue.resumeIfPending(context);
     }
 
-    private static void kick(Context context) {
-        context.getApplicationContext().startForegroundService(
-                new Intent(context, ImportJobService.class));
+    static boolean isImportType(String type) {
+        return TYPE_NOTES.equals(type) || TYPE_TODOS.equals(type) || TYPE_RECORDER.equals(type);
     }
 
-    /** Queued imports, oldest first. */
     static List<Job> pendingJobs(Context context) {
+        migrateLegacy(context);
         List<Job> out = new ArrayList<>();
-        File[] kids = queueDir(context).listFiles();
-        if (kids == null) return out;
-        java.util.Arrays.sort(kids, (a, b) -> Long.compare(a.lastModified(), b.lastModified()));
-        for (File dir : kids) {
-            if (!dir.isDirectory()) continue;
-            Job j = readJob(dir);
-            if (j != null) {
-                j.id = dir.getName();
-                out.add(j);
-            }
+        for (JobQueue.Job job : JobQueue.pending(context)) {
+            if (!isImportType(job.type)) continue;
+            Job j = jobFrom(context, job);
+            if (j != null) out.add(j);
         }
         return out;
     }
 
-    private static Job readJob(File dir) {
-        File jobFile = new File(dir, "job");
-        File urisFile = new File(dir, "uris");
-        if (!jobFile.exists() || !urisFile.exists()) return null;
-        Job j = new Job();
-        for (String line : readAll(jobFile).split("\n")) {
-            int eq = line.indexOf('=');
-            if (eq < 0) continue;
-            String k = line.substring(0, eq), v = line.substring(eq + 1);
-            if ("plugin".equals(k)) {
-                try { j.plugin = HomeMode.valueOf(v); } catch (Exception ignored) {}
-            } else if ("label".equals(k)) {
-                j.label = v;
-            }
+    static Job jobFrom(Context context, JobQueue.Job job) {
+        if (job == null || !isImportType(job.type)) return null;
+        Job out = new Job();
+        out.id = job.id;
+        out.plugin = pluginFor(job.type, job.data.get("plugin"));
+        out.label = job.data.get("label");
+        if (out.label == null) out.label = job.label;
+        for (String line : JobQueue.readText(context, job.id, "uris").split("\n")) {
+            if (!line.isEmpty()) out.uris.add(Uri.parse(line));
         }
-        if (j.plugin == null) return null;
-        for (String line : readAll(urisFile).split("\n")) {
-            if (!line.isEmpty()) j.uris.add(Uri.parse(line));
-        }
-        if (j.uris.isEmpty()) return null;
-        if (j.label == null) j.label = j.uris.size() + " files";
-        return j;
+        if (out.plugin == null || out.uris.isEmpty()) return null;
+        if (out.label == null) out.label = out.uris.size() + " files";
+        return out;
     }
 
     static Set<String> readDone(Context context, String jobId) {
         Set<String> set = new LinkedHashSet<>();
-        File f = new File(new File(queueDir(context), jobId), "done");
-        if (!f.exists()) return set;
-        for (String line : readAll(f).split("\n")) if (!line.isEmpty()) set.add(line);
+        for (String line : JobQueue.readText(context, jobId, "done").split("\n")) {
+            if (!line.isEmpty()) set.add(line);
+        }
         return set;
     }
 
     static void writeDone(Context context, String jobId, Set<String> done, int added) {
-        File dir = new File(queueDir(context), jobId);
         StringBuilder sb = new StringBuilder();
         for (String u : done) sb.append(u).append('\n');
-        try {
-            atomicWrite(new File(dir, "done"), sb.toString());
-            atomicWrite(new File(dir, "added"), Integer.toString(added));
-        } catch (IOException e) {
-            android.util.Log.w("ImportJobs", "done write failed", e);
-        }
+        JobQueue.writeText(context, jobId, "done", sb.toString());
+        JobQueue.writeText(context, jobId, "added", Integer.toString(added));
     }
 
     static int readAdded(Context context, String jobId) {
-        File f = new File(new File(queueDir(context), jobId), "added");
-        if (!f.exists()) return 0;
+        String raw = JobQueue.readText(context, jobId, "added").trim();
+        if (raw.isEmpty()) return 0;
         try {
-            return Integer.parseInt(readAll(f).trim());
+            return Integer.parseInt(raw);
         } catch (NumberFormatException e) {
             return 0;
         }
     }
 
     static void clearJob(Context context, String jobId) {
-        File d = new File(queueDir(context), jobId);
-        File[] kids = d.listFiles();
-        if (kids != null) for (File f : kids) f.delete();
-        d.delete();
+        JobQueue.clear(context, jobId);
     }
 
-    // --- files -------------------------------------------------
-
-    private static File dir(Context context) {
-        File d = new File(context.getFilesDir(), "import-jobs");
-        d.mkdirs();
-        return d;
-    }
-
-    private static File queueDir(Context context) {
-        return dir(context);
-    }
-
-    private static File newJobDir(Context context) {
-        long stamp = System.currentTimeMillis();
-        File d = new File(queueDir(context), Long.toString(stamp));
-        for (int i = 1; d.exists(); i++) d = new File(queueDir(context), stamp + "-" + i);
-        d.mkdirs();
-        return d;
-    }
-
-    private static void writeLines(File f, String... lines) {
-        try {
-            atomicWrite(f, String.join("\n", lines));
-        } catch (IOException e) {
-            android.util.Log.w("ImportJobs", "job record write failed", e);
+    static int importOne(Context c, HomeMode plugin, Uri uri) {
+        switch (plugin) {
+            case NOTES:    return Notes.importOne(c, uri) ? 1 : 0;
+            case RECORDER: return Recorder.importOne(c, uri) ? 1 : 0;
+            case TODOS:    return Math.max(0, Todos.importFromFile(c, uri));
+            default:       return 0;
         }
     }
 
-    private static void atomicWrite(File f, String content) throws IOException {
-        File tmp = new File(f.getParentFile(), f.getName() + ".tmp");
-        try (FileOutputStream out = new FileOutputStream(tmp)) {
-            out.write(content.getBytes(StandardCharsets.UTF_8));
-            out.getFD().sync();
-        }
-        if (!tmp.renameTo(f)) {
-            try (FileOutputStream out = new FileOutputStream(f)) {
-                out.write(content.getBytes(StandardCharsets.UTF_8));
-                out.getFD().sync();
+    static void migrateLegacy(Context context) {
+        File old = new File(context.getFilesDir(), "import-jobs");
+        if (!old.exists()) return;
+        File[] kids = old.listFiles();
+        if (kids != null) {
+            java.util.Arrays.sort(kids, (a, b) -> Long.compare(a.lastModified(), b.lastModified()));
+            for (File dir : kids) {
+                if (!dir.isDirectory()) continue;
+                LegacyJob legacy = readLegacy(dir);
+                if (legacy == null) continue;
+                JobQueue.Job job = JobQueue.enqueueMigrated(context, new JobQueue.Spec(typeFor(legacy.plugin))
+                        .label(legacy.label)
+                        .keep(areaFor(legacy.plugin))
+                        .put("plugin", legacy.plugin.name())
+                        .put("label", legacy.label)
+                        .file("uris", legacy.urisText));
+                String done = JobQueue.readAll(new File(dir, "done"));
+                String added = JobQueue.readAll(new File(dir, "added"));
+                if (!done.isEmpty()) JobQueue.writeText(context, job.id, "done", done);
+                if (!added.isEmpty()) JobQueue.writeText(context, job.id, "added", added);
             }
-            tmp.delete();
+        }
+        deleteRecursively(old);
+    }
+
+    private static final class LegacyJob {
+        HomeMode plugin;
+        String label;
+        String urisText;
+    }
+
+    private static LegacyJob readLegacy(File dir) {
+        File jobFile = new File(dir, "job");
+        File urisFile = new File(dir, "uris");
+        if (!jobFile.exists() || !urisFile.exists()) return null;
+        LegacyJob out = new LegacyJob();
+        for (String line : JobQueue.readAll(jobFile).split("\n")) {
+            int eq = line.indexOf('=');
+            if (eq < 0) continue;
+            String k = line.substring(0, eq);
+            String v = line.substring(eq + 1);
+            if ("plugin".equals(k)) {
+                try { out.plugin = HomeMode.valueOf(v); } catch (Exception ignored) {}
+            } else if ("label".equals(k)) {
+                out.label = v;
+            }
+        }
+        out.urisText = JobQueue.readAll(urisFile);
+        if (out.plugin == null || out.urisText.trim().isEmpty()) return null;
+        if (out.label == null) out.label = out.urisText.split("\n").length + " files";
+        return out;
+    }
+
+    private static String typeFor(HomeMode plugin) {
+        switch (plugin) {
+            case NOTES: return TYPE_NOTES;
+            case TODOS: return TYPE_TODOS;
+            case RECORDER: return TYPE_RECORDER;
+            default: throw new IllegalArgumentException("Unsupported import plugin: " + plugin);
         }
     }
 
-    private static String readAll(File f) {
-        try (FileInputStream in = new FileInputStream(f)) {
-            byte[] buf = new byte[(int) f.length()];
-            int n = 0;
-            while (n < buf.length) {
-                int r = in.read(buf, n, buf.length - n);
-                if (r < 0) break;
-                n += r;
-            }
-            return new String(buf, 0, n, StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            return "";
+    private static HomeMode pluginFor(String type, String stored) {
+        if (stored != null) {
+            try { return HomeMode.valueOf(stored); } catch (Exception ignored) {}
         }
+        if (TYPE_NOTES.equals(type)) return HomeMode.NOTES;
+        if (TYPE_TODOS.equals(type)) return HomeMode.TODOS;
+        if (TYPE_RECORDER.equals(type)) return HomeMode.RECORDER;
+        return null;
+    }
+
+    private static String areaFor(HomeMode plugin) {
+        switch (plugin) {
+            case NOTES: return JobQueue.AREA_NOTES;
+            case TODOS: return JobQueue.AREA_TODOS;
+            case RECORDER: return JobQueue.AREA_RECORDER;
+            default: return "";
+        }
+    }
+
+    private static void deleteRecursively(File file) {
+        if (file == null || !file.exists()) return;
+        if (file.isDirectory()) {
+            File[] kids = file.listFiles();
+            if (kids != null) for (File kid : kids) deleteRecursively(kid);
+        }
+        file.delete();
     }
 }
