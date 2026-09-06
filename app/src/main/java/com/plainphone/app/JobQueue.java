@@ -122,6 +122,17 @@ final class JobQueue {
         return job;
     }
 
+    static Job enqueuePrepared(Context context, Spec spec) {
+        Job job = enqueue(dir(context), spec);
+        publish();
+        return job;
+    }
+
+    static void kick(Context context) {
+        context.getApplicationContext().startForegroundService(
+                new Intent(context, JobService.class));
+    }
+
     private static Job enqueue(File root, Spec spec) {
         File d = newJobDir(root);
         Job job = new Job();
@@ -290,11 +301,6 @@ final class JobQueue {
         File d = new File(context.getFilesDir(), "jobs");
         d.mkdirs();
         return d;
-    }
-
-    private static void kick(Context context) {
-        context.getApplicationContext().startForegroundService(
-                new Intent(context, JobService.class));
     }
 
     private static File newJobDir(Context context) {

@@ -7,6 +7,7 @@ import java.io.File;
 import java.io.IOException;
 import java.util.LinkedHashSet;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
@@ -20,8 +21,15 @@ final class VaultJobs {
     static final String TYPE_IMPORT = "vault.import";
     static final String TYPE_IMPORT_FOLDER = "vault.import.folder";
     static final String TYPE_IMPORT_FILES = "vault.import.files";
+    static final String TYPE_MOVE_LOCATION = "vault.move-location";
+    static final String TYPE_DELETE = "vault.delete";
+    static final String TYPE_MOVE = "vault.move";
+    static final String TYPE_EXPORT_FILE = "vault.export.file";
+    static final String TYPE_EXPORT_TREE = "vault.export.tree";
+    static final String TYPE_CHANGE_PASSWORD = "vault.change-password";
 
     static volatile boolean cancelImportRequested;
+    private static final ConcurrentHashMap<String, char[]> passphraseJobs = new ConcurrentHashMap<>();
 
     // --- listeners ------------------------------------------------
 
@@ -44,10 +52,13 @@ final class VaultJobs {
         int doneFiles, totalFiles;
         int failed;
         int deleted, total;
+        String label;
+        int done;
     }
 
     static volatile Snapshot snapshot;
     static volatile VaultImport.Result lastImport;
+    static volatile Result lastResult;
     private static long lastFanout;
 
     static void publish(Snapshot s) {
@@ -86,17 +97,29 @@ final class VaultJobs {
 
     static boolean anyPending(Context c) {
         migrateLegacy(c);
-        return JobQueue.anyOfType(c, TYPE_RESET) || JobQueue.anyWithPrefix(c, TYPE_IMPORT);
+        return JobQueue.anyWithPrefix(c, "vault.");
     }
 
     static String activeLabel(Context c) {
         java.util.List<Import> q = pendingImports(c);
-        if (q.isEmpty()) return resetPending(c) ? "resetting" : null;
+        if (q.isEmpty()) {
+            if (resetPending(c)) return "resetting";
+            for (JobQueue.Job job : JobQueue.pendingByPrefix(c, "vault.")) {
+                return job.label != null ? job.label.toLowerCase() : job.type;
+            }
+            return null;
+        }
         Snapshot s = snapshot;
         String running = s != null && TYPE_IMPORT.equals(s.type) ? s.folderName : q.get(0).folderName;
         if (running == null) running = "a folder";
         return q.size() == 1 ? "importing " + running
                 : "importing " + running + " (+" + (q.size() - 1) + " more)";
+    }
+
+    static Result takeResult() {
+        Result r = lastResult;
+        lastResult = null;
+        return r;
     }
 
     // --- start / resume -----------------------------------------
@@ -139,6 +162,72 @@ final class VaultJobs {
                 .put("name", label)
                 .put("dup", dup.name())
                 .file("files", sb.toString()));
+    }
+
+    static void startMoveLocation(Context context, File current, File target, String newConfigPath,
+                                  boolean moveExistingVault) {
+        JobQueue.Spec spec = new JobQueue.Spec(TYPE_MOVE_LOCATION)
+                .label(moveExistingVault ? "Moving the vault" : "Setting vault location")
+                .put("current", current.getAbsolutePath())
+                .put("target", target.getAbsolutePath())
+                .put("move", Boolean.toString(moveExistingVault));
+        if (newConfigPath != null) spec.put("config", newConfigPath);
+        JobQueue.enqueue(context, spec);
+    }
+
+    static void startDelete(Context context, java.util.List<String> docIds, String label) {
+        if (docIds == null || docIds.isEmpty()) return;
+        JobQueue.enqueue(context, new JobQueue.Spec(TYPE_DELETE)
+                .label(label)
+                .keep(JobQueue.AREA_VAULT)
+                .require(JobQueue.AREA_VAULT)
+                .file("ids", lines(docIds)));
+    }
+
+    static void startMove(Context context, java.util.List<String> docIds, String destParent,
+                          String label) {
+        if (docIds == null || docIds.isEmpty()) return;
+        JobQueue.enqueue(context, new JobQueue.Spec(TYPE_MOVE)
+                .label(label)
+                .keep(JobQueue.AREA_VAULT)
+                .require(JobQueue.AREA_VAULT)
+                .put("dest", destParent)
+                .file("ids", lines(docIds)));
+    }
+
+    static void startExportFile(Context context, String docId, Uri dest, String label) {
+        if (docId == null || dest == null) return;
+        JobQueue.enqueue(context, new JobQueue.Spec(TYPE_EXPORT_FILE)
+                .label(label)
+                .keep(JobQueue.AREA_VAULT)
+                .require(JobQueue.AREA_VAULT)
+                .put("doc", docId)
+                .put("dest", dest.toString()));
+    }
+
+    static void startExportTree(Context context, java.util.List<String> docIds, Uri treeUri,
+                                String label) {
+        if (docIds == null || docIds.isEmpty() || treeUri == null) return;
+        JobQueue.enqueue(context, new JobQueue.Spec(TYPE_EXPORT_TREE)
+                .label(label)
+                .keep(JobQueue.AREA_VAULT)
+                .require(JobQueue.AREA_VAULT)
+                .put("tree", treeUri.toString())
+                .file("ids", lines(docIds)));
+    }
+
+    static void startChangePassword(Context context, char[] newPassphrase) {
+        if (newPassphrase == null || newPassphrase.length == 0) return;
+        JobQueue.Job job = JobQueue.enqueuePrepared(context, new JobQueue.Spec(TYPE_CHANGE_PASSWORD)
+                .label("Changing vault password")
+                .keep(JobQueue.AREA_VAULT)
+                .require(JobQueue.AREA_VAULT));
+        passphraseJobs.put(job.id, java.util.Arrays.copyOf(newPassphrase, newPassphrase.length));
+        JobQueue.kick(context);
+    }
+
+    static char[] takePassphrase(String jobId) {
+        return passphraseJobs.remove(jobId);
     }
 
     static void resumeIfPending(Context context) {
@@ -219,6 +308,45 @@ final class VaultJobs {
         }
     }
 
+    static java.util.List<String> readIds(Context context, String jobId) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        for (String line : JobQueue.readText(context, jobId, "ids").split("\n")) {
+            if (!line.isEmpty()) out.add(line);
+        }
+        return out;
+    }
+
+    static Set<String> readDoneIds(Context context, String jobId) {
+        Set<String> out = new LinkedHashSet<>();
+        for (String line : JobQueue.readText(context, jobId, "done").split("\n")) {
+            if (!line.isEmpty()) out.add(line);
+        }
+        return out;
+    }
+
+    static void writeDoneIds(Context context, String jobId, Set<String> done) {
+        StringBuilder sb = new StringBuilder();
+        for (String id : done) sb.append(id).append('\n');
+        JobQueue.writeText(context, jobId, "done", sb.toString());
+    }
+
+    static void finish(Context context, JobQueue.Job job, boolean ok, String message) {
+        lastResult = new Result(job.type, ok, message);
+        JobQueue.clear(context, job.id);
+    }
+
+    static final class Result {
+        final String type;
+        final boolean ok;
+        final String message;
+
+        Result(String type, boolean ok, String message) {
+            this.type = type;
+            this.ok = ok;
+            this.message = message;
+        }
+    }
+
     static void migrateLegacy(Context context) {
         File old = new File(context.getFilesDir(), "vault-jobs");
         if (!old.exists()) return;
@@ -286,6 +414,12 @@ final class VaultJobs {
 
     private static String readAll(File f) {
         return JobQueue.readAll(f);
+    }
+
+    private static String lines(java.util.List<String> values) {
+        StringBuilder sb = new StringBuilder();
+        for (String value : values) sb.append(value).append('\n');
+        return sb.toString();
     }
 
     private static void deleteRecursively(File file) {

@@ -52,8 +52,13 @@ final class PluginTasks {
             final HomeMode plugin = m;
             sources.add(new Source() {
                 public HomeMode plugin() { return plugin; }
-                public boolean running(Context c) { return ImportJobs.pendingForPlugin(c, plugin); }
-                public String detail(Context c) { return ImportJobs.detailForPlugin(c, plugin); }
+                public boolean running(Context c) {
+                    return ImportJobs.pendingForPlugin(c, plugin) || SectionJobs.pendingFor(c, plugin);
+                }
+                public String detail(Context c) {
+                    String detail = ImportJobs.detailForPlugin(c, plugin);
+                    return detail != null ? detail : SectionJobs.detailFor(c, plugin);
+                }
             });
         }
     }

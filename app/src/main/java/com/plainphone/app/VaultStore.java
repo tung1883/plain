@@ -388,7 +388,11 @@ final class VaultStore {
     }
 
     static void exportStream(Context context, String docId, OutputStream dest) throws IOException {
-        dest.write(decryptToMemory(context, docId));
+        try (InputStream in = new FileInputStream(resolve(context, docId))) {
+            VaultCrypto.decryptStream(in, dest, contentKey());
+        } catch (GeneralSecurityException e) {
+            throw new IOException("decrypt failed", e);
+        }
     }
 
     // --- helpers --------------------------------------------------

@@ -64,10 +64,9 @@ final class Recorder {
             java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     /**
-     * Background-fill missing durations for vaulted recordings that were added
+     * Queue missing duration/waveform probes for vaulted recordings that were added
      * straight into the vault (not via "move to vault", which already stores it).
-     * Each docId is probed at most once per session; {@code onChange} runs on a
-     * worker thread when at least one duration was filled in.
+     * Each docId is queued at most once per session.
      */
     static void healVaultDurations(Context c, Runnable onChange) {
         if (!vaultReady(c)) return;
@@ -86,29 +85,28 @@ final class Recorder {
             return;
         }
         if (todo.isEmpty()) return;
-        new Thread(() -> {
-            boolean any = false;
-            for (String docId : todo) {
-                File tmp = new File(c.getCacheDir(), "durprobe-" + System.nanoTime() + ".tmp");
-                try {
-                    VaultStore.decryptToFile(c, docId, tmp);
-                    long d = probeDuration(tmp);
-                    String env = null;
-                    if (Config.getVaultRecEnvelope(c, docId).isEmpty()) {
-                        int[] pk = WaveformExtractor.peaks(tmp);
-                        if (pk.length > 0) env = Recording.peaksToString(pk);
-                    }
-                    if (d > 0 || env != null) {
-                        Config.setVaultRecMeta(c, docId, d, env);
-                        any = true;
-                    }
-                } catch (Exception ignored) {
-                } finally {
-                    tmp.delete();
-                }
+        SectionJobs.startRecorderHeal(c, todo);
+    }
+
+    static boolean healVaultMeta(Context c, String docId) {
+        File tmp = new File(c.getCacheDir(), "durprobe-" + System.nanoTime() + ".tmp");
+        try {
+            VaultStore.decryptToFile(c, docId, tmp);
+            long d = probeDuration(tmp);
+            String env = null;
+            if (Config.getVaultRecEnvelope(c, docId).isEmpty()) {
+                int[] pk = WaveformExtractor.peaks(tmp);
+                if (pk.length > 0) env = Recording.peaksToString(pk);
             }
-            if (any && onChange != null) onChange.run();
-        }, "vault-dur-heal").start();
+            if (d > 0 || env != null) {
+                Config.setVaultRecMeta(c, docId, d, env);
+                return true;
+            }
+        } catch (Exception ignored) {
+        } finally {
+            tmp.delete();
+        }
+        return false;
     }
 
     /** Fill in a missing duration once the player has discovered the real one. */
