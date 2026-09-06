@@ -17,6 +17,7 @@ import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.StateListDrawable;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -26,7 +27,9 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
+import android.view.WindowInsets;
 import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.AdapterView;
 import android.widget.Button;
 import android.widget.EditText;
@@ -81,6 +84,8 @@ public class MainActivity extends Activity {
     private LinearLayout tipRow;
     private TextView tipKicker;
     private TextView tipBody;
+    private View homeFocusSink;
+    private boolean searchImeVisible;
 
     /** Swipe-away header: 0 = all shown, 1 = menu section hidden, 2 = search hidden too. */
     private LinearLayout headerZone;
@@ -137,7 +142,7 @@ public class MainActivity extends Activity {
             return;
         }
         if (selectMode != null) exitSelection();
-        if (search.getText().length() > 0) search.setText("");
+        clearSearchAndFocus();
     }
 
     @Override
@@ -291,12 +296,14 @@ public class MainActivity extends Activity {
             Tips.maybeAutoAdvance(this);
             refreshTipRow();
             scheduleTipRotation();
+            if (search.getText().length() == 0 && !searchImeVisible) releaseSearchFocus(false);
         }
     }
 
     @Override
     protected void onPause() {
         super.onPause();
+        searchImeVisible = false;
         tipHandler.removeCallbacks(tipRotate);
         artHandler.removeCallbacks(artRotate);
         VaultJobs.removeListener(vaultJobListener);
@@ -327,7 +334,7 @@ public class MainActivity extends Activity {
             return;
         }
         if (search.getText().length() > 0) {
-            search.setText("");
+            clearSearchAndFocus();
             return;
         }
         // Nothing behind the home screen — swallow the press. Calling super here
@@ -546,6 +553,17 @@ public class MainActivity extends Activity {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(Color.BLACK);
+        root.setFocusableInTouchMode(true);
+        homeFocusSink = root;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            root.setOnApplyWindowInsetsListener((v, insets) -> {
+                searchImeVisible = insets.isVisible(WindowInsets.Type.ime());
+                if (!searchImeVisible && search != null && search.hasFocus()) {
+                    releaseSearchFocus(false);
+                }
+                return insets;
+            });
+        }
 
         // Collapsible header: search on top, then the menu section. A vertical
         // swipe on the tab strip folds it away, clipping from the bottom.
@@ -576,7 +594,7 @@ public class MainActivity extends Activity {
                     && search.getText().length() > 0) {
                 int hit = clearIcon.getBounds().width() + search.getPaddingRight();
                 if (ev.getX() >= search.getWidth() - hit) {
-                    search.setText("");
+                    clearSearchTextOnly();
                     return true;
                 }
             }
@@ -720,7 +738,7 @@ public class MainActivity extends Activity {
                 Config.setHomeMode(MainActivity.this, target);
                 refreshModeToggle();
                 if (search.getText().length() > 0) {
-                    search.setText("");
+                    clearSearchAndFocus();
                 } else {
                     renderRows();
                 }
@@ -827,6 +845,33 @@ public class MainActivity extends Activity {
 
         filter("");
         refreshTimeBlockRow();
+    }
+
+    private void clearSearchTextOnly() {
+        if (search == null) return;
+        if (search.getText().length() > 0) {
+            search.setText("");
+        } else {
+            filter("");
+        }
+    }
+
+    private void clearSearchAndFocus() {
+        if (search == null) return;
+        clearSearchTextOnly();
+        releaseSearchFocus(true);
+    }
+
+    private void releaseSearchFocus(boolean hideKeyboard) {
+        if (search == null) return;
+        search.clearFocus();
+        View target = homeFocusSink != null ? homeFocusSink : getWindow().getDecorView();
+        if (target != null) target.requestFocus();
+        if (!hideKeyboard) return;
+        InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+        if (imm != null) {
+            imm.hideSoftInputFromWindow(search.getWindowToken(), 0);
+        }
     }
 
     private View divider() {
