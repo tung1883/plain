@@ -63,9 +63,9 @@ enum Lock {
     /** True while this section has a background import queued or running. */
     boolean importing(Context context) {
         switch (this) {
-            case NOTES:    return ImportJobs.pendingForPlugin(context, HomeMode.NOTES);
-            case TODOS:    return ImportJobs.pendingForPlugin(context, HomeMode.TODOS);
-            case RECORDER: return ImportJobs.pendingForPlugin(context, HomeMode.RECORDER);
+            case NOTES:    return JobQueue.keepsUnlocked(context, JobQueue.AREA_NOTES);
+            case TODOS:    return JobQueue.keepsUnlocked(context, JobQueue.AREA_TODOS);
+            case RECORDER: return JobQueue.keepsUnlocked(context, JobQueue.AREA_RECORDER);
             default:       return false;
         }
     }

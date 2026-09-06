@@ -11,7 +11,7 @@ import java.io.File;
  * is deleted (no way to recover it without the password anyway), the vault falls
  * back to "not set up", and the file-picker provider is disabled again.
  *
- * <p>Run as a persistent job by {@link VaultJobService}: the delete is idempotent,
+ * <p>Run as a persistent job by {@link JobService}: the delete is idempotent,
  * so an interrupted wipe simply resumes and finishes on next launch. Gated in the
  * UI by a device-credential prompt.
  */

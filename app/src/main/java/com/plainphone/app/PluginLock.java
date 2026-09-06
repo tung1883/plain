@@ -12,7 +12,7 @@ import java.util.Set;
  * The one entry point for locking a plugin (Notes, To-do, Vault, …) or for
  * "Lock all". A plugin with a background task running is never locked silently:
  * a single confirmation lists the running tasks, and locking pauses them (they
- * resume on the next unlock — see {@link VaultJobService} park logic).
+ * resume on the next unlock — see {@link JobService} park logic).
  *
  * <p>Today only the vault runs tasks; {@link PluginTasks} is the registry the
  * rest hook into later.

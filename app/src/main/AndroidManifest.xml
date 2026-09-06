@@ -361,12 +361,7 @@
             android:foregroundServiceType="dataSync" />
 
         <service
-            android:name=".VaultJobService"
-            android:exported="false"
-            android:foregroundServiceType="dataSync" />
-
-        <service
-            android:name=".ImportJobService"
+            android:name=".JobService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 

@@ -15,7 +15,7 @@ import java.util.Set;
 
 /**
  * Recursive import of a picked SAF folder, or a flat set of picked files, into a
- * vault folder. Driven by {@link VaultJobService} as a persistent, resumable job:
+ * vault folder. Driven by {@link JobService} as a persistent, resumable job:
  * source paths already recorded in {@code done} are skipped, transient failures
  * retry, and the manifest is checkpointed so a kill leaves no orphans.
  */

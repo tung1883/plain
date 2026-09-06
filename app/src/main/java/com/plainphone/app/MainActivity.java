@@ -190,7 +190,7 @@ public class MainActivity extends Activity {
                 .putExtra(VaultActivity.EXTRA_UNLOCK_ONLY, true), REQUEST_VAULT_UNLOCK);
     }
 
-    /** Hand a picked file set to {@link ImportJobService} and show its progress row. */
+    /** Hand a picked file set to the global {@link JobService} and show its progress row. */
     private void startImportJob(HomeMode plugin, List<Uri> uris) {
         if (uris.isEmpty()) return;
         for (Uri u : uris) {
