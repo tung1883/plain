@@ -15,6 +15,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ArrayAdapter;
+import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.TextView;
 
@@ -55,21 +56,46 @@ public class HiddenAppsActivity extends Activity {
         adapter = new ArrayAdapter<String>(this, android.R.layout.simple_list_item_1, labels) {
             @Override
             public View getView(int position, View convertView, ViewGroup parent) {
-                TextView view = (TextView) super.getView(position, convertView, parent);
-                view.setText(labels.get(position));
-                view.setBackground(rowBackground());
-                view.setTextColor(Color.WHITE);
-                view.setTextSize(20);
-                view.setPadding(48, 32, 48, 32);
-                view.setGravity(Gravity.START);
-                view.setTypeface(georgia);
+                LinearLayout row;
+                TextView label;
+                TextView mark;
+                if (convertView instanceof LinearLayout) {
+                    row = (LinearLayout) convertView;
+                    label = (TextView) row.getChildAt(0);
+                    mark = (TextView) row.getChildAt(1);
+                } else {
+                    row = new LinearLayout(HiddenAppsActivity.this);
+                    row.setOrientation(LinearLayout.HORIZONTAL);
+                    row.setGravity(Gravity.CENTER_VERTICAL);
+                    row.setBackground(rowBackground());
+                    row.setPadding(48, 30, 48, 30);
+
+                    label = new TextView(HiddenAppsActivity.this);
+                    label.setTextColor(Color.WHITE);
+                    label.setTextSize(20);
+                    label.setTypeface(georgia);
+                    label.setGravity(Gravity.START);
+                    row.addView(label, new LinearLayout.LayoutParams(
+                            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+                    mark = new TextView(HiddenAppsActivity.this);
+                    mark.setTextSize(18);
+                    mark.setTypeface(georgia);
+                    mark.setGravity(Gravity.CENTER);
+                    row.addView(mark, new LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT));
+                }
 
                 boolean hidden = Config.getHiddenPackages(HiddenAppsActivity.this)
                         .contains(apps.get(position).activityInfo.packageName);
-                int flags = view.getPaintFlags();
-                view.setPaintFlags(hidden ? (flags | Paint.STRIKE_THRU_TEXT_FLAG)
+                label.setText(labels.get(position));
+                int flags = label.getPaintFlags();
+                label.setPaintFlags(hidden ? (flags | Paint.STRIKE_THRU_TEXT_FLAG)
                         : (flags & ~Paint.STRIKE_THRU_TEXT_FLAG));
-                return view;
+                mark.setText(hidden ? "[x]" : "[ ]");
+                mark.setTextColor(hidden ? Color.WHITE : Color.GRAY);
+                return row;
             }
         };
         listView.setAdapter(adapter);
@@ -131,4 +157,3 @@ public class HiddenAppsActivity extends Activity {
         return deduped;
     }
 }
-
