@@ -184,7 +184,7 @@ public class RecorderService extends Service {
         int rate = Config.getRecorderSampleRate(this);
         recFile = new File(getCacheDir(), "rec-" + System.currentTimeMillis() + "." + recFormat);
         recName = Recorder.peekName(this);
-        capture = new AudioCapture(recFormat, rate, recFile, Config.isRecorderNoiseReduction(this));
+        capture = new AudioCapture(this, recFormat, rate, recFile, Config.isRecorderNoiseReduction(this));
 
         mode = Mode.RECORDING;
         active = true;
