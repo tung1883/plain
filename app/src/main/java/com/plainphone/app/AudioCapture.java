@@ -1,11 +1,12 @@
 package com.plainphone.app;
 
+import android.content.Context;
 import android.media.AudioFormat;
+import android.media.AudioManager;
 import android.media.AudioRecord;
 import android.media.MediaRecorder;
-import android.media.audiofx.AcousticEchoCanceler;
-import android.media.audiofx.AutomaticGainControl;
 import android.media.audiofx.NoiseSuppressor;
+import android.os.Build;
 import android.os.SystemClock;
 
 import java.io.File;
@@ -19,11 +20,22 @@ import java.util.List;
  * {@link MediaRecorder}; {@code wav} is raw PCM-16 mono via {@link AudioRecord}
  * with a hand-written header. Poll {@link #level()} for the live meter; the
  * accumulated {@link #envelope()} is the whole take's amplitude history.
+ *
+ * <p>Input path (fidelity matters more than call-style processing):
+ * <ul>
+ *   <li>denoise off → {@code UNPROCESSED} where the device supports it, else {@code MIC}
+ *       — flat, full-band, no automatic gain.</li>
+ *   <li>denoise on → {@code VOICE_RECOGNITION} + a {@code NoiseSuppressor} only. Keeps the
+ *       wide band and natural dynamics; drops the {@code VOICE_COMMUNICATION} AGC pumping
+ *       and AEC comb-filtering that made takes sound thin and "processed".</li>
+ * </ul>
  */
 class AudioCapture {
 
     private static final int ENVELOPE_TARGET = 200;
+    private static final int AAC_BITRATE = 128_000;
 
+    private final Context context;
     private final String format;
     private final int sampleRate;
     private final File out;
@@ -31,7 +43,7 @@ class AudioCapture {
 
     private MediaRecorder recorder;         // m4a / 3gp
     private WavRecorder wav;                // wav
-    private final List<Object> effects = new ArrayList<>();   // NS / AGC / AEC handles
+    private final List<Object> effects = new ArrayList<>();   // NoiseSuppressor handles
     private boolean recording;
     private boolean paused;
     private long segmentStart;      // elapsedRealtime of the current unpaused run
@@ -40,7 +52,8 @@ class AudioCapture {
     private final List<Integer> peaks = new ArrayList<>();
     private long lastPeakAt;
 
-    AudioCapture(String format, int sampleRate, File out, boolean denoise) {
+    AudioCapture(Context context, String format, int sampleRate, File out, boolean denoise) {
+        this.context = context.getApplicationContext();
         this.format = format == null ? "m4a" : format.toLowerCase();
         this.sampleRate = "3gp".equals(this.format) ? 8000 : sampleRate;
         this.out = out;
@@ -51,26 +64,42 @@ class AudioCapture {
         return sampleRate;
     }
 
+    /** The mic input path — see the class doc. */
+    private int audioSource() {
+        if (denoise) return MediaRecorder.AudioSource.VOICE_RECOGNITION;
+        if (Build.VERSION.SDK_INT >= 24 && unprocessedSupported()) {
+            return MediaRecorder.AudioSource.UNPROCESSED;
+        }
+        return MediaRecorder.AudioSource.MIC;
+    }
+
+    private boolean unprocessedSupported() {
+        try {
+            AudioManager am = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
+            return am != null && "true".equals(
+                    am.getProperty(AudioManager.PROPERTY_SUPPORT_AUDIO_SOURCE_UNPROCESSED));
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     void start() throws IOException {
         if ("wav".equals(format)) {
-            wav = new WavRecorder(sampleRate, out, denoise);
+            wav = new WavRecorder(sampleRate, out, audioSource());
             wav.start();
             if (denoise) attachEffects(wav.sessionId());
         } else {
             recorder = new MediaRecorder();
-            // VOICE_COMMUNICATION runs the platform voice DSP (noise suppression,
-            // echo cancel, auto gain) — MIC is the raw path.
-            recorder.setAudioSource(denoise
-                    ? MediaRecorder.AudioSource.VOICE_COMMUNICATION
-                    : MediaRecorder.AudioSource.MIC);
+            recorder.setAudioSource(audioSource());
             if ("3gp".equals(format)) {
                 recorder.setOutputFormat(MediaRecorder.OutputFormat.THREE_GPP);
                 recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AMR_NB);
             } else {
                 recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
                 recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
+                recorder.setAudioChannels(1);
                 recorder.setAudioSamplingRate(sampleRate);
-                recorder.setAudioEncodingBitRate(96_000);
+                recorder.setAudioEncodingBitRate(AAC_BITRATE);
             }
             recorder.setOutputFile(out.getAbsolutePath());
             recorder.prepare();
@@ -83,7 +112,11 @@ class AudioCapture {
         lastPeakAt = 0;
     }
 
-    /** Enable the platform noise-suppression / AGC / echo-cancel effects on a session. */
+    /**
+     * Attach a {@link NoiseSuppressor} only. AGC and AEC are deliberately left off —
+     * AGC pumps the level, AEC comb-filters the voice, and both hurt a recording far
+     * more than they help.
+     */
     private void attachEffects(int sessionId) {
         try {
             if (NoiseSuppressor.isAvailable()) {
@@ -91,20 +124,6 @@ class AudioCapture {
                 if (ns != null) {
                     ns.setEnabled(true);
                     effects.add(ns);
-                }
-            }
-            if (AutomaticGainControl.isAvailable()) {
-                AutomaticGainControl agc = AutomaticGainControl.create(sessionId);
-                if (agc != null) {
-                    agc.setEnabled(true);
-                    effects.add(agc);
-                }
-            }
-            if (AcousticEchoCanceler.isAvailable()) {
-                AcousticEchoCanceler aec = AcousticEchoCanceler.create(sessionId);
-                if (aec != null) {
-                    aec.setEnabled(true);
-                    effects.add(aec);
                 }
             }
         } catch (RuntimeException ignored) {
@@ -115,8 +134,6 @@ class AudioCapture {
         for (Object fx : effects) {
             try {
                 if (fx instanceof NoiseSuppressor) ((NoiseSuppressor) fx).release();
-                else if (fx instanceof AutomaticGainControl) ((AutomaticGainControl) fx).release();
-                else if (fx instanceof AcousticEchoCanceler) ((AcousticEchoCanceler) fx).release();
             } catch (RuntimeException ignored) {
             }
         }
@@ -245,7 +262,7 @@ class AudioCapture {
     private static final class WavRecorder {
         private final int sampleRate;
         private final File out;
-        private final boolean denoise;
+        private final int audioSource;
         private AudioRecord record;
         private Thread thread;
         private volatile boolean running;
@@ -257,10 +274,10 @@ class AudioCapture {
             paused = p;
         }
 
-        WavRecorder(int sampleRate, File out, boolean denoise) {
+        WavRecorder(int sampleRate, File out, int audioSource) {
             this.sampleRate = sampleRate;
             this.out = out;
-            this.denoise = denoise;
+            this.audioSource = audioSource;
         }
 
         int lastPeak() {
@@ -276,9 +293,7 @@ class AudioCapture {
                     AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
             if (minBuf <= 0) throw new IOException("bad sample rate");
             int bufSize = Math.max(minBuf, sampleRate / 2);
-            int source = denoise ? MediaRecorder.AudioSource.VOICE_COMMUNICATION
-                    : MediaRecorder.AudioSource.MIC;
-            record = new AudioRecord(source, sampleRate,
+            record = new AudioRecord(audioSource, sampleRate,
                     AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, bufSize);
             if (record.getState() != AudioRecord.STATE_INITIALIZED) {
                 record.release();
