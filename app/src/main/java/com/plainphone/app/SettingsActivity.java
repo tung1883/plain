@@ -113,6 +113,9 @@ entries.add(new Entry("Appearance", "Home screen art", row("Home screen art",
         entries.add(new Entry("Plugins", "6 Search", row("Search",
                 v -> startActivity(new Intent(this, SearchSettingsActivity.class)))));
 
+        entries.add(new Entry("Plugins", "7 Dev", row("Dev",
+                v -> startActivity(new Intent(this, DevSettingsActivity.class)))));
+
         entries.add(new Entry("Apps", "Flagged apps", row("Flagged apps",
                 v -> startActivity(new Intent(this, FlaggedAppsActivity.class)))));
 

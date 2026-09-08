@@ -23,7 +23,8 @@ final class PluginLock {
 
     /** Plugins that can carry a pausable background task. */
     private static Set<HomeMode> taskPlugins() {
-        return EnumSet.of(HomeMode.VAULT, HomeMode.NOTES, HomeMode.TODOS, HomeMode.RECORDER);
+        return EnumSet.of(HomeMode.VAULT, HomeMode.NOTES, HomeMode.TODOS, HomeMode.RECORDER,
+                HomeMode.DEV);
     }
 
     /**
@@ -107,6 +108,9 @@ final class PluginLock {
                 lockSection(ctx, Lock.TODOS);
             } else if (p == HomeMode.RECORDER) {
                 lockSection(ctx, Lock.RECORDER);
+            } else if (p == HomeMode.DEV) {
+                DevService.disconnect(ctx);
+                lockSection(ctx, Lock.DEV);
             }
         }
     }

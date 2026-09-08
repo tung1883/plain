@@ -6,7 +6,8 @@ enum HomeMode {
     TODOS("To-do"),
     STATS("Stats"),
     RECORDER("Rec"),
-    VAULT("Vault");
+    VAULT("Vault"),
+    DEV("Dev");
 
     final String label;
 

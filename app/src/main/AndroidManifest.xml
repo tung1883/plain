@@ -18,6 +18,9 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+    <!-- Dev plugin: TCP to a paired computer's plaind daemon over the local network / Tailscale. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <!-- Home-screen search over contacts and on-device files. Both are requested at
          runtime the first time a search actually reaches for them, not at install.
          Android 13 replaced the single storage read with per-media-type permissions,
@@ -360,6 +363,50 @@
             android:exported="false"
             android:excludeFromRecents="true"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <activity
+            android:name=".DevHostsActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
+            android:name=".DevPairActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
+            android:name=".DevHostActivity"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
+            android:name=".DevTerminalActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
+            android:name=".DevScreenActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
+            android:name=".DevProcActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
+            android:name=".DevSettingsActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <service
+            android:name=".DevService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
         <service
             android:name=".VaultUnlockService"

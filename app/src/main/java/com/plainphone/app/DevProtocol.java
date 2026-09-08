@@ -199,12 +199,15 @@ final class DevProtocol {
         return m;
     }
 
-    static Map<String, Object> procList() {
-        return msg(T_PROC_LIST);
+    static Map<String, Object> procList(long ch) {
+        Map<String, Object> m = msg(T_PROC_LIST);
+        m.put("ch", ch);
+        return m;
     }
 
-    static Map<String, Object> procKill(long pid, String signal) {
+    static Map<String, Object> procKill(long ch, long pid, String signal) {
         Map<String, Object> m = msg(T_PROC_KILL);
+        m.put("ch", ch);
         m.put("pid", pid);
         m.put("sig", signal);
         return m;
