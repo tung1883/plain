@@ -28,9 +28,29 @@ public class VaultUnlockService extends Service {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Runnable autoLock = this::maybeAutoLock;
 
+    /**
+     * Tags that keep the vault open past the idle timeout AND past screen-off —
+     * only an explicit lock (Lock now / Lock all / panic) still locks. Set by
+     * {@link RecorderService} while a vaulted recording plays.
+     */
+    private static final java.util.Set<String> holds =
+            java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    static void holdOpen(Context context, String tag) {
+        holds.add(tag);
+    }
+
+    static void releaseHold(Context context, String tag) {
+        holds.remove(tag);
+    }
+
+    private static boolean held() {
+        return !holds.isEmpty();
+    }
+
     /** Idle timeout fired — but don't lock out from under a running background job. */
     private void maybeAutoLock() {
-        if (VaultJobs.anyPending(getApplicationContext())) {
+        if (VaultJobs.anyPending(getApplicationContext()) || held()) {
             armTimeout();
             return;
         }
@@ -61,7 +81,7 @@ public class VaultUnlockService extends Service {
         screenOff = new BroadcastReceiver() {
             @Override
             public void onReceive(Context c, Intent i) {
-                if (VaultJobs.anyPending(c)) return;   // let a background job keep running
+                if (VaultJobs.anyPending(c) || held()) return;   // job running, or a vaulted memo is playing
                 lockAndStop();
             }
         };

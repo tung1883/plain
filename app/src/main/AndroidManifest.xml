@@ -13,6 +13,9 @@
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <!-- Home-screen search over contacts and on-device files. Both are requested at
@@ -235,11 +238,13 @@
         <activity
             android:name=".RecordActivity"
             android:exported="false"
+            android:launchMode="singleTop"
             android:theme="@style/Theme.PlainPhone" />
 
         <activity
             android:name=".RecordingPlayerActivity"
             android:exported="false"
+            android:launchMode="singleTop"
             android:theme="@style/Theme.PlainPhone" />
 
         <activity
@@ -365,6 +370,19 @@
             android:name=".JobService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+
+        <service
+            android:name=".RecorderService"
+            android:exported="false"
+            android:foregroundServiceType="microphone|mediaPlayback" />
+
+        <receiver
+            android:name=".RecorderMediaButtonReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
 
         <receiver
             android:name=".IndexScheduler$Receiver"

@@ -53,7 +53,7 @@ enum Lock {
      */
     static void lockAllSections(Context context) {
         for (Lock lock : values()) {
-            if (lock.importing(context)) continue;   // a pending import keeps its section unlocked
+            if (lock.busy(context)) continue;   // a pending import / live recorder keeps its section unlocked
             lock.setLocked(context, true);
             Config.setUnlockUntil(context, lock.area, 0L);
         }
@@ -68,6 +68,31 @@ enum Lock {
             case RECORDER: return JobQueue.keepsUnlocked(context, JobQueue.AREA_RECORDER);
             default:       return false;
         }
+    }
+
+    /**
+     * True while something is actively using this section in the background and it
+     * must not re-lock under it — a queued/running import, or a live recording or
+     * playback in {@link RecorderService}. An explicit lock ({@link #hardLocked})
+     * still wins over a live recorder, so "Lock all" locks the section.
+     */
+    boolean busy(Context context) {
+        if (importing(context)) return true;
+        if (this == RECORDER && RecorderService.isActive(context)) {
+            return !hardLocked(context);
+        }
+        return false;
+    }
+
+    /**
+     * The user has deliberately locked this section — it is locked and its grace
+     * window has been cleared (not just aged out). Survives a background recorder
+     * bumping {@link #keepUnlocked}, because the service stops bumping once this is true.
+     */
+    boolean hardLocked(Context context) {
+        return isLocked(context) && Config.isPinSet(context, area)
+                && Config.isLocksEnabled(context)
+                && System.currentTimeMillis() >= Config.getUnlockUntil(context, area);
     }
 
     boolean isLocked(Context context) {
@@ -92,7 +117,7 @@ enum Lock {
 
     boolean gateActive(Context context) {
         return isLocked(context) && !isUnlocked(context) && Config.isPinSet(context, area)
-                && Config.isLocksEnabled(context) && !importing(context);
+                && Config.isLocksEnabled(context) && !busy(context);
     }
 
     Intent pinGate(Context context) {

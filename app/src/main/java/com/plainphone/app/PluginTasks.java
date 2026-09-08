@@ -61,6 +61,18 @@ final class PluginTasks {
                 }
             });
         }
+        // A live recording or playback keeps the recorder unlocked; a vaulted
+        // recording playing also holds the vault open.
+        sources.add(new Source() {
+            public HomeMode plugin() { return HomeMode.RECORDER; }
+            public boolean running(Context c) { return RecorderService.isActive(c); }
+            public String detail(Context c) { return RecorderService.activeDetail(); }
+        });
+        sources.add(new Source() {
+            public HomeMode plugin() { return HomeMode.VAULT; }
+            public boolean running(Context c) { return RecorderService.vaultPlaybackActive(); }
+            public String detail(Context c) { return "playing a recording"; }
+        });
     }
 
     static void register(Source s) {
