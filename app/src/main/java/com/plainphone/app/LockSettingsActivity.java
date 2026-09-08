@@ -90,6 +90,7 @@ public class LockSettingsActivity extends Activity {
         lockRow("To-do", Lock.TODOS.area, Lock.TODOS.isLocked(this));
         lockRow("Voice recorder", Lock.RECORDER.area, Lock.RECORDER.isLocked(this));
         lockRow("Search", Lock.SEARCH.area, Lock.SEARCH.isLocked(this));
+        lockRow("Dev", Lock.DEV.area, Lock.DEV.isLocked(this));
 
         lockRow("Plain Settings", "settings", Config.isSettingsLockEnabled(this));
     }

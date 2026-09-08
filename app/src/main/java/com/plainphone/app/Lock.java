@@ -17,7 +17,8 @@ enum Lock {
     TODOS("todos", "Unlocking To-do"),
     RECORDER("recorder", "Unlocking the recorder"),
     APPS("apps", "Unlocking the app list"),
-    SEARCH("search", "Unlocking search");
+    SEARCH("search", "Unlocking search"),
+    DEV("dev", "Unlocking Dev");
 
     static final String EXTRA_LOCK = "lock";
 

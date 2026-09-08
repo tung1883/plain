@@ -791,6 +791,7 @@ class Config {
             if (!order.contains(mode)) order.add(mode);
         }
         if (isVaultHiddenFromHome(context)) order.remove(HomeMode.VAULT);
+        if (isDevHiddenFromHome(context)) order.remove(HomeMode.DEV);
         return order;
     }
 
@@ -808,6 +809,7 @@ class Config {
         try {
             HomeMode mode = HomeMode.valueOf(stored);
             if (mode == HomeMode.VAULT && isVaultHiddenFromHome(context)) return HomeMode.APPS;
+            if (mode == HomeMode.DEV && isDevHiddenFromHome(context)) return HomeMode.APPS;
             return mode;
         } catch (IllegalArgumentException e) {
             return HomeMode.APPS;
@@ -816,6 +818,43 @@ class Config {
 
     static void setHomeMode(Context context, HomeMode mode) {
         prefs(context).edit().putString("home_mode", mode.name()).apply();
+    }
+
+    // --- Dev plugin ---------------------------------------------------------
+
+    static boolean isDevHiddenFromHome(Context context) {
+        return prefs(context).getBoolean("dev_hidden_from_home", false);
+    }
+
+    static void setDevHiddenFromHome(Context context, boolean hidden) {
+        prefs(context).edit().putBoolean("dev_hidden_from_home", hidden).apply();
+    }
+
+    /** Default frame rate for the Dev screen mirror. */
+    static int getDevScreenFps(Context context) {
+        return prefs(context).getInt("dev_screen_fps", 5);
+    }
+
+    static void setDevScreenFps(Context context, int fps) {
+        prefs(context).edit().putInt("dev_screen_fps", Math.max(1, Math.min(20, fps))).apply();
+    }
+
+    /** The last host the Dev section connected to, so the service can rebuild after a kill. */
+    static String getDevLastHostId(Context context) {
+        return prefs(context).getString("dev_last_host", null);
+    }
+
+    static void setDevLastHostId(Context context, String id) {
+        prefs(context).edit().putString("dev_last_host", id).apply();
+    }
+
+    /** Dev hosts as an opaque JSON array of {@link DevHost} records (never the token). */
+    static String getDevHostsJson(Context context) {
+        return prefs(context).getString("dev_hosts", "[]");
+    }
+
+    static void setDevHostsJson(Context context, String json) {
+        prefs(context).edit().putString("dev_hosts", json).apply();
     }
 
     /** Absolute path of the vault directory, or null for the app-private default. */
@@ -935,7 +974,7 @@ class Config {
                 .remove("relock_seconds")
                 .remove("applock_enabled").remove("settings_lock_enabled")
                 .remove("locked_packages");
-        for (String area : new String[]{"notes", "todos", "recorder", "apps", "search"}) {
+        for (String area : new String[]{"notes", "todos", "recorder", "apps", "search", "dev"}) {
             e.remove(area + "_locked").remove(area + "_unlock_until");
         }
         for (String key : p.getAll().keySet()) {

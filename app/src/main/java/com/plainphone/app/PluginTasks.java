@@ -73,6 +73,12 @@ final class PluginTasks {
             public boolean running(Context c) { return RecorderService.vaultPlaybackActive(); }
             public String detail(Context c) { return "playing a recording"; }
         });
+        // A live connection to a computer keeps Dev unlocked.
+        sources.add(new Source() {
+            public HomeMode plugin() { return HomeMode.DEV; }
+            public boolean running(Context c) { return DevService.isConnected(); }
+            public String detail(Context c) { return DevService.activeDetail(); }
+        });
     }
 
     static void register(Source s) {

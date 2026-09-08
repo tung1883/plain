@@ -114,6 +114,7 @@ public class MainActivity extends Activity {
     private static final int REQUEST_IMPORT_TODOS = 4309;
     private static final int REQUEST_IMPORT_RECORDINGS = 4310;
     private static final int REQUEST_VAULT_UNLOCK = 4311;
+    private static final int REQUEST_DEV_UNLOCK = 4312;
     /** Deferred action to run once the vault is unlocked (move-to-vault). */
     private Runnable afterVaultUnlock;
     private FrameLayout artFrame;
@@ -158,6 +159,8 @@ public class MainActivity extends Activity {
         } else if (requestCode == REQUEST_SEARCH_UNLOCK && resultCode == RESULT_OK) {
             filter(search.getText().toString());
         } else if (requestCode == REQUEST_RECORDER_UNLOCK && resultCode == RESULT_OK) {
+            filter(search.getText().toString());
+        } else if (requestCode == REQUEST_DEV_UNLOCK && resultCode == RESULT_OK) {
             filter(search.getText().toString());
         } else if (requestCode == REQUEST_PICK_NOTES_FOLDER && resultCode == RESULT_OK) {
             Notes.saveFolderPick(this, data);
@@ -1119,6 +1122,8 @@ public class MainActivity extends Activity {
                 renderRecorderSection();
             } else if (homeMode == HomeMode.VAULT) {
                 renderVaultSection();
+            } else if (homeMode == HomeMode.DEV) {
+                renderDevSection();
             } else if (homeMode == HomeMode.STATS) {
                 rows.add(new SearchResult(SearchResult.Kind.APP, "App list is locked",
                         "Tap to unlock", -1, () -> startActivityForResult(
@@ -1853,6 +1858,33 @@ public class MainActivity extends Activity {
                     PluginLock.requestLock(this, java.util.EnumSet.of(HomeMode.VAULT),
                             () -> filter(search.getText().toString()))));
         }
+    }
+
+    private void renderDevSection() {
+        if (Lock.DEV.gateActive(this)) {
+            rows.add(new SearchResult(SearchResult.Kind.DEV, "Dev is locked",
+                    "Tap to unlock", -1, () -> startActivityForResult(
+                    Lock.DEV.pinGate(this), REQUEST_DEV_UNLOCK)));
+            return;
+        }
+        if (Lock.DEV.isLocked(this)) Lock.DEV.keepUnlocked(this);
+
+        rows.add(new SearchResult(SearchResult.Kind.DEV, "Dev settings", null, -1,
+                () -> startActivity(new Intent(this, DevSettingsActivity.class))));
+
+        String liveId = DevService.connectedHostId();
+        for (DevHost host : DevHost.all(this)) {
+            boolean live = host.id.equals(liveId) && DevService.isConnected();
+            rows.add(new SearchResult(SearchResult.Kind.DEV, host.label,
+                    live ? "connected — tap to open" : host.address(), -1, () -> {
+                DevService.connect(this, host.id);
+                startActivity(new Intent(this, DevHostActivity.class)
+                        .putExtra(DevHostActivity.EXTRA_HOST_ID, host.id));
+            }));
+        }
+
+        rows.add(new SearchResult(SearchResult.Kind.DEV, "+ Add computer", null, -1,
+                () -> startActivity(new Intent(this, DevPairActivity.class))));
     }
 
     private static String formatVaultTimeout(int seconds) {

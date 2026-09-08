@@ -13,7 +13,8 @@ class SearchResult {
         WEB("Web"),
         FILE("Files"),
         CONTACT("Contacts"),
-        VAULT("Vault");
+        VAULT("Vault"),
+        DEV("Dev");
 
         final String header;
 
