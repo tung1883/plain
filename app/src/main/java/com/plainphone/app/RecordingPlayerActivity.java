@@ -1,11 +1,15 @@
 package com.plainphone.app;
 
 import android.app.Activity;
+import android.content.ComponentName;
+import android.content.Context;
+import android.content.Intent;
+import android.content.ServiceConnection;
 import android.graphics.Color;
 import android.graphics.Typeface;
-import android.media.MediaPlayer;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.IBinder;
 import android.os.Looper;
 import android.view.Gravity;
 import android.view.View;
@@ -14,33 +18,81 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import java.io.File;
 import java.util.Locale;
 
 /**
- * Plays one recording. A vaulted recording is decrypted to a cache temp that is
- * deleted on close and if the vault locks.
+ * Plays one recording. The {@link android.media.MediaPlayer} lives in
+ * {@link RecorderService}, so playback keeps going — with lock-screen and shade
+ * controls — after this screen is gone. A vaulted recording plays through
+ * screen-off; it only pauses when the vault actually locks, and resumes on unlock.
  */
 public class RecordingPlayerActivity extends Activity {
 
     private Typeface font;
-    private MediaPlayer player;
-    private File temp;                 // non-null only for vaulted playback
-    private boolean vaulted;
+    private String recId;
+    private String docId;
+    private String name;
+    private String format;
+
+    private RecorderService svc;
+    private boolean bound;
+    private String shownKey;
 
     private WaveformView wave;
     private TextView playBtn;
     private TextView elapsed;
+    private TextView total;
+    private TextView meta;
+
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Runnable progress = new Runnable() {
         @Override
         public void run() {
-            if (player == null) return;
-            int pos = player.getCurrentPosition();
-            int dur = Math.max(1, player.getDuration());
+            if (svc == null) return;
+            if (!svc.playbackActive()) {
+                finish();
+                return;
+            }
+            String key = svc.currentKey();
+            if (!key.isEmpty() && !key.equals(shownKey)) {
+                shownKey = key;
+                buildUi();                     // first frame, or the queue advanced
+            }
+            if (shownKey == null) {
+                handler.postDelayed(this, 60);
+                return;
+            }
+            int dur = Math.max(1, svc.duration());
+            int pos = svc.position();
             wave.setProgress(pos / (float) dur);
             elapsed.setText(fmt(pos));
-            if (player.isPlaying()) handler.postDelayed(this, 60);
+            total.setText(fmt(svc.duration()));
+            playBtn.setText(svc.isPlayingNow() ? "❚❚" : "▶");
+            meta.setText(svc.vaultPaused()
+                    ? "Vault locked — unlock to resume"
+                    : metaLine());
+            handler.postDelayed(this, 60);
+        }
+    };
+
+    private final ServiceConnection conn = new ServiceConnection() {
+        @Override
+        public void onServiceConnected(ComponentName n, IBinder service) {
+            svc = ((RecorderService.LocalBinder) service).service();
+            bound = true;
+            if (svc.recording()) {
+                Toast.makeText(RecordingPlayerActivity.this,
+                        "Stop the recording first", Toast.LENGTH_SHORT).show();
+                finish();
+                return;
+            }
+            handler.post(progress);
+        }
+
+        @Override
+        public void onServiceDisconnected(ComponentName n) {
+            svc = null;
+            bound = false;
         }
     };
 
@@ -51,119 +103,82 @@ public class RecordingPlayerActivity extends Activity {
                 WindowManager.LayoutParams.FLAG_SECURE);
         font = Fonts.current(this);
 
-        String recId = getIntent().getStringExtra("recId");
-        String docId = getIntent().getStringExtra("docId");
-        String name;
-        String meta;
-        int[] envelope;
-        File source;
+        recId = getIntent().getStringExtra("recId");
+        docId = getIntent().getStringExtra("docId");
+        name = getIntent().getStringExtra("name");
+        format = getIntent().getStringExtra("format");
+        if (format == null) format = "m4a";
 
-        if (docId != null) {
-            vaulted = true;
-            if (!VaultSession.get().isUnlocked()) {
-                finish();
-                return;
-            }
-            name = getIntent().getStringExtra("name");
-            String ext = getIntent().getStringExtra("format");
-            if (ext == null) ext = "m4a";
-            temp = new File(getCacheDir(), "play." + ext);
-            try {
-                VaultStore.decryptToFile(this, docId, temp);
-            } catch (Exception e) {
-                Toast.makeText(this, "Couldn't open", Toast.LENGTH_SHORT).show();
-                finish();
-                return;
-            }
-            source = temp;
-            meta = ext.toUpperCase(Locale.US);
-            envelope = Recording.peaksFrom(Config.getVaultRecEnvelope(this, docId));
-        } else {
-            Recording r = Recording.findById(Config.getRecordings(this), recId);
-            if (r == null) {
-                finish();
-                return;
-            }
-            name = r.displayName();
-            source = Recorder.fileFor(this, r);
-            meta = r.format.toUpperCase(Locale.US) + " · " + r.sampleRate + " Hz";
-            envelope = r.envelopePeaks();
-        }
-
-        buildUi(name, meta, envelope.length > 0 ? envelope : placeholderEnvelope());
-
-        player = new MediaPlayer();
-        try {
-            player.setDataSource(source.getAbsolutePath());
-            player.prepare();
-        } catch (Exception e) {
-            Toast.makeText(this, "Couldn't play", Toast.LENGTH_SHORT).show();
+        if (docId == null && recId == null) {
             finish();
             return;
         }
-        total.setText(fmt(player.getDuration()));
-        if (docId != null) {
-            Config.setVaultRecDuration(this, docId, player.getDuration());
-        } else {
-            Recorder.healDuration(this, recId, player.getDuration());
+        if (docId != null && !VaultSession.get().isUnlocked()) {
+            finish();
+            return;
         }
-        player.setOnCompletionListener(mp -> {
-            mp.seekTo(0);
-            wave.setProgress(0f);
-            elapsed.setText(fmt(0));
-            playBtn.setText("▶");
-        });
-        togglePlay();   // autostart
+
+        RecorderService.startPlayback(this, recId, docId, name, format);
+        bindService(new Intent(this, RecorderService.class), conn, Context.BIND_AUTO_CREATE);
     }
 
-    private TextView total;
+    private String metaLine() {
+        String m = svc != null ? svc.playMeta() : "";
+        return m == null ? "" : m;
+    }
 
-    private void buildUi(String name, String meta, int[] envelope) {
+    private void buildUi() {
+        String title = svc != null && svc.playName() != null ? svc.playName()
+                : (name == null || name.isEmpty() ? "Recording" : name);
+
         LinearLayout outer = new LinearLayout(this);
         outer.setOrientation(LinearLayout.VERTICAL);
         outer.setBackgroundColor(Color.BLACK);
-        outer.addView(UiKit.header(this, name), new LinearLayout.LayoutParams(
+        outer.addView(UiKit.header(this, title), new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
         View hair = new View(this);
         hair.setBackgroundColor(0xFF1C1C1C);
         outer.addView(hair, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 1));
 
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(Color.BLACK);
-        root.setPadding(48, 24, 48, 44);
-        outer.addView(root, new LinearLayout.LayoutParams(
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setBackgroundColor(Color.BLACK);
+        content.setPadding(48, 24, 48, 44);
+        outer.addView(content, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
 
-        TextView metaView = new TextView(this);
-        metaView.setText(meta);
-        metaView.setTextColor(0xFF7C7C7C);
-        metaView.setTextSize(11);
-        metaView.setTypeface(font);
+        meta = new TextView(this);
+        meta.setText(metaLine());
+        meta.setTextColor(0xFF7C7C7C);
+        meta.setTextSize(11);
+        meta.setTypeface(font);
         LinearLayout.LayoutParams mp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         mp.topMargin = 4;
-        root.addView(metaView, mp);
+        content.addView(meta, mp);
 
         playBtn = new TextView(this);
-        playBtn.setText("▶");
+        playBtn.setText("❚❚");
         playBtn.setTextColor(Color.WHITE);
         playBtn.setTextSize(30);
         playBtn.setTypeface(font);
         playBtn.setGravity(Gravity.CENTER);
-        playBtn.setOnClickListener(v -> togglePlay());
+        playBtn.setOnClickListener(v -> {
+            if (svc != null) svc.playToggle();
+        });
         LinearLayout.LayoutParams pp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
         pp.gravity = Gravity.CENTER;
-        root.addView(playBtn, pp);
+        content.addView(playBtn, pp);
 
         wave = new WaveformView(this);
-        wave.setEnvelope(envelope);
+        int[] envelope = svc != null ? svc.playEnvelope() : new int[0];
+        wave.setEnvelope(envelope != null && envelope.length > 0 ? envelope : placeholderEnvelope());
         wave.setOnSeek(f -> {
-            if (player != null) player.seekTo((int) (f * player.getDuration()));
+            if (svc != null) svc.playSeekFraction(f);
         });
-        root.addView(wave, new LinearLayout.LayoutParams(
+        content.addView(wave, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 (int) (getResources().getDisplayMetrics().density * 84)));
 
@@ -179,7 +194,7 @@ public class RecordingPlayerActivity extends Activity {
                 LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
         times.addView(total, new LinearLayout.LayoutParams(0,
                 LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-        root.addView(times, tp);
+        content.addView(times, tp);
 
         setContentView(outer);
     }
@@ -193,20 +208,6 @@ public class RecordingPlayerActivity extends Activity {
         return t;
     }
 
-    private void togglePlay() {
-        if (player == null) return;
-        if (player.isPlaying()) {
-            player.pause();
-            playBtn.setText("▶");
-            handler.removeCallbacks(progress);
-        } else {
-            player.start();
-            playBtn.setText("❚❚");
-            handler.post(progress);
-        }
-        if (vaulted) VaultUnlockService.touch(this);
-    }
-
     private static int[] placeholderEnvelope() {
         int[] out = new int[60];
         for (int i = 0; i < out.length; i++) {
@@ -216,25 +217,16 @@ public class RecordingPlayerActivity extends Activity {
     }
 
     @Override
-    protected void onPause() {
-        super.onPause();
-        if (player != null && player.isPlaying()) {
-            player.pause();
-            playBtn.setText("▶");
-            handler.removeCallbacks(progress);
-        }
-        if (vaulted && !VaultSession.get().isUnlocked()) finish();
-    }
-
-    @Override
     protected void onDestroy() {
         super.onDestroy();
         handler.removeCallbacks(progress);
-        if (player != null) {
-            player.release();
-            player = null;
+        if (bound) {
+            try {
+                unbindService(conn);
+            } catch (IllegalArgumentException ignored) {
+            }
+            bound = false;
         }
-        if (temp != null) temp.delete();
     }
 
     private static String fmt(int ms) {

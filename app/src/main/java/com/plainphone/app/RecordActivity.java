@@ -2,50 +2,83 @@ package com.plainphone.app;
 
 import android.Manifest;
 import android.app.Activity;
+import android.content.ComponentName;
+import android.content.Context;
+import android.content.Intent;
+import android.content.ServiceConnection;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.IBinder;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.view.Gravity;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
-import android.widget.Toast;
 
-import java.io.File;
 import java.util.Locale;
 
 /**
- * Records one memo. Lives only while on screen — Stop, Back, or Home all stop
- * and save. Sub-½-second takes are discarded.
+ * Records one memo. The capture itself lives in {@link RecorderService}, so
+ * leaving this screen (Home, Back, screen-off) keeps it running with a
+ * notification. Only <b>Stop</b> — here or in the notification — ends the take.
  */
 public class RecordActivity extends Activity {
 
     private static final int REQ_MIC = 7701;
-    private static final long MIN_KEEP_MS = 500;
 
     private Typeface font;
     private LinearLayout root;
-
-    private AudioCapture capture;
-    private File file;
-    private String format;
-    private boolean saved;
 
     private TextView timeView;
     private TextView sub;
     private Button pauseBtn;
     private WaveformView wave;
+
+    private RecorderService svc;
+    private boolean bound;
+    private boolean uiBuilt;
+    private long boundAt;
+
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Runnable tick = new Runnable() {
         @Override
         public void run() {
-            if (capture == null || !capture.recording()) return;
-            timeView.setText(fmt(capture.elapsedMs()));
-            if (!capture.paused()) wave.pushLevel(capture.level());
+            if (svc == null) return;
+            if (!svc.recording()) {
+                if (SystemClock.uptimeMillis() - boundAt > 2500) {
+                    finish();
+                    return;
+                }
+                handler.postDelayed(this, 80);
+                return;
+            }
+            if (!uiBuilt) buildRecordingUi();
+            timeView.setText(fmt(svc.recElapsedMs()));
+            boolean paused = svc.recPaused();
+            if (!paused) wave.pushLevel(svc.recLevel());
+            pauseBtn.setText(paused ? "Resume" : "Pause");
+            sub.setText(paused ? "Paused" : "Recording…");
             handler.postDelayed(this, 60);
+        }
+    };
+
+    private final ServiceConnection conn = new ServiceConnection() {
+        @Override
+        public void onServiceConnected(ComponentName name, IBinder service) {
+            svc = ((RecorderService.LocalBinder) service).service();
+            bound = true;
+            boundAt = SystemClock.uptimeMillis();
+            handler.post(tick);
+        }
+
+        @Override
+        public void onServiceDisconnected(ComponentName name) {
+            svc = null;
+            bound = false;
         }
     };
 
@@ -66,7 +99,7 @@ public class RecordActivity extends Activity {
             requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_MIC);
             return;
         }
-        startRecording();
+        startAndBind();
     }
 
     @Override
@@ -74,14 +107,20 @@ public class RecordActivity extends Activity {
         super.onRequestPermissionsResult(requestCode, permissions, results);
         if (requestCode != REQ_MIC) return;
         if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) {
-            startRecording();
+            startAndBind();
         } else {
             showDenied();
         }
     }
 
+    private void startAndBind() {
+        RecorderService.startRecording(this);
+        bindService(new Intent(this, RecorderService.class), conn, Context.BIND_AUTO_CREATE);
+    }
+
     private void showDenied() {
         root.removeAllViews();
+        root.setGravity(Gravity.CENTER);
         TextView msg = new TextView(this);
         msg.setText("plainphone needs microphone access to record.");
         msg.setTextColor(0xFFB5B5B5);
@@ -100,28 +139,15 @@ public class RecordActivity extends Activity {
         root.addView(close, lp);
     }
 
-    private void startRecording() {
-        format = Config.getRecorderFormat(this);
-        int rate = Config.getRecorderSampleRate(this);
-        file = new File(getCacheDir(), "rec-" + System.currentTimeMillis() + "." + format);
-        capture = new AudioCapture(format, rate, file, Config.isRecorderNoiseReduction(this));
-        try {
-            capture.start();
-        } catch (Exception e) {
-            Toast.makeText(this, "Couldn't start recording", Toast.LENGTH_SHORT).show();
-            finish();
-            return;
-        }
-        buildRecordingUi();
-        handler.post(tick);
-    }
-
     private void buildRecordingUi() {
         root.removeAllViews();
         root.setGravity(Gravity.CENTER);
+        uiBuilt = true;
 
         TextView fmt = new TextView(this);
-        String label = format + " · " + capture.effectiveSampleRate() + " Hz";
+        String format = svc.recFormat() != null ? svc.recFormat() : Config.getRecorderFormat(this);
+        int rate = svc.recSampleRate() > 0 ? svc.recSampleRate() : Config.getRecorderSampleRate(this);
+        String label = format + " · " + rate + " Hz";
         if (Config.isRecorderNoiseReduction(this)) label += " · NR";
         fmt.setText(label.toUpperCase(Locale.US));
         fmt.setTextColor(0xFF666666);
@@ -160,6 +186,17 @@ public class RecordActivity extends Activity {
         sp.topMargin = 20;
         root.addView(sub, sp);
 
+        TextView hint = new TextView(this);
+        hint.setText("Keeps recording if you leave — control it from the shade");
+        hint.setTextColor(0xFF5C5C5C);
+        hint.setTextSize(11);
+        hint.setTypeface(font);
+        hint.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams hp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        hp.topMargin = 8;
+        root.addView(hint, hp);
+
         LinearLayout buttons = new LinearLayout(this);
         buttons.setOrientation(LinearLayout.HORIZONTAL);
         buttons.setGravity(Gravity.CENTER);
@@ -171,14 +208,16 @@ public class RecordActivity extends Activity {
         pauseBtn = new Button(this);
         pauseBtn.setText("Pause");
         UiKit.style(this, pauseBtn);
-        pauseBtn.setOnClickListener(v -> togglePause());
+        pauseBtn.setOnClickListener(v -> {
+            if (svc != null) svc.recTogglePause();
+        });
         buttons.addView(pauseBtn);
 
         Button stop = new Button(this);
         stop.setText("Stop");
         UiKit.style(this, stop);
         stop.setOnClickListener(v -> {
-            finishRecording();
+            if (svc != null) svc.recStop();
             finish();
         });
         LinearLayout.LayoutParams stopParams = new LinearLayout.LayoutParams(
@@ -187,57 +226,17 @@ public class RecordActivity extends Activity {
         buttons.addView(stop, stopParams);
     }
 
-    private void togglePause() {
-        if (capture == null || !capture.recording()) return;
-        if (capture.paused()) {
-            capture.resume();
-            pauseBtn.setText("Pause");
-            sub.setText("Recording…");
-        } else {
-            capture.pause();
-            pauseBtn.setText("Resume");
-            sub.setText("Paused");
-        }
-    }
-
-    private void finishRecording() {
-        handler.removeCallbacks(tick);
-        if (saved || capture == null) return;
-        saved = true;
-        int[] peaks = capture.envelope();
-        long durationMs = capture.stop();
-        if (durationMs < MIN_KEEP_MS || !file.isFile() || file.length() == 0) {
-            file.delete();
-            return;
-        }
-        String name = Recorder.nextName(this);
-        Recording r = Recording.create(name, format, capture.effectiveSampleRate(),
-                durationMs, Recording.peaksToString(peaks));
-        File dest = Recorder.fileFor(this, r);
-        if (file.renameTo(dest) || copy(file, dest)) {
-            Recorder.add(this, r);
-        }
-        file.delete();
-    }
-
-    private static boolean copy(File from, File to) {
-        try (java.io.FileInputStream in = new java.io.FileInputStream(from);
-             java.io.FileOutputStream out = new java.io.FileOutputStream(to)) {
-            byte[] buf = new byte[8192];
-            int n;
-            while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
-            return true;
-        } catch (Exception e) {
-            return false;
-        }
-    }
-
     @Override
-    protected void onPause() {
-        super.onPause();
-        if (capture == null) return;          // still on the permission prompt
-        finishRecording();
-        if (!isFinishing()) finish();
+    protected void onDestroy() {
+        super.onDestroy();
+        handler.removeCallbacks(tick);
+        if (bound) {
+            try {
+                unbindService(conn);
+            } catch (IllegalArgumentException ignored) {
+            }
+            bound = false;
+        }
     }
 
     private static String fmt(long ms) {

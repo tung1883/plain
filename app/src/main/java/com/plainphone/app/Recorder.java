@@ -42,6 +42,18 @@ final class Recorder {
         return Config.getRecordings(c);
     }
 
+    /**
+     * The full recorder list as the home screen shows it: local recordings plus
+     * vault recordings (empty while the vault is locked), newest first. Also the
+     * playback queue for {@link RecorderService}.
+     */
+    static List<Recording> orderedAll(Context c) {
+        List<Recording> list = new ArrayList<>(all(c));
+        list.addAll(vaultRecordings(c));
+        list.sort((a, b) -> Long.compare(b.createdAt, a.createdAt));
+        return list;
+    }
+
     static void save(Context c, List<Recording> list) {
         Config.setRecordings(c, list);
     }
@@ -51,6 +63,11 @@ final class Recorder {
         int n = Config.getRecorderNextNumber(c);
         Config.setRecorderNextNumber(c, n + 1);
         return "Recording " + n;
+    }
+
+    /** The name the next take will get, without consuming the counter (notification title). */
+    static String peekName(Context c) {
+        return "Recording " + Config.getRecorderNextNumber(c);
     }
 
     /** Prepend a freshly captured recording. */

@@ -1319,10 +1319,7 @@ public class MainActivity extends Activity {
     // --- voice recorder ---------------------------------------------------
 
     private List<Recording> recorderAll() {
-        List<Recording> list = new ArrayList<>(Recorder.all(this));
-        list.addAll(Recorder.vaultRecordings(this));
-        Collections.sort(list, (a, b) -> Long.compare(b.createdAt, a.createdAt));
-        return list;
+        return Recorder.orderedAll(this);
     }
 
     private void renderRecorderSection() {
