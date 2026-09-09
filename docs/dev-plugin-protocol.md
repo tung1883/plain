@@ -45,21 +45,30 @@ A message that operates on a stream carries a `ch` (integer, client-assigned).
 
 | dir | message |
 |---|---|
-| C→D | `{t:"screen.start", ch, max_w, fps}` |
-| D→C | `{t:"screen.frame", ch, w, h, format:"jpeg", full:true, data:<bin>}` |
+| C→D | `{t:"screen.start", ch, max_w, fps, cursor?:bool}` |
+| D→C | `{t:"screen.frame", ch, w, h, sw, sh, format:"jpeg", full:true, data:<bin>}` |
 | C→D | `{t:"screen.stop", ch}` |
 
-Whole-frame JPEG at `fps` (clamped 1–30). Tiled / delta encoding is a later
-optimisation and would arrive as a new `format`.
+Whole-frame JPEG at `fps` (clamped 1–30). `w`,`h` are the delivered (possibly
+downscaled) size; `sw`,`sh` the source monitor's real pixel size, so the client
+can size a locally-drawn cursor to the real pointer. `cursor` (default `true`)
+asks the daemon to draw the pointer onto each frame; the phone sends `false`
+and draws its own. Re-sending `screen.start` on the same `ch` changes
+`max_w`/`fps` live (higher `max_w` while zoomed = sharper). Tiled / delta
+encoding is a later optimisation and would arrive as a new `format`.
 
 ### input
 
 | message |
 |---|
-| `{t:"input.move", dx, dy, scroll?}` |
+| `{t:"input.move", dx, dy, scroll?}` — relative pointer move / scroll |
+| `{t:"input.point", x, y}` — `x`,`y` are `0..1` within the captured frame; the daemon maps to primary-monitor pixels and moves the pointer there (absolute) |
 | `{t:"input.click", button:"l|r|m", double?:true}` |
 | `{t:"input.down"}` / `{t:"input.up"}` — press-drag |
-| `{t:"input.key", text?:"<utf8>", key?:"Enter|Backspace|Tab|Escape|Up|Down|Left|Right|Space|ctrl-alt-delete"}` |
+| `{t:"input.key", text?:"<utf8>", key?:"Enter|Backspace|Delete|Tab|Escape|Up|Down|Left|Right|Home|End|PageUp|PageDown|Space|ctrl-alt-delete", mods?:["ctrl"|"alt"|"shift"|"meta"]}` — `mods` held around the text/key |
+
+`input.point` `x`,`y` are always full-monitor-normalised regardless of `max_w`,
+so a zoomed client still points at the right spot.
 
 ### proc
 

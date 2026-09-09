@@ -13,7 +13,6 @@ import android.os.IBinder;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.inputmethod.InputMethodManager;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -91,10 +90,7 @@ public class DevTerminalActivity extends Activity implements DevService.StateLis
         super.onResume();
         DevService.connect(this, hostId);
         term.requestFocus();
-        term.postDelayed(() -> {
-            InputMethodManager imm = getSystemService(InputMethodManager.class);
-            if (imm != null) imm.showSoftInput(term, InputMethodManager.SHOW_IMPLICIT);
-        }, 150);
+        term.postDelayed(term::showKeyboard, 150);
         tryOpen();
     }
 
@@ -164,10 +160,6 @@ public class DevTerminalActivity extends Activity implements DevService.StateLis
         bar.addView(key(":", () -> term.sendString(":")));
         bar.addView(key("-", () -> term.sendString("-")));
         bar.addView(key("~", () -> term.sendString("~")));
-        bar.addView(key("⌨", () -> {
-            InputMethodManager imm = getSystemService(InputMethodManager.class);
-            if (imm != null) imm.toggleSoftInput(InputMethodManager.SHOW_IMPLICIT, 0);
-        }));
 
         HorizontalScrollView scroller = new HorizontalScrollView(this);
         scroller.setHorizontalScrollBarEnabled(false);

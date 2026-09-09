@@ -48,9 +48,15 @@ public class DevSettingsActivity extends Activity {
                 startActivity(new Intent(this, DevHostsActivity.class))));
 
         root.addView(row("Screen frame rate: " + Config.getDevScreenFps(this) + " fps", v -> {
-            int next = Config.getDevScreenFps(this) + 5;
-            if (next > 15) next = 2;
+            int cur = Config.getDevScreenFps(this);
+            int next = cur < 8 ? 12 : cur < 12 ? 15 : cur < 15 ? 20 : 8;
             Config.setDevScreenFps(this, next);
+            render();
+        }));
+
+        boolean pad = "pad".equals(Config.getDevTrackpadStyle(this));
+        root.addView(row("Trackpad style: " + (pad ? "Dedicated pad" : "Whole screen"), v -> {
+            Config.setDevTrackpadStyle(this, pad ? "whole" : "pad");
             render();
         }));
 

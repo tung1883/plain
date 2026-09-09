@@ -50,6 +50,7 @@ final class DevProtocol {
     static final String T_SCREEN_FRAME = "screen.frame";
     static final String T_SCREEN_STOP = "screen.stop";
     static final String T_INPUT_MOVE = "input.move";
+    static final String T_INPUT_POINT = "input.point";
     static final String T_INPUT_CLICK = "input.click";
     static final String T_INPUT_DOWN = "input.down";
     static final String T_INPUT_UP = "input.up";
@@ -163,11 +164,12 @@ final class DevProtocol {
         return m;
     }
 
-    static Map<String, Object> screenStart(long ch, int maxWidth, int fps) {
+    static Map<String, Object> screenStart(long ch, int maxWidth, int fps, boolean drawCursor) {
         Map<String, Object> m = msg(T_SCREEN_START);
         m.put("ch", ch);
         m.put("max_w", (long) maxWidth);
         m.put("fps", (long) fps);
+        m.put("cursor", drawCursor);
         return m;
     }
 
@@ -185,6 +187,14 @@ final class DevProtocol {
         return m;
     }
 
+    /** Absolute point: {@code x},{@code y} are 0..1 within the captured frame. */
+    static Map<String, Object> inputPoint(double x, double y) {
+        Map<String, Object> m = msg(T_INPUT_POINT);
+        m.put("x", x);
+        m.put("y", y);
+        return m;
+    }
+
     static Map<String, Object> inputClick(String button, boolean doubleClick) {
         Map<String, Object> m = msg(T_INPUT_CLICK);
         m.put("button", button);
@@ -193,9 +203,15 @@ final class DevProtocol {
     }
 
     static Map<String, Object> inputKey(String text, String key) {
+        return inputKey(text, key, null);
+    }
+
+    /** {@code mods} (any of "ctrl","alt","shift") are held around the key/text. */
+    static Map<String, Object> inputKey(String text, String key, List<String> mods) {
         Map<String, Object> m = msg(T_INPUT_KEY);
         if (text != null) m.put("text", text);
         if (key != null) m.put("key", key);
+        if (mods != null && !mods.isEmpty()) m.put("mods", new ArrayList<Object>(mods));
         return m;
     }
 
