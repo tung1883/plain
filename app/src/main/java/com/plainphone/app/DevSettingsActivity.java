@@ -44,7 +44,7 @@ public class DevSettingsActivity extends Activity {
         root.removeAllViews();
 
         int count = DevHost.all(this).size();
-        root.addView(row("Computers: " + count, v ->
+        root.addView(row("Devices: " + count, v ->
                 startActivity(new Intent(this, DevHostsActivity.class))));
 
         root.addView(row("Screen frame rate: " + Config.getDevScreenFps(this) + " fps", v -> {
