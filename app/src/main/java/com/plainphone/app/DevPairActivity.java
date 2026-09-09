@@ -8,8 +8,8 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.InputType;
+import android.view.Gravity;
 import android.view.ViewGroup;
-import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -18,7 +18,7 @@ import android.widget.Toast;
 import java.util.List;
 
 /**
- * Add a computer from a {@code plaind://host:port/<token>} link. MVP is
+ * Add a device from a {@code plaind://host:port/<token>} link. MVP is
  * paste-only — the QR scanner is a fast-follow. Pairing opens one connection to
  * confirm the token, then saves the host and its key.
  */
@@ -26,7 +26,7 @@ public class DevPairActivity extends Activity {
 
     private EditText link;
     private TextView status;
-    private Button pair;
+    private TextView go;
     private Typeface font;
     private DevConnection probe;
 
@@ -40,37 +40,44 @@ public class DevPairActivity extends Activity {
         root.setBackgroundColor(Color.BLACK);
         root.setPadding(48, 40, 48, 40);
 
-        root.addView(label("On the computer, run  plaind pair  and paste the link it prints."));
+        LinearLayout fieldRow = new LinearLayout(this);
+        fieldRow.setOrientation(LinearLayout.HORIZONTAL);
+        fieldRow.setGravity(Gravity.CENTER_VERTICAL);
+        fieldRow.setBackground(UiKit.rounded(this, Color.BLACK, Color.WHITE, 2f, UiKit.R_SM));
+        UiKit.clipRounded(this, fieldRow, UiKit.R_SM);
 
         link = new EditText(this);
         link.setHint("plaind://…");
         link.setHintTextColor(Color.GRAY);
         link.setTextColor(Color.WHITE);
         link.setTypeface(font);
+        link.setBackground(null);
+        link.setPadding(32, 24, 16, 24);
         link.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
-        UiKit.style(this, link);
+        link.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_GO);
+        link.setOnEditorActionListener((v, id, e) -> { startPairing(); return true; });
+        fieldRow.addView(link, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        go = new TextView(this);
+        go.setText("→");
+        go.setTextColor(Color.WHITE);
+        go.setTextSize(22);
+        go.setTypeface(font);
+        go.setGravity(Gravity.CENTER);
+        go.setPadding(16, 20, 28, 20);
+        go.setOnClickListener(v -> startPairing());
+        fieldRow.addView(go);
+
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.topMargin = 28;
-        root.addView(link, lp);
-
-        pair = new Button(this);
-        pair.setText("Pair");
-        UiKit.style(this, pair);
-        LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        bp.topMargin = 24;
-        pair.setOnClickListener(v -> startPairing());
-        root.addView(pair, bp);
+        root.addView(fieldRow, lp);
 
         status = label("");
         status.setPadding(0, 28, 0, 0);
         root.addView(status);
 
-        root.addView(label("The key is stored in the Android keystore. Dev unlocks with your PIN "
-                + "and never connects on its own."));
-
-        UiKit.screen(this, "Add computer", root);
+        UiKit.screen(this, "Add device", root);
     }
 
     private void startPairing() {
@@ -79,7 +86,7 @@ public class DevPairActivity extends Activity {
             status.setText("That doesn't look like a plaind:// link.");
             return;
         }
-        pair.setEnabled(false);
+        go.setEnabled(false);
         status.setText("Connecting to " + parsed.host + "…");
 
         Handler main = new Handler(Looper.getMainLooper());
@@ -109,7 +116,7 @@ public class DevPairActivity extends Activity {
                         if (done) return;
                         main.post(() -> {
                             status.setText("Pairing failed: " + reason);
-                            pair.setEnabled(true);
+                            go.setEnabled(true);
                         });
                     }
                 });
