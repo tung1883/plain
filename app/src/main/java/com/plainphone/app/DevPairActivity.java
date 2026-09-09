@@ -106,6 +106,7 @@ public class DevPairActivity extends Activity {
                             Toast.makeText(DevPairActivity.this, "Paired with " + label,
                                     Toast.LENGTH_SHORT).show();
                             startActivity(new Intent(DevPairActivity.this, DevHostActivity.class)
+                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                                     .putExtra(DevHostActivity.EXTRA_HOST_ID, saved.id));
                             finish();
                         });

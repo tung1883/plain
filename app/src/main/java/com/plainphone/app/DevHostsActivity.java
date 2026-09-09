@@ -69,6 +69,7 @@ public class DevHostsActivity extends Activity {
                     v -> {
                         DevService.connect(this, host.id);
                         startActivity(new Intent(this, DevHostActivity.class)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                                 .putExtra(DevHostActivity.EXTRA_HOST_ID, host.id));
                     },
                     () -> confirmRemove(host)));

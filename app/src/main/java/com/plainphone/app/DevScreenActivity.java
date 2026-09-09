@@ -67,6 +67,7 @@ public class DevScreenActivity extends Activity implements DevService.StateListe
             finish();
             return;
         }
+        setTaskDescription(new android.app.ActivityManager.TaskDescription(host.label + " · screen"));
 
         boolean padStyle = "pad".equals(Config.getDevTrackpadStyle(this));
 
