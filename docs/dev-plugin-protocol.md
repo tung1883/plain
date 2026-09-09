@@ -88,9 +88,13 @@ PageUp PageDown Space ctrl-alt-delete`. `mods` are held around `text`/`key`.
 | dir | message |
 |---|---|
 | C→D | `{t:"proc.list", ch}` |
-| D→C | `{t:"proc.list", ch, procs:[{pid, name, cpu, mem_kb, user}]}` — cpu desc, ≤300 |
+| D→C | `{t:"proc.list", ch, procs:[{pid, name, cpu, mem_kb, state:"R\|S\|T\|Z\|?", user}], sys}` — procs cpu desc, ≤300; per-proc `cpu` is 0–100 of the whole machine (already ÷ cores) |
 | C→D | `{t:"proc.kill", ch, pid, sig:"TERM\|KILL"}` |
 | D→C | `{t:"proc.killed", ch, pid, ok}` |
+
+`sys` = `{cpu (0–100), cpu_count, mem_used_kb, mem_total_kb, swap_used_kb,
+swap_total_kb, load:[1m,5m,15m], uptime_s,
+tasks:{total,running,sleeping,stopped,zombie,other}}` (`load` is zeros on Windows).
 
 ## Errors
 
