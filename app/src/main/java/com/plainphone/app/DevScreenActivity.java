@@ -193,8 +193,11 @@ public class DevScreenActivity extends Activity implements DevService.StateListe
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         setContentView(root);
 
-        // When the keyboard goes away (back press, swipe-down), drop the key bar too.
+        // When the keyboard goes away (back press, swipe-down), drop the key bar
+        // too — but not in the moment right after we asked for it, before the
+        // IME has animated up (that race made the first ⌨ tap a no-op).
         root.getViewTreeObserver().addOnGlobalLayoutListener(() -> {
+            if (System.currentTimeMillis() - keyBarShownAt < 800) return;
             android.graphics.Rect r = new android.graphics.Rect();
             root.getWindowVisibleDisplayFrame(r);
             int screenH = root.getRootView().getHeight();
@@ -206,6 +209,8 @@ public class DevScreenActivity extends Activity implements DevService.StateListe
         });
     }
 
+    private long keyBarShownAt;
+
     /** ctrl/alt/shift armed for the next keystroke (sticky, like a terminal Ctrl). */
     private final java.util.LinkedHashSet<String> armedMods = new java.util.LinkedHashSet<>();
     private final Map<String, TextView> modKeys = new java.util.HashMap<>();
@@ -216,12 +221,14 @@ public class DevScreenActivity extends Activity implements DevService.StateListe
         bar.setOrientation(LinearLayout.HORIZONTAL);
         bar.setPadding(8, 10, 8, 10);
         bar.addView(modKey("ctrl", "ctrl"));
-        bar.addView(modKey("alt", "alt"));
-        bar.addView(modKey("shift", "shift"));
-        bar.addView(specialKey("esc", () -> sendKey("Escape")));
         bar.addView(specialKey("tab", () -> sendKey("Tab")));
-        bar.addView(specialKey("enter", () -> sendKey("Enter")));
+        bar.addView(modKey("alt", "alt"));
+        bar.addView(specialKey("esc", () -> sendKey("Escape")));
+        bar.addView(specialKey("^C", () -> send(DevProtocol.inputKey("c", null,
+                java.util.Collections.singletonList("ctrl")))));
         bar.addView(specialKey("del", () -> sendKey("Delete")));
+        bar.addView(modKey("shift", "shift"));
+        bar.addView(specialKey("enter", () -> sendKey("Enter")));
         bar.addView(specialKey("↑", () -> sendKey("Up")));
         bar.addView(specialKey("↓", () -> sendKey("Down")));
         bar.addView(specialKey("←", () -> sendKey("Left")));
@@ -384,14 +391,17 @@ public class DevScreenActivity extends Activity implements DevService.StateListe
     private void toggleKeyboard() {
         InputMethodManager imm = getSystemService(InputMethodManager.class);
         if (imm == null) return;
-        if (keyInput.hasFocus()) {
+        boolean showing = keyBar.getVisibility() == View.VISIBLE;
+        if (showing) {
             imm.hideSoftInputFromWindow(keyInput.getWindowToken(), 0);
             keyInput.clearFocus();
             keyBar.setVisibility(View.GONE);
+            keyBarShownAt = 0;
         } else {
             keyInput.requestFocus();
             imm.showSoftInput(keyInput, InputMethodManager.SHOW_IMPLICIT);
             keyBar.setVisibility(View.VISIBLE);
+            keyBarShownAt = System.currentTimeMillis();
         }
     }
 
