@@ -262,16 +262,17 @@ public class DevService extends Service {
             m.createNotificationChannel(channel);
         }
         String label = hostLabel == null ? "a computer" : hostLabel;
-        String text = state == State.CONNECTED
-                ? (detail != null ? detail : "connected to " + label)
-                : "connecting to " + label + "…";
+        String title = state == State.CONNECTED
+                ? "Connected · " + label
+                : "Connecting to " + label + "…";
+        String text = state == State.CONNECTED && detail != null ? detail : "Dev";
         Intent open = new Intent(this, DevHostActivity.class)
                 .putExtra(DevHostActivity.EXTRA_HOST_ID, hostId)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         Notification.Builder b = new Notification.Builder(this, CHANNEL_ID)
-                .setContentTitle("Dev")
+                .setContentTitle(title)
                 .setContentText(text)
-                .setSmallIcon(R.drawable.ic_stat_recorder)
+                .setSmallIcon(R.drawable.ic_stat_dev)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
                 .setContentIntent(PendingIntent.getActivity(this, 0, open,
