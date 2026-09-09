@@ -21,9 +21,10 @@ import android.view.ViewConfiguration;
  *   <li>two-finger pinch — zoom the mirror above</li>
  * </ul>
  *
- * <p>A tap's click is held back {@link #DRAG_GRACE_MS}: if a press-drag follows
- * it becomes a clean drag; otherwise it fires as a normal click, and two of
- * those in quick succession are a double-click to the OS.
+ * <p>Taps are held back {@link #DRAG_GRACE_MS}: a tap-sequence that ends in a
+ * press-drag fires <b>no</b> clicks (so a double-tap-drag grabs an item instead
+ * of opening it); otherwise the pending taps fire as N clicks in a row, which
+ * the OS reads as a single / double / triple click.
  */
 final class TrackpadView extends View {
 
@@ -31,7 +32,7 @@ final class TrackpadView extends View {
 
     /** A full-width pad drag crosses this fraction of the screen. */
     private static final float GAIN = 1.1f;
-    /** How long a tap's click waits to see if a drag follows. */
+    /** How long a tap-sequence waits to see if a drag follows. */
     private static final long DRAG_GRACE_MS = 220;
 
     private final Paint hatch = new Paint();
@@ -40,11 +41,13 @@ final class TrackpadView extends View {
 
     private float lastX, lastY, startX, startY, lastTapX, lastTapY;
     private boolean moved, dragging, twoFinger, armDrag;
-    private boolean clickPending;
+    /** Taps waiting to fire; a drag that follows discards them all. */
+    private int pendingTaps;
 
-    private final Runnable clickFire = () -> {
-        clickPending = false;
-        if (screen != null) screen.tapClick(false);
+    private final Runnable tapFlush = () -> {
+        int n = pendingTaps;
+        pendingTaps = 0;
+        if (screen != null) for (int i = 0; i < n; i++) screen.tapClick(false);
     };
 
     private float pinchDist0, pinchMidY0, lastMidY, lastPinchD, pinchAccum;
@@ -59,8 +62,8 @@ final class TrackpadView extends View {
 
     private final Runnable longPress = () -> {
         if (!moved && !dragging && !twoFinger && screen != null) {
-            removeCallbacks(clickFire);
-            clickPending = false;
+            removeCallbacks(tapFlush);
+            pendingTaps = 0;
             dragging = true;
             screen.hold(true);
         }
@@ -96,15 +99,14 @@ final class TrackpadView extends View {
                 lastX = startX = e.getX();
                 lastY = startY = e.getY();
                 moved = dragging = twoFinger = false;
-                boolean near = Math.hypot(startX - lastTapX, startY - lastTapY) < doubleTapSlop;
-                // A tap's click is still pending nearby -> this touch may be the
-                // drag half of a tap-then-drag. If it's a tap somewhere else,
-                // let that pending click land now.
-                armDrag = clickPending && near;
-                if (clickPending && !near) {
-                    removeCallbacks(clickFire);
-                    clickPending = false;
-                    screen.tapClick(false);
+                // Any touch that lands while taps are pending might be their drag
+                // half; if it turns out to be a tap far away, flush them first.
+                armDrag = pendingTaps > 0;
+                if (pendingTaps > 0
+                        && Math.hypot(startX - lastTapX, startY - lastTapY) >= doubleTapSlop) {
+                    removeCallbacks(tapFlush);
+                    tapFlush.run();
+                    armDrag = false;
                 }
                 postDelayed(longPress, longPressTimeout);
                 return true;
@@ -113,6 +115,7 @@ final class TrackpadView extends View {
                 twoFinger = true;
                 removeCallbacks(longPress);
                 if (dragging) { screen.hold(false); dragging = false; }
+                if (pendingTaps > 0) { removeCallbacks(tapFlush); tapFlush.run(); }
                 if (e.getPointerCount() >= 2) {
                     pinchDist0 = lastPinchD = Math.max(1, spread(e));
                     pinchMidY0 = lastMidY = (e.getY(0) + e.getY(1)) / 2f;
@@ -150,9 +153,9 @@ final class TrackpadView extends View {
                 if (!moved && Math.hypot(e.getX() - startX, e.getY() - startY) > tapSlop) {
                     moved = true;
                     removeCallbacks(longPress);
-                    if (armDrag && !dragging) {   // tap-then-drag -> clean press-drag, no click
-                        removeCallbacks(clickFire);
-                        clickPending = false;
+                    if (armDrag && !dragging) {   // tap(s)-then-drag -> press-drag, discard the clicks
+                        removeCallbacks(tapFlush);
+                        pendingTaps = 0;
                         dragging = true;
                         screen.hold(true);
                     }
@@ -167,16 +170,16 @@ final class TrackpadView extends View {
                 if (dragging) {
                     screen.hold(false);
                     dragging = false;
-                    removeCallbacks(clickFire);
-                    clickPending = false;
+                    removeCallbacks(tapFlush);
+                    pendingTaps = 0;
                 } else if (!moved && !twoFinger) {
-                    // Hold the click briefly: a press-drag may follow (then it's
-                    // cancelled). Two of these close together = OS double-click.
+                    // Queue this tap; it fires (with any siblings) only if no
+                    // press-drag follows within the grace window.
                     lastTapX = e.getX();
                     lastTapY = e.getY();
-                    removeCallbacks(clickFire);
-                    clickPending = true;
-                    postDelayed(clickFire, DRAG_GRACE_MS);
+                    pendingTaps++;
+                    removeCallbacks(tapFlush);
+                    postDelayed(tapFlush, DRAG_GRACE_MS);
                 }
                 return true;
 
