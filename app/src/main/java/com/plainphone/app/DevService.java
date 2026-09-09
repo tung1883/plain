@@ -15,20 +15,23 @@ import android.os.IBinder;
 import android.os.Looper;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
- * Owns the single live {@link DevConnection} while the Dev plugin is in use, so
- * a shell or screen session survives the activity leaving the screen. Modelled
+ * Owns the live {@link DevConnection}s while the Dev plugin is in use — one per
+ * paired device — so shells and screen sessions survive an activity leaving the
+ * screen, and a workspace can hold panels from several devices at once. Modelled
  * on {@link RecorderService}: {@code volatile static} state the UI and
  * {@link PluginTasks} read, an ongoing notification, and a binder the Dev
  * activities grab to open channels.
  *
- * <p>Never auto-connects on a cold process start — the user re-opens the Dev
- * section to reconnect. Reconnects with backoff only while a session is live and
- * the section is unlocked.
+ * <p>Never auto-connects on a cold process start — the user re-opens a Dev
+ * screen. Reconnects with backoff while a link is wanted and the section is
+ * unlocked.
  */
 public class DevService extends Service {
 
@@ -46,28 +49,47 @@ public class DevService extends Service {
         void onDevState();
     }
 
-    private static volatile boolean connected;
-    private static volatile String hostLabel;
-    private static volatile String hostId;
+    // Snapshot of link state for the UI (host id -> connected?).
+    private static volatile Map<String, Boolean> linkState = Collections.emptyMap();
+    private static volatile String primaryId;   // a connected host, for legacy single-host screens
+    private static volatile String primaryLabel;
     private static volatile String detail;
     private static volatile String lastError;
     private static final CopyOnWriteArrayList<StateListener> listeners = new CopyOnWriteArrayList<>();
 
     static boolean isConnected() {
-        return connected;
+        for (Boolean v : linkState.values()) if (Boolean.TRUE.equals(v)) return true;
+        return false;
+    }
+
+    static boolean isConnected(String hostId) {
+        return hostId != null && Boolean.TRUE.equals(linkState.get(hostId));
+    }
+
+    /** A link for this device exists (connected or reconnecting). */
+    static boolean isLinked(String hostId) {
+        return hostId != null && linkState.containsKey(hostId);
+    }
+
+    static List<String> connectedHostIds() {
+        List<String> out = new ArrayList<>();
+        for (Map.Entry<String, Boolean> e : linkState.entrySet()) {
+            if (Boolean.TRUE.equals(e.getValue())) out.add(e.getKey());
+        }
+        return out;
+    }
+
+    /** Any connected host id (or null) — for the older single-host Dev screens. */
+    static String connectedHostId() {
+        return primaryId;
     }
 
     static String connectedHostLabel() {
-        return hostLabel;
+        return primaryLabel;
     }
 
-    static String connectedHostId() {
-        return hostId;
-    }
-
-    /** "prod-1" / "prod-1 — shell", for the lock-all confirmation and the hub. */
     static String activeDetail() {
-        return detail != null ? detail : hostLabel;
+        return detail != null ? detail : primaryLabel;
     }
 
     static String lastError() {
@@ -89,8 +111,17 @@ public class DevService extends Service {
                         .putExtra(EXTRA_HOST_ID, hostId));
     }
 
+    /** Drop one device's link. */
+    static void disconnect(Context context, String hostId) {
+        context.getApplicationContext().startService(
+                new Intent(context, DevService.class)
+                        .setAction(ACTION_DISCONNECT)
+                        .putExtra(EXTRA_HOST_ID, hostId));
+    }
+
+    /** Drop every link and stop the service. */
     static void disconnect(Context context) {
-        if (!connected && DevService.hostId == null) return;
+        if (linkState.isEmpty()) return;
         context.getApplicationContext().startService(
                 new Intent(context, DevService.class).setAction(ACTION_DISCONNECT));
     }
@@ -99,11 +130,18 @@ public class DevService extends Service {
 
     private final Handler main = new Handler(Looper.getMainLooper());
     private final Binder binder = new LocalBinder();
-    private DevConnection connection;
-    private DevHost target;
-    private State state = State.DISCONNECTED;
-    private int backoffStep;
-    private boolean userStopped;
+    private final Map<String, Link> links = new LinkedHashMap<>();
+
+    private static final class Link {
+        final DevHost host;
+        DevConnection conn;
+        State state = State.CONNECTING;
+        int backoff;
+        boolean stopped;
+        String detail;
+
+        Link(DevHost host) { this.host = host; }
+    }
 
     class LocalBinder extends Binder {
         DevService service() {
@@ -111,18 +149,31 @@ public class DevService extends Service {
         }
     }
 
+    /** Any connected link (legacy). */
     DevConnection connection() {
-        return state == State.CONNECTED ? connection : null;
+        for (Link l : links.values()) {
+            if (l.state == State.CONNECTED && l.conn != null) return l.conn;
+        }
+        return null;
+    }
+
+    DevConnection connection(String hostId) {
+        Link l = links.get(hostId);
+        return (l != null && l.state == State.CONNECTED) ? l.conn : null;
     }
 
     State state() {
-        return state;
+        Link l = primaryId != null ? links.get(primaryId) : null;
+        if (l != null) return l.state;
+        return links.isEmpty() ? State.DISCONNECTED : State.CONNECTING;
     }
 
-    /** Called by an activity to label what the session is doing right now. */
-    void setActivityDetail(String what) {
-        detail = (what == null || target == null) ? hostLabel : target.label + " — " + what;
-        updateNotification();
+    /** Label what a device's link is doing right now (for the notification). */
+    void setActivityDetail(String hostId, String what) {
+        Link l = links.get(hostId);
+        if (l == null) return;
+        l.detail = what;
+        publish();
     }
 
     @Override
@@ -133,98 +184,111 @@ public class DevService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         String action = intent == null ? null : intent.getAction();
+        String id = intent == null ? null : intent.getStringExtra(EXTRA_HOST_ID);
+
         if (ACTION_DISCONNECT.equals(action) || action == null) {
-            userStopped = true;
-            teardown("disconnected");
-            stopForeground(STOP_FOREGROUND_REMOVE);
-            stopSelf();
+            if (id != null) {
+                stopLink(id);
+                if (links.isEmpty()) { stopForeground(STOP_FOREGROUND_REMOVE); stopSelf(); }
+                else publish();
+            } else {
+                for (String k : new ArrayList<>(links.keySet())) stopLink(k);
+                stopForeground(STOP_FOREGROUND_REMOVE);
+                stopSelf();
+            }
             return START_NOT_STICKY;
         }
+
         if (ACTION_CONNECT.equals(action)) {
-            String id = intent.getStringExtra(EXTRA_HOST_ID);
             DevHost host = DevHost.find(this, id);
             if (host == null) {
-                stopSelf();
+                if (links.isEmpty()) stopSelf();
                 return START_NOT_STICKY;
             }
-            if (state != State.DISCONNECTED && target != null && target.id.equals(id)) {
+            Link existing = links.get(host.id);
+            if (existing != null && !existing.stopped) {
                 goForeground();
                 return START_NOT_STICKY; // already on it
             }
-            userStopped = false;
-            target = host;
-            hostId = host.id;
-            hostLabel = host.label;
-            detail = host.label;
-            backoffStep = 0;
+            Link link = new Link(host);
+            links.put(host.id, link);
             Config.setDevLastHostId(this, host.id);
             goForeground();
-            openConnection();
+            openLink(link);
         }
         return START_NOT_STICKY;
     }
 
-    private void openConnection() {
-        if (userStopped || target == null) return;
-        String token = target.token(this);
+    private void openLink(Link link) {
+        if (link.stopped) return;
+        String token = link.host.token(this);
         if (token == null) {
-            lastError = "no saved key for " + target.label + " — pair again";
-            setState(State.DISCONNECTED);
-            stopForeground(STOP_FOREGROUND_REMOVE);
-            stopSelf();
+            lastError = "no saved key for " + link.host.label + " — pair again";
+            links.remove(link.host.id);
+            if (links.isEmpty()) { stopForeground(STOP_FOREGROUND_REMOVE); stopSelf(); }
+            publish();
             return;
         }
-        setState(State.CONNECTING);
-        connection = new DevConnection(target.host, target.port, token,
-                android.os.Build.MODEL == null ? "phone" : android.os.Build.MODEL,
+        link.state = State.CONNECTING;
+        publish();
+        link.conn = new DevConnection(link.host.host, link.host.port, token,
+                Build.MODEL == null ? "phone" : Build.MODEL,
                 new DevConnection.Listener() {
                     @Override
                     public void onConnected(String host, String os, List<Object> caps) {
-                        backoffStep = 0;
+                        link.backoff = 0;
                         lastError = null;
-                        setState(State.CONNECTED);
+                        link.state = State.CONNECTED;
+                        publish();
                     }
 
                     @Override
                     public void onDisconnected(String reason) {
                         lastError = reason;
-                        if (userStopped) {
-                            setState(State.DISCONNECTED);
-                            stopForeground(STOP_FOREGROUND_REMOVE);
-                            stopSelf();
+                        if (link.stopped || !links.containsKey(link.host.id)) {
+                            publish();
                             return;
                         }
-                        setState(State.CONNECTING);
-                        scheduleRetry();
+                        link.state = State.CONNECTING;
+                        publish();
+                        scheduleRetry(link);
                     }
                 });
-        connection.start();
+        link.conn.start();
     }
 
-    private void scheduleRetry() {
-        long delay = BACKOFF_MS[Math.min(backoffStep, BACKOFF_MS.length - 1)];
-        backoffStep++;
+    private void scheduleRetry(Link link) {
+        long delay = BACKOFF_MS[Math.min(link.backoff, BACKOFF_MS.length - 1)];
+        link.backoff++;
         main.postDelayed(() -> {
-            if (!userStopped) openConnection();
+            if (!link.stopped && links.containsKey(link.host.id)) openLink(link);
         }, delay);
     }
 
-    private void teardown(String reason) {
-        DevConnection c = connection;
-        connection = null;
-        target = null;
-        hostId = null;
-        if (c != null) c.close();
-        setState(State.DISCONNECTED);
+    private void stopLink(String hostId) {
+        Link l = links.remove(hostId);
+        if (l == null) return;
+        l.stopped = true;
+        if (l.conn != null) l.conn.close();
     }
 
-    private void setState(State s) {
-        state = s;
-        connected = s == State.CONNECTED;
-        if (!connected && s == State.DISCONNECTED) {
-            hostLabel = null;
-            detail = null;
+    private void publish() {
+        Map<String, Boolean> snap = new LinkedHashMap<>();
+        String pId = null, pLabel = null;
+        StringBuilder d = new StringBuilder();
+        for (Link l : links.values()) {
+            boolean up = l.state == State.CONNECTED;
+            snap.put(l.host.id, up);
+            if (up && pId == null) { pId = l.host.id; pLabel = l.host.label; }
+            if (up && l.detail != null) {
+                if (d.length() > 0) d.append("  ·  ");
+                d.append(l.host.label).append(" — ").append(l.detail);
+            }
         }
+        linkState = snap;
+        primaryId = pId;
+        primaryLabel = pLabel;
+        detail = d.length() > 0 ? d.toString() : null;
         updateNotification();
         main.post(() -> {
             for (StateListener l : listeners) l.onDevState();
@@ -234,7 +298,8 @@ public class DevService extends Service {
     @Override
     public void onDestroy() {
         super.onDestroy();
-        teardown("service stopped");
+        for (String k : new ArrayList<>(links.keySet())) stopLink(k);
+        publish();
     }
 
     // --- notification --------------------------------------------------
@@ -249,7 +314,7 @@ public class DevService extends Service {
     }
 
     private void updateNotification() {
-        if (state == State.DISCONNECTED) return;
+        if (links.isEmpty()) return;
         getSystemService(NotificationManager.class).notify(NOTIF_ID, buildNotification());
     }
 
@@ -261,13 +326,19 @@ public class DevService extends Service {
             channel.setShowBadge(false);
             m.createNotificationChannel(channel);
         }
-        String label = hostLabel == null ? "a device" : hostLabel;
-        String title = state == State.CONNECTED
-                ? "Connected · " + label
-                : "Connecting to " + label + "…";
-        String text = state == State.CONNECTED && detail != null ? detail : "Dev";
-        Intent open = new Intent(this, DevHostActivity.class)
-                .putExtra(DevHostActivity.EXTRA_HOST_ID, hostId)
+        int total = links.size();
+        int up = connectedHostIds().size();
+        String title;
+        if (total == 1) {
+            Link only = links.values().iterator().next();
+            title = only.state == State.CONNECTED
+                    ? "Connected · " + only.host.label
+                    : "Connecting to " + only.host.label + "…";
+        } else {
+            title = up + " of " + total + " devices connected";
+        }
+        String text = detail != null ? detail : "Dev";
+        Intent open = new Intent(this, DevHostsActivity.class)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         Notification.Builder b = new Notification.Builder(this, CHANNEL_ID)
                 .setContentTitle(title)
@@ -278,7 +349,7 @@ public class DevService extends Service {
                 .setContentIntent(PendingIntent.getActivity(this, 0, open,
                         PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));
         b.addAction(new Notification.Action.Builder((android.graphics.drawable.Icon) null,
-                "Disconnect",
+                "Disconnect all",
                 PendingIntent.getService(this, 1,
                         new Intent(this, DevService.class).setAction(ACTION_DISCONNECT),
                         PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT))

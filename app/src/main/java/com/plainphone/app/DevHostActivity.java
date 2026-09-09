@@ -94,11 +94,11 @@ public class DevHostActivity extends Activity implements DevService.StateListene
     private void render() {
         root.removeAllViews();
 
-        boolean live = host.id.equals(DevService.connectedHostId()) && DevService.isConnected();
+        boolean live = DevService.isConnected(host.id);
         String stateText;
         if (live) {
             stateText = "Connected · " + host.address();
-        } else if (host.id.equals(DevService.connectedHostId())) {
+        } else if (DevService.isLinked(host.id)) {
             stateText = "Connecting to " + host.address() + "…";
         } else {
             String err = DevService.lastError();
@@ -116,10 +116,9 @@ public class DevHostActivity extends Activity implements DevService.StateListene
         root.addView(big("Processes", enabled,
                 v -> startActivity(new Intent(this, DevProcActivity.class)
                         .putExtra(EXTRA_HOST_ID, hostId))));
-
         root.addView(divider());
         root.addView(action("Disconnect", 0xFFC88F87, v -> {
-            DevService.disconnect(this);
+            DevService.disconnect(this, hostId);
             render();
         }));
     }
