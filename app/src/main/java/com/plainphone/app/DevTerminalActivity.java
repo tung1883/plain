@@ -34,6 +34,8 @@ public class DevTerminalActivity extends Activity implements DevService.StateLis
     private long sessionId = -1; // daemon session id; -1 until opened / for a new shell
     private TerminalView term;
     private TextView status;
+    private View keyBar;
+    private boolean kbVisible;
     private TextView ctrlKey, altKey, shiftKey;
     private DevService service;
     private DevConnection connection;
@@ -93,9 +95,60 @@ public class DevTerminalActivity extends Activity implements DevService.StateLis
 
         column.addView(term, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-        column.addView(buildKeyBar());
+        keyBar = buildKeyBar();
+        keyBar.setVisibility(View.GONE);
+        column.addView(keyBar, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        UiKit.screen(this, host.label + " · shell", column);
+        // "← host · shell" bar with a keyboard toggle pinned right.
+        LinearLayout head = UiKit.header(this, host.label + " · shell");
+        TextView kbd = new TextView(this);
+        kbd.setText("⌨");
+        kbd.setTextColor(Color.WHITE);
+        kbd.setTextSize(18);
+        kbd.setTypeface(Fonts.cascadiaMono(this));
+        kbd.setGravity(Gravity.CENTER);
+        kbd.setPadding(28, 0, 28, 0);
+        kbd.setOnClickListener(v -> toggleKeyboard());
+        head.addView(kbd, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackgroundColor(Color.BLACK);
+        root.addView(head, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        View hair = new View(this);
+        hair.setBackgroundColor(0xFF1C1C1C);
+        root.addView(hair, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 1));
+        root.addView(column, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        setContentView(root);
+
+        // The key bar mirrors the soft keyboard: shown while it's up (⌨ toggle
+        // or tapping the terminal), hidden when it's dismissed.
+        root.getViewTreeObserver().addOnGlobalLayoutListener(() -> {
+            android.graphics.Rect r = new android.graphics.Rect();
+            root.getWindowVisibleDisplayFrame(r);
+            int screenH = root.getRootView().getHeight();
+            boolean up = screenH - r.bottom > screenH * 0.15f;
+            if (up != kbVisible) {
+                kbVisible = up;
+                keyBar.setVisibility(up ? View.VISIBLE : View.GONE);
+            }
+        });
+    }
+
+    private void toggleKeyboard() {
+        android.view.inputmethod.InputMethodManager imm =
+                getSystemService(android.view.inputmethod.InputMethodManager.class);
+        if (imm == null) return;
+        if (kbVisible) {
+            imm.hideSoftInputFromWindow(term.getWindowToken(), 0);
+        } else {
+            term.showKeyboard();
+        }
     }
 
     @Override
@@ -210,12 +263,13 @@ public class DevTerminalActivity extends Activity implements DevService.StateLis
         shiftKey = key("shift", () -> { term.armShift(!term.shiftArmed()); paintMods(); });
         term.onModsCleared = this::paintMods;
         bar.addView(ctrlKey);
-        bar.addView(altKey);
-        bar.addView(shiftKey);
-        bar.addView(key("esc", () -> term.barKey(new byte[]{0x1b})));
         bar.addView(key("tab", () -> term.barKey(new byte[]{'\t'})));
-        bar.addView(key("enter", () -> term.barKey(new byte[]{'\r'})));
+        bar.addView(altKey);
+        bar.addView(key("esc", () -> term.barKey(new byte[]{0x1b})));
+        bar.addView(key("^C", () -> term.sendBytes(new byte[]{0x03})));
         bar.addView(key("del", () -> term.barKey(TerminalView.esc("[3~"))));
+        bar.addView(shiftKey);
+        bar.addView(key("enter", () -> term.barKey(new byte[]{'\r'})));
         bar.addView(key("↑", () -> term.barArrow('A')));
         bar.addView(key("↓", () -> term.barArrow('B')));
         bar.addView(key("←", () -> term.barArrow('D')));
