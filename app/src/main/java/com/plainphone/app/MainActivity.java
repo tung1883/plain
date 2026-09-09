@@ -1880,9 +1880,14 @@ public class MainActivity extends Activity {
         rows.add(new SearchResult(SearchResult.Kind.DEV, "Dev settings", null, -1,
                 () -> startActivity(new Intent(this, DevSettingsActivity.class))));
 
-        String liveId = DevService.connectedHostId();
-        for (DevHost host : DevHost.all(this)) {
-            boolean live = host.id.equals(liveId) && DevService.isConnected();
+        java.util.List<DevHost> devHosts = DevHost.all(this);
+        if (!devHosts.isEmpty()) {
+            rows.add(new SearchResult(SearchResult.Kind.DEV, "Workspace", "windows across your devices", -1,
+                    () -> startActivity(new Intent(this, WorkspaceActivity.class)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))));
+        }
+        for (DevHost host : devHosts) {
+            boolean live = DevService.isConnected(host.id);
             rows.add(new SearchResult(SearchResult.Kind.DEV, host.label,
                     live ? "connected — tap to open" : host.address(), -1, () -> {
                 DevService.connect(this, host.id);

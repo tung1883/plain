@@ -104,7 +104,7 @@ public class DevShellsActivity extends Activity implements DevService.StateListe
     @Override
     public void onDevState() {
         runOnUiThread(() -> {
-            DevConnection live = service != null ? service.connection() : null;
+            DevConnection live = service != null ? service.connection(hostId) : null;
             if (connection != null && connection != live) {
                 connection = null;
                 channel = -1;
@@ -116,8 +116,8 @@ public class DevShellsActivity extends Activity implements DevService.StateListe
     }
 
     private void tryOpen() {
-        if (opening || channel >= 0 || service == null || !DevService.isConnected()) return;
-        connection = service.connection();
+        if (opening || channel >= 0 || service == null || !DevService.isConnected(hostId)) return;
+        connection = service.connection(hostId);
         if (connection == null) return;
         opening = true;
         channel = connection.openChannel(sink);

@@ -50,6 +50,11 @@ public class DevHostsActivity extends Activity {
                 v -> startActivity(new Intent(this, DevPairActivity.class))));
 
         List<DevHost> hosts = DevHost.all(this);
+        if (!hosts.isEmpty()) {
+            root.addView(row("Workspace", "windows across your devices", Color.WHITE,
+                    v -> startActivity(new Intent(this, WorkspaceActivity.class)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))));
+        }
         if (hosts.isEmpty()) {
             TextView empty = new TextView(this);
             empty.setText("No devices yet. Run “plaind pair” on a machine, then add it here.");
@@ -61,9 +66,8 @@ public class DevHostsActivity extends Activity {
             return;
         }
 
-        String liveId = DevService.connectedHostId();
         for (DevHost host : hosts) {
-            boolean live = host.id.equals(liveId) && DevService.isConnected();
+            boolean live = DevService.isConnected(host.id);
             root.addView(row(host.label, live ? "connected · " + host.address() : host.address(),
                     live ? Color.WHITE : Color.GRAY,
                     v -> {
@@ -79,7 +83,7 @@ public class DevHostsActivity extends Activity {
     private void confirmRemove(DevHost host) {
         VaultUi.confirm(this, "Remove " + host.label + "?", "Its saved key is deleted too.",
                 "Remove", () -> {
-                    if (host.id.equals(DevService.connectedHostId())) DevService.disconnect(this);
+                    if (DevService.isLinked(host.id)) DevService.disconnect(this, host.id);
                     DevHost.remove(this, host.id);
                     render();
                 }, "Cancel", null);

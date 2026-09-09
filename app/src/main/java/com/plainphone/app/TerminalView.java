@@ -98,8 +98,8 @@ final class TerminalView extends View {
 
     /** Recompute cols/rows for the current view size + font and push a resize. */
     private void remeasure() {
-        int w = getWidth(), h = getHeight();
-        if (w == 0 || h == 0) return;
+        int w = getWidth() - getPaddingLeft() - getPaddingRight(), h = getHeight();
+        if (w <= 0 || h == 0) return;
         int newCols = Math.max(20, (int) (w / charW));
         int newRows = Math.max(6, (int) (h / charH));
         if (newCols != cols || newRows != rows) {
@@ -216,6 +216,7 @@ final class TerminalView extends View {
         boolean focused = isFocused();
         int sb = term.scrollbackSize();
         int off = Math.min(scrollLines, sb);
+        final float left = getPaddingLeft();
 
         for (int y = 0; y < rows; y++) {
             int virt = sb - off + y;
@@ -251,13 +252,13 @@ final class TerminalView extends View {
                 }
                 if (bgc != DEFAULT_BG) {
                     fill.setColor(bgc);
-                    canvas.drawRect(x * charW, top, (x + 1) * charW, top + charH, fill);
+                    canvas.drawRect(left + x * charW, top, left + (x + 1) * charW, top + charH, fill);
                 }
                 char g = gRow[x];
                 if (g != ' ' && g != 0) {
                     text.setColor(fgc);
                     text.setFakeBoldText(bold);
-                    canvas.drawText(String.valueOf(g), x * charW, top + baseline, text);
+                    canvas.drawText(String.valueOf(g), left + x * charW, top + baseline, text);
                 }
             }
         }

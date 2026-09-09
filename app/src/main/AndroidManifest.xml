@@ -419,6 +419,15 @@
             android:theme="@style/Theme.PlainPhone" />
 
         <activity
+            android:name=".WorkspaceActivity"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:taskAffinity="com.plainphone.app.dev"
+            android:autoRemoveFromRecents="false"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
             android:name=".DevSettingsActivity"
             android:exported="false"
             android:theme="@style/Theme.PlainPhone" />
