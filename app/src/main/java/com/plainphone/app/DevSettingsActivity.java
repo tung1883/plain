@@ -49,7 +49,7 @@ public class DevSettingsActivity extends Activity {
 
         root.addView(row("Screen frame rate: " + Config.getDevScreenFps(this) + " fps", v -> {
             int cur = Config.getDevScreenFps(this);
-            int next = cur < 8 ? 12 : cur < 12 ? 15 : cur < 15 ? 20 : 8;
+            int next = cur < 12 ? 12 : cur < 20 ? 20 : cur < 30 ? 30 : cur < 60 ? 60 : 8;
             Config.setDevScreenFps(this, next);
             render();
         }));

@@ -63,7 +63,8 @@ which survives restarts too.
 | C→D | `{t:"screen.stop", ch}` |
 | D→C | `{t:"screen.frame", ch, w, h, sw, sh, format:"jpeg", full:true, data:<bin>}` |
 
-- Whole-frame JPEG at `fps` (1–30). `w`,`h` = delivered size; `sw`,`sh` =
+- Whole-frame JPEG at `fps` (1–60; capture + encode may cap the real rate lower).
+  `w`,`h` = delivered size; `sw`,`sh` =
   source monitor size (for client-side cursor scaling).
 - `cursor` (default true) = daemon draws the pointer on each frame; phone
   sends `false` and draws its own.
