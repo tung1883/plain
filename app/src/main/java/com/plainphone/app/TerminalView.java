@@ -201,8 +201,14 @@ final class TerminalView extends View {
     @Override
     protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         super.onSizeChanged(w, h, oldw, oldh);
-        remeasure();
+        // The view resizes 2-3 times right after open (keyboard slides up, key
+        // bar appears). Debounce so the shell reflows once, when it settles —
+        // otherwise the content visibly jumps / "zooms".
+        removeCallbacks(settle);
+        postDelayed(settle, 180);
     }
+
+    private final Runnable settle = this::remeasure;
 
     @Override
     protected void onDraw(Canvas canvas) {
