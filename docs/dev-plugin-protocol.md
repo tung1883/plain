@@ -75,6 +75,7 @@ which survives restarts too.
 | message |
 |---|
 | `{t:"input.move", dx, dy, scroll?}` — relative move / scroll |
+| `{t:"input.zoom", ticks}` — signed wheel ticks with Ctrl held (trackpad pinch) |
 | `{t:"input.point", x, y}` — `x`,`y` ∈ 0..1 of the full monitor (absolute) |
 | `{t:"input.click", button:"l\|r\|m", double?:true}` |
 | `{t:"input.down"}` / `{t:"input.up"}` — press-drag |

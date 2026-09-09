@@ -16,7 +16,8 @@ import android.view.ViewConfiguration;
  *   <li>tap — click where the cursor is; second tap = double-click</li>
  *   <li>tap then tap-and-hold-drag — hold the button down while dragging</li>
  *   <li>long-press — same press-drag</li>
- *   <li>two-finger vertical — scroll</li>
+ *   <li>two-finger slide — scroll (mouse wheel)</li>
+ *   <li>two-finger pinch — zoom the mirror above</li>
  * </ul>
  */
 final class TrackpadView extends View {
@@ -34,6 +35,13 @@ final class TrackpadView extends View {
     private float lastX, lastY, startX, startY, lastTapX, lastTapY;
     private boolean moved, dragging, twoFinger, secondTap;
     private long lastUpTime;
+
+    private float pinchDist0, pinchMidY0, lastMidY, lastPinchD, pinchAccum;
+    /** 0 = undecided, 1 = pinch-zoom (host), 2 = two-finger scroll. */
+    private int twoMode;
+    private final float twoSlop;
+    /** Spread change (px) that equals one host zoom tick. */
+    private final float pinchStep;
 
     /** Second tap only counts as a double if it lands this close to the first. */
     private final float doubleTapSlop;
@@ -56,6 +64,8 @@ final class TrackpadView extends View {
         // double-click, an accidental "tap, look, tap again" does not.
         doubleTapTimeout = Math.min(ViewConfiguration.getDoubleTapTimeout(), 240);
         doubleTapSlop = context.getResources().getDisplayMetrics().density * 24f;
+        twoSlop = context.getResources().getDisplayMetrics().density * 10f;
+        pinchStep = context.getResources().getDisplayMetrics().density * 34f;
         hatch.setColor(0xFF151515);
         hatch.setStrokeWidth(2f);
     }
@@ -84,14 +94,33 @@ final class TrackpadView extends View {
             case MotionEvent.ACTION_POINTER_DOWN:
                 twoFinger = true;
                 removeCallbacks(longPress);
-                lastY = e.getY(0);
+                if (dragging) { screen.hold(false); dragging = false; }
+                if (e.getPointerCount() >= 2) {
+                    pinchDist0 = lastPinchD = Math.max(1, spread(e));
+                    pinchMidY0 = lastMidY = (e.getY(0) + e.getY(1)) / 2f;
+                    pinchAccum = 0;
+                    twoMode = 0;
+                }
                 return true;
 
             case MotionEvent.ACTION_MOVE:
                 if (twoFinger && e.getPointerCount() >= 2) {
-                    float d = e.getY(0) - lastY;
-                    lastY = e.getY(0);
-                    screen.scroll(-d / 6f);
+                    float d = Math.max(1, spread(e));
+                    float my = (e.getY(0) + e.getY(1)) / 2f;
+                    if (twoMode == 0) {
+                        float sp = Math.abs(d - pinchDist0);
+                        float sl = Math.abs(my - pinchMidY0);
+                        if (Math.max(sp, sl) > twoSlop) twoMode = sp > sl ? 1 : 2;
+                    }
+                    if (twoMode == 1) {           // pinch -> host zoom (Ctrl+wheel)
+                        pinchAccum += d - lastPinchD; // + = fingers spreading = zoom IN
+                        while (pinchAccum >= pinchStep) { screen.hostZoom(-1); pinchAccum -= pinchStep; }
+                        while (pinchAccum <= -pinchStep) { screen.hostZoom(1); pinchAccum += pinchStep; }
+                    } else if (twoMode == 2) {    // slide -> mouse wheel
+                        screen.scroll(-(my - lastMidY) / 3f);
+                    }
+                    lastPinchD = d;
+                    lastMidY = my;
                     return true;
                 }
                 float dx = e.getX() - lastX;
@@ -138,5 +167,9 @@ final class TrackpadView extends View {
                 return true;
         }
         return super.onTouchEvent(e);
+    }
+
+    private static float spread(MotionEvent e) {
+        return (float) Math.hypot(e.getX(0) - e.getX(1), e.getY(0) - e.getY(1));
     }
 }

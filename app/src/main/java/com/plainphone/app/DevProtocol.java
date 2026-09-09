@@ -61,6 +61,7 @@ final class DevProtocol {
     static final String T_INPUT_DOWN = "input.down";
     static final String T_INPUT_UP = "input.up";
     static final String T_INPUT_KEY = "input.key";
+    static final String T_INPUT_ZOOM = "input.zoom";
     static final String T_PROC_LIST = "proc.list";
     static final String T_PROC_KILL = "proc.kill";
     static final String T_PROC_KILLED = "proc.killed";
@@ -228,6 +229,13 @@ final class DevProtocol {
         Map<String, Object> m = msg(T_INPUT_POINT);
         m.put("x", x);
         m.put("y", y);
+        return m;
+    }
+
+    /** Signed wheel ticks with Ctrl held — a trackpad pinch on the host. */
+    static Map<String, Object> inputZoom(double ticks) {
+        Map<String, Object> m = msg(T_INPUT_ZOOM);
+        m.put("ticks", ticks);
         return m;
     }
 
