@@ -62,7 +62,7 @@ public class PhotoCropActivity extends Activity {
         root.setBackgroundColor(Color.BLACK);
 
         FrameLayout frame = new FrameLayout(this);
-        frame.setForeground(UiKit.frameBorder());
+        frame.setForeground(UiKit.frameBorder(this));
 
         if (scene != null) {
             GifArtView g = new GifArtView(this, scene, fx, fy, z, gray);

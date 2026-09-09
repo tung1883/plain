@@ -3,18 +3,73 @@ package com.plainphone.app;
 import android.content.Context;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
+import android.graphics.Outline;
+import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.StateListDrawable;
 import android.view.ContextThemeWrapper;
 import android.view.View;
+import android.view.ViewOutlineProvider;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 
 class UiKit {
 
+    // Corner-radius scale (dp). Everything rounds through these — nothing invents its own.
+    static final float R_XS = 6f;   // key-bar keys, sheet options, small controls
+    static final float R_SM = 10f;  // buttons, inputs
+    static final float R_MD = 14f;  // list containers, cards
+    static final float R_LG = 20f;  // the one sheet (top corners only)
+    static final float R_PILL = 999f;
+
     static int dp(Context c, float v) {
         return Math.round(v * c.getResources().getDisplayMetrics().density);
+    }
+
+    /** A filled, optionally stroked rounded rect. {@code strokePx} is raw pixels
+     *  (as the app's older GradientDrawables used); {@code radiusDp} is scaled. */
+    static GradientDrawable rounded(Context c, int fill, int strokeColor, float strokePx, float radiusDp) {
+        GradientDrawable g = new GradientDrawable();
+        g.setColor(fill);
+        if (strokePx > 0) g.setStroke(Math.round(strokePx), strokeColor);
+        g.setCornerRadius(dp(c, radiusDp));
+        return g;
+    }
+
+    /** Normal + pressed rounded fills, for a tappable control. */
+    static StateListDrawable pressable(Context c, int normalFill, int pressedFill,
+                                       int strokeColor, float strokePx, float radiusDp) {
+        StateListDrawable s = new StateListDrawable();
+        s.addState(new int[]{android.R.attr.state_pressed},
+                rounded(c, pressedFill, strokeColor, strokePx, radiusDp));
+        s.addState(new int[]{}, rounded(c, normalFill, strokeColor, strokePx, radiusDp));
+        return s;
+    }
+
+    /**
+     * A vertical container that rounds its own corners and clips the flat rows
+     * inside it — the "grouped list" look. Rows stay square; only the group
+     * rounds. Hairlines between rows are the caller's job.
+     */
+    static LinearLayout roundedGroup(Context c) {
+        LinearLayout g = new LinearLayout(c);
+        g.setOrientation(LinearLayout.VERTICAL);
+        g.setBackground(rounded(c, Color.BLACK, 0xFF2C2C2C, 1f, R_MD));
+        clipRounded(c, g, R_MD);
+        return g;
+    }
+
+    /** Clip a view's children to a rounded-rect outline (so flat rows keep the corners). */
+    static void clipRounded(Context c, View v, float radiusDp) {
+        final float r = dp(c, radiusDp);
+        v.setClipToOutline(true);
+        v.setOutlineProvider(new ViewOutlineProvider() {
+            @Override public void getOutline(View vv, Outline o) {
+                o.setRoundRect(0, 0, vv.getWidth(), vv.getHeight(), r);
+            }
+        });
     }
 
     /** The left inset of body text on plain screens — the arrow lines up with it. */
@@ -122,33 +177,34 @@ class UiKit {
         button.setTypeface(Fonts.current(context));
         button.setAllCaps(false);
         button.setPadding(48, 28, 48, 28);
-        button.setBackground(buttonBackground());
+        button.setBackground(buttonBackground(context));
     }
 
     static void style(Context context, EditText input) {
         input.setTextColor(Color.WHITE);
         input.setTypeface(Fonts.current(context));
         input.setPadding(32, 20, 32, 20);
-        input.setBackground(inputBackground());
+        input.setBackground(inputBackground(context));
     }
 
-    private static GradientDrawable inputBackground() {
+    private static GradientDrawable inputBackground(Context c) {
+        return rounded(c, Color.BLACK, Color.WHITE, 2f, R_SM);
+    }
+
+    static GradientDrawable frameBorder(Context c) {
+        return rounded(c, Color.TRANSPARENT, Color.WHITE, 2f, 0f);
+    }
+
+    static GradientDrawable dialogBackground(Context c) {
+        return rounded(c, Color.BLACK, 0xFF2C2C2C, 2f, R_MD);
+    }
+
+    /** Top corners only — for a sheet that sits flush on the bottom edge. */
+    static GradientDrawable sheetBackground(Context c) {
         GradientDrawable box = new GradientDrawable();
         box.setColor(Color.BLACK);
-        box.setStroke(3, Color.WHITE);
-        return box;
-    }
-
-    static GradientDrawable frameBorder() {
-        GradientDrawable frame = new GradientDrawable();
-        frame.setColor(Color.TRANSPARENT);
-        frame.setStroke(6, Color.WHITE);
-        return frame;
-    }
-
-    static GradientDrawable dialogBackground() {
-        GradientDrawable box = new GradientDrawable();
-        box.setColor(Color.BLACK);
+        float r = dp(c, R_LG);
+        box.setCornerRadii(new float[]{r, r, r, r, 0, 0, 0, 0});
         return box;
     }
 
@@ -172,19 +228,23 @@ class UiKit {
         }
     }
 
-    private static StateListDrawable buttonBackground() {
-        GradientDrawable normal = new GradientDrawable();
-        normal.setColor(Color.BLACK);
-        normal.setStroke(3, Color.WHITE);
+    /**
+     * Strip the AlertDialog's internal panel backgrounds + padding so a rounded
+     * custom view isn't boxed by the theme's square {@code colorBackground}
+     * panels behind it. Call after {@code dialog.show()}.
+     */
+    static void unboxDialog(View content) {
+        android.view.ViewParent p = content.getParent();
+        while (p instanceof View) {
+            View v = (View) p;
+            v.setBackground(null);
+            v.setPadding(0, 0, 0, 0);
+            p = v.getParent();
+        }
+    }
 
-        GradientDrawable pressed = new GradientDrawable();
-        pressed.setColor(Color.DKGRAY);
-        pressed.setStroke(3, Color.WHITE);
-
-        StateListDrawable states = new StateListDrawable();
-        states.addState(new int[]{android.R.attr.state_pressed}, pressed);
-        states.addState(new int[]{}, normal);
-        return states;
+    private static StateListDrawable buttonBackground(Context c) {
+        return pressable(c, Color.BLACK, Color.DKGRAY, Color.WHITE, 2f, R_SM);
     }
 }
 

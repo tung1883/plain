@@ -92,7 +92,7 @@ public class WebTargetsActivity extends Activity {
 
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setBackground(UiKit.dialogBackground());
+        card.setBackground(UiKit.dialogBackground(this));
         card.setPadding(56, 48, 56, 40);
 
         TextView title = new TextView(this);
@@ -218,7 +218,7 @@ public class WebTargetsActivity extends Activity {
     private void confirmDelete(WebTarget target) {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setBackground(UiKit.dialogBackground());
+        card.setBackground(UiKit.dialogBackground(this));
         card.setPadding(56, 48, 56, 40);
 
         TextView title = new TextView(this);

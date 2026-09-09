@@ -284,6 +284,7 @@ public class DevScreenActivity extends Activity implements DevService.StateListe
         GradientDrawable box = new GradientDrawable();
         box.setColor(on ? Color.WHITE : Color.BLACK);
         box.setStroke(2, 0xFF2C2C2C);
+        box.setCornerRadius(UiKit.dp(this, 6));
         k.setBackground(box);
         k.setTextColor(on ? Color.BLACK : 0xFF8B8B8B);
     }
@@ -410,6 +411,7 @@ public class DevScreenActivity extends Activity implements DevService.StateListe
         GradientDrawable box = new GradientDrawable();
         box.setColor(move ? Color.WHITE : Color.BLACK);
         box.setStroke(1, move ? Color.WHITE : 0xFF2C2C2C);
+        box.setCornerRadius(UiKit.dp(this, 999));
         chip.setBackground(box);
         chip.setTextColor(move ? Color.BLACK : 0xFF8B8B8B);
     }

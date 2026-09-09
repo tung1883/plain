@@ -649,7 +649,7 @@ public class MainActivity extends Activity {
 
         artFrame = new FrameLayout(this);
 
-        artFrame.setForeground(UiKit.frameBorder());
+        artFrame.setForeground(UiKit.frameBorder(this));
         artFrame.setOnClickListener(v -> startActivity(new Intent(this, ArtViewerActivity.class)));
 
         LinearLayout.LayoutParams artFrameParams = new LinearLayout.LayoutParams(320, 0);

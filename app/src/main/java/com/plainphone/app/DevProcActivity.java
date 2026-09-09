@@ -92,13 +92,14 @@ public class DevProcActivity extends Activity implements DevService.StateListene
 
         statsPanel = new LinearLayout(this);
         statsPanel.setOrientation(LinearLayout.VERTICAL);
-        statsPanel.setBackgroundColor(Color.BLACK);
-        statsPanel.setPadding(dp(20), dp(14), dp(20), dp(12));
-        root.addView(statsPanel, wrap());
-        root.addView(rule());
+        statsPanel.setBackground(UiKit.rounded(this, 0xFF0B0B0B, 0xFF1C1C1C, 1f, UiKit.R_MD));
+        statsPanel.setPadding(dp(18), dp(14), dp(18), dp(14));
+        LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        sp.setMargins(dp(20), dp(12), dp(20), dp(4));
+        root.addView(statsPanel, sp);
 
         root.addView(buildSearch());
-        root.addView(rule());
 
         headerRow = tableRow();
         headerRow.setBackgroundColor(Color.BLACK);
@@ -266,11 +267,12 @@ public class DevProcActivity extends Activity implements DevService.StateListene
         row.addView(l);
 
         android.widget.FrameLayout fl = new android.widget.FrameLayout(this);
-        fl.setBackgroundColor(0xFF161616);
+        fl.setBackground(UiKit.rounded(this, 0xFF161616, 0, 0f, 4f));
+        fl.setClipToOutline(true);
         LinearLayout.LayoutParams flp = new LinearLayout.LayoutParams(0, dp(8), 1f);
         flp.rightMargin = dp(10);
         View fill = new View(this);
-        fill.setBackgroundColor(fillColor);
+        fill.setBackground(UiKit.rounded(this, fillColor, 0, 0f, 4f));
         fl.addView(fill, new android.widget.FrameLayout.LayoutParams(0, dp(8)));
         row.addView(fl, flp);
         fl.post(() -> {
@@ -304,11 +306,18 @@ public class DevProcActivity extends Activity implements DevService.StateListene
     // --- search -------------------------------------------------------
 
     private View buildSearch() {
+        LinearLayout wrap = new LinearLayout(this);
+        wrap.setOrientation(LinearLayout.HORIZONTAL);
+        wrap.setPadding(dp(20), dp(8), dp(20), dp(8));
+        wrap.setBackgroundColor(Color.BLACK);
+
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(20), dp(6), dp(16), dp(6));
-        row.setBackgroundColor(Color.BLACK);
+        row.setPadding(dp(16), dp(6), dp(12), dp(6));
+        row.setBackground(UiKit.rounded(this, 0xFF0E0E0E, 0xFF262626, 1f, UiKit.R_SM));
+        wrap.addView(row, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         TextView mag = new TextView(this);
         mag.setText("⌕");
@@ -347,7 +356,7 @@ public class DevProcActivity extends Activity implements DevService.StateListene
         clr.setPadding(dp(12), dp(8), 0, dp(8));
         clr.setOnClickListener(v -> searchBox.setText(""));
         row.addView(clr);
-        return row;
+        return wrap;
     }
 
     // --- table ------------------------------------------------------

@@ -31,7 +31,7 @@ public class ArtViewerActivity extends Activity {
         root.setBackgroundColor(Color.BLACK);
 
         FrameLayout artFrame = new FrameLayout(this);
-        artFrame.setForeground(UiKit.frameBorder());
+        artFrame.setForeground(UiKit.frameBorder(this));
 
         content = ArtKit.homeArt(this);
         if (content == null) { finish(); return; }
