@@ -1,4 +1,4 @@
-<h1><img src="app/src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.png" alt="Plain icon" width="40" align="left" /> Plain</h1>
+<h1><img src="app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" alt="Plain icon" width="40" align="left" /> Plain</h1>
 
 Go back in time and turn your smartphones into bricks. Together we will stop doomscrolling
 
