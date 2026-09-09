@@ -11,7 +11,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * One paired computer. The pairing token is a secret and never lives here — it
+ * One paired device. The pairing token is a secret and never lives here — it
  * is stored under {@link SecretStore} keyed by {@link #id} and fetched only when
  * a connection is opened. Everything else is plain config, a JSON array in
  * {@link Config#getDevHostsJson}.

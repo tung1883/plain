@@ -1883,7 +1883,7 @@ public class MainActivity extends Activity {
             }));
         }
 
-        rows.add(new SearchResult(SearchResult.Kind.DEV, "+ Add computer", null, -1,
+        rows.add(new SearchResult(SearchResult.Kind.DEV, "+ Add device", null, -1,
                 () -> startActivity(new Intent(this, DevPairActivity.class))));
     }
 

@@ -16,7 +16,7 @@ import android.widget.TextView;
 
 import java.util.List;
 
-/** The list of paired computers. Tap to connect and open the hub; long-press to remove. */
+/** The list of paired devices. Tap to connect and open the hub; long-press to remove. */
 public class DevHostsActivity extends Activity {
 
     private LinearLayout root;
@@ -46,13 +46,13 @@ public class DevHostsActivity extends Activity {
         font = Fonts.current(this);
         root.removeAllViews();
 
-        root.addView(row("+ Add computer", "scan or paste a link", Color.GRAY,
+        root.addView(row("+ Add device", "scan or paste a link", Color.GRAY,
                 v -> startActivity(new Intent(this, DevPairActivity.class))));
 
         List<DevHost> hosts = DevHost.all(this);
         if (hosts.isEmpty()) {
             TextView empty = new TextView(this);
-            empty.setText("No computers yet. Run “plaind pair” on a machine, then add it here.");
+            empty.setText("No devices yet. Run “plaind pair” on a machine, then add it here.");
             empty.setTextColor(Color.GRAY);
             empty.setTextSize(14);
             empty.setTypeface(font);

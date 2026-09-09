@@ -261,7 +261,7 @@ public class DevService extends Service {
             channel.setShowBadge(false);
             m.createNotificationChannel(channel);
         }
-        String label = hostLabel == null ? "a computer" : hostLabel;
+        String label = hostLabel == null ? "a device" : hostLabel;
         String title = state == State.CONNECTED
                 ? "Connected · " + label
                 : "Connecting to " + label + "…";
