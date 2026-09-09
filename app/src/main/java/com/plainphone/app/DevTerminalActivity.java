@@ -257,7 +257,7 @@ public class DevTerminalActivity extends Activity implements DevService.StateLis
         bar.setOrientation(LinearLayout.HORIZONTAL);
         bar.setPadding(8, 10, 8, 10);
 
-        // Same set as the Screen key bar, plus the shell's punctuation keys.
+        // Same set as the Screen key bar.
         ctrlKey = key("ctrl", () -> { term.armCtrl(!term.ctrlArmed()); paintMods(); });
         altKey = key("alt", () -> { term.armAlt(!term.altArmed()); paintMods(); });
         shiftKey = key("shift", () -> { term.armShift(!term.shiftArmed()); paintMods(); });
@@ -274,11 +274,6 @@ public class DevTerminalActivity extends Activity implements DevService.StateLis
         bar.addView(key("↓", () -> term.barArrow('B')));
         bar.addView(key("←", () -> term.barArrow('D')));
         bar.addView(key("→", () -> term.barArrow('C')));
-        bar.addView(key("/", () -> term.sendString("/")));
-        bar.addView(key("|", () -> term.sendString("|")));
-        bar.addView(key(":", () -> term.sendString(":")));
-        bar.addView(key("-", () -> term.sendString("-")));
-        bar.addView(key("~", () -> term.sendString("~")));
 
         HorizontalScrollView scroller = new HorizontalScrollView(this);
         scroller.setHorizontalScrollBarEnabled(false);
