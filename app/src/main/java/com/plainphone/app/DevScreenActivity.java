@@ -90,6 +90,9 @@ public class DevScreenActivity extends Activity implements DevService.StateListe
             @Override public void point(float nx, float ny) {
                 send(DevProtocol.inputPoint(nx, ny));
             }
+            @Override public void zoom(float ticks) {
+                send(DevProtocol.inputZoom(ticks));
+            }
         };
         screen.onZoomSettle = this::scheduleRestream;
         screen.onModeChange = () -> {

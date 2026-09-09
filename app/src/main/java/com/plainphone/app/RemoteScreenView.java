@@ -40,6 +40,7 @@ final class RemoteScreenView extends View {
         void click(String button, boolean doubleClick);
         void press(boolean down);
         void point(float nx, float ny);
+        void zoom(float ticks); // Ctrl+wheel on the host (trackpad pinch)
     }
 
     enum Layout { WHOLE, PAD }
@@ -85,7 +86,10 @@ final class RemoteScreenView extends View {
     /** Second tap only counts as a double if it lands this close to the first. */
     private final float doubleTapSlop;
 
-    private float pinchDist, pinchZoom0, pinchAnchorX, pinchAnchorY;
+    private float pinchDist, pinchZoom0, pinchAnchorX, pinchAnchorY, pinchMidX, pinchMidY, lastMidY;
+    /** 0 = undecided, 1 = pinch-zoom, 2 = two-finger scroll (mouse wheel). */
+    private int twoMode;
+    private final float twoSlop;
 
     private final Runnable longPress = () -> {
         if (!moved && !dragging && !twoFinger && listener != null) {
@@ -105,6 +109,7 @@ final class RemoteScreenView extends View {
         // double-click, an accidental "tap, look, tap again" does not.
         doubleTapTimeout = Math.min(ViewConfiguration.getDoubleTapTimeout(), 240);
         doubleTapSlop = context.getResources().getDisplayMetrics().density * 24f;
+        twoSlop = context.getResources().getDisplayMetrics().density * 10f;
         cursorMinPx = context.getResources().getDisplayMetrics().density * 3f;
         cursorEdgePx = context.getResources().getDisplayMetrics().density * 1f;
         cursorFill.setColor(Color.WHITE);
@@ -194,6 +199,11 @@ final class RemoteScreenView extends View {
 
     void scroll(float amount) {
         if (listener != null) listener.move(0, 0, amount);
+    }
+
+    /** Trackpad pinch: send a host zoom gesture (Ctrl+wheel), not a view zoom. */
+    void hostZoom(float ticks) {
+        if (listener != null) listener.zoom(ticks);
     }
 
     void hold(boolean down) {
@@ -336,29 +346,33 @@ final class RemoteScreenView extends View {
                 if (e.getPointerCount() >= 2) {
                     pinchDist = Math.max(1, dist(e));
                     pinchZoom0 = zoom;
+                    twoMode = 0;
                     float cx = getWidth() / 2f, cy = getHeight() / 2f;
-                    float m0x = (e.getX(0) + e.getX(1)) / 2f;
-                    float m0y = (e.getY(0) + e.getY(1)) / 2f;
+                    pinchMidX = (e.getX(0) + e.getX(1)) / 2f;
+                    pinchMidY = (e.getY(0) + e.getY(1)) / 2f;
+                    lastMidY = pinchMidY;
                     // Content point under the fingers — kept fixed as zoom changes.
-                    pinchAnchorX = (m0x - cx - panX) / zoom + cx;
-                    pinchAnchorY = (m0y - cy - panY) / zoom + cy;
+                    pinchAnchorX = (pinchMidX - cx - panX) / zoom + cx;
+                    pinchAnchorY = (pinchMidY - cy - panY) / zoom + cy;
                 }
                 lastY = e.getY(0);
                 return true;
 
             case MotionEvent.ACTION_MOVE:
                 if (twoFinger && e.getPointerCount() >= 2) {
-                    if (relativeMode()) {
-                        float dy = e.getY(0) - lastY;
-                        lastY = e.getY(0);
-                        scroll(-dy / 6f);
-                    } else {
-                        float d = Math.max(1, dist(e));
-                        float cx = getWidth() / 2f, cy = getHeight() / 2f;
-                        float mx = (e.getX(0) + e.getX(1)) / 2f;
-                        float my = (e.getY(0) + e.getY(1)) / 2f;
+                    moved = true;
+                    float d = Math.max(1, dist(e));
+                    float cx = getWidth() / 2f, cy = getHeight() / 2f;
+                    float mx = (e.getX(0) + e.getX(1)) / 2f;
+                    float my = (e.getY(0) + e.getY(1)) / 2f;
+                    // Classify once: fingers spreading = zoom, fingers sliding together = scroll.
+                    if (twoMode == 0) {
+                        float spread = Math.abs(d - pinchDist);
+                        float slide = (float) Math.hypot(mx - pinchMidX, my - pinchMidY);
+                        if (Math.max(spread, slide) > twoSlop) twoMode = spread > slide ? 1 : 2;
+                    }
+                    if (twoMode == 1) { // pinch-zoom, anchored under the fingers
                         zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, pinchZoom0 * d / pinchDist));
-                        // Hold the anchor content point under the moving fingers.
                         panX = mx - cx - (pinchAnchorX - cx) * zoom;
                         panY = my - cy - (pinchAnchorY - cy) * zoom;
                         if (zoom <= ZOOM_MIN + 0.001f) {
@@ -367,8 +381,10 @@ final class RemoteScreenView extends View {
                         }
                         clampPan();
                         invalidate();
+                    } else if (twoMode == 2) { // two-finger drag = mouse wheel
+                        scroll(-(my - lastMidY) / 3f);
+                        lastMidY = my;
                     }
-                    moved = true;
                     return true;
                 }
                 // A lingering finger after a pinch: don't let it lurch into a pan.
