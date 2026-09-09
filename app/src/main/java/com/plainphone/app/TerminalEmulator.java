@@ -5,7 +5,7 @@ import java.nio.charset.StandardCharsets;
 /**
  * A practical VT100 / xterm screen model — enough of the escape grammar for
  * {@code bash}, {@code vim}, {@code htop}, {@code tmux} and {@code less}: cursor
- * addressing, the erase ops, SGR colour (16 + 256), a scroll region, insert /
+ * addressing, the erase ops, SGR colour (16 + 256 + 24-bit truecolor), a scroll region, insert /
  * delete lines and chars, and the alternate screen. Not spec-complete; anything
  * exotic is expected to run inside tmux.
  *
@@ -423,8 +423,12 @@ final class TerminalEmulator {
                 if (code == 38) curFg = idx; else curBg = idx;
                 i += 2;
             } else if ((code == 38 || code == 48) && i + 4 < p.length && p[i + 1] == 2) {
-                i += 4; // truecolor — collapse to default, rare in TUIs
-                if (code == 38) curFg = DEFAULT; else curBg = DEFAULT;
+                // 24-bit truecolor: pack as opaque ARGB so it's distinguishable
+                // from a 0..255 palette index (which never has the high byte set).
+                int rgb = 0xFF000000 | ((p[i + 2] & 0xFF) << 16)
+                        | ((p[i + 3] & 0xFF) << 8) | (p[i + 4] & 0xFF);
+                if (code == 38) curFg = rgb; else curBg = rgb;
+                i += 4;
             }
         }
     }
@@ -447,6 +451,19 @@ final class TerminalEmulator {
         }
         scrollTop = 0;
         scrollBottom = rows - 1;
+    }
+
+    /** Wipe the screen, scrollback and parser — for reattaching to a session. */
+    synchronized void reset() {
+        onAlt = false;
+        scrollback.clear();
+        glyph = blankGlyph(cols, rows);
+        fg = filled(cols, rows, DEFAULT);
+        bg = filled(cols, rows, DEFAULT);
+        flags = filled(cols, rows, 0);
+        parseState = GROUND;
+        csi.setLength(0);
+        fullReset();
     }
 
     private void fullReset() {

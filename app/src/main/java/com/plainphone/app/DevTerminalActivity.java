@@ -20,12 +20,20 @@ import android.widget.Toast;
 
 import java.util.Map;
 
-/** Interactive shell: a {@link TerminalView} over a {@code pty} channel plus a key bar. */
+/**
+ * Interactive shell: a {@link TerminalView} over a persistent session on the
+ * daemon, plus a key bar. The pty lives in {@code plaind} and keeps running
+ * while the phone is away — {@link #onStop} only detaches, and reopening (with
+ * the same {@link #EXTRA_SESSION_ID}) reattaches and replays the buffered output.
+ */
 public class DevTerminalActivity extends Activity implements DevService.StateListener {
 
+    static final String EXTRA_SESSION_ID = "sessionId";
+
     private String hostId;
+    private long sessionId = -1; // daemon session id; -1 until opened / for a new shell
     private TerminalView term;
-    private TextView ctrlKey;
+    private TextView ctrlKey, altKey, shiftKey;
     private DevService service;
     private DevConnection connection;
     private long channel = -1;
@@ -50,6 +58,7 @@ public class DevTerminalActivity extends Activity implements DevService.StateLis
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         hostId = getIntent().getStringExtra(DevHostActivity.EXTRA_HOST_ID);
+        sessionId = getIntent().getLongExtra(EXTRA_SESSION_ID, -1);
         DevHost host = DevHost.find(this, hostId);
         if (host == null) {
             finish();
@@ -99,7 +108,7 @@ public class DevTerminalActivity extends Activity implements DevService.StateLis
         super.onStop();
         DevService.removeStateListener(this);
         if (channel >= 0 && connection != null) {
-            connection.send(DevProtocol.ptyClose(channel));
+            connection.send(DevProtocol.sessionDetach(channel)); // keep the shell running
             connection.closeChannel(channel);
         }
         channel = -1;
@@ -122,14 +131,31 @@ public class DevTerminalActivity extends Activity implements DevService.StateLis
         if (connection == null) return;
         opening = true;
         channel = connection.openChannel(sink);
-        connection.send(DevProtocol.ptyOpen(channel,
-                Math.max(term.cols(), 20), Math.max(term.rows(), 6), null));
+        term.reset(); // the daemon replays this session's buffer right after
+        connection.send(DevProtocol.sessionOpen(channel,
+                sessionId >= 0 ? sessionId : null, null,
+                Math.max(term.cols(), 20), Math.max(term.rows(), 6)));
         service.setActivityDetail("shell");
     }
 
     private void onChannelMessage(Map<String, Object> msg) {
         String type = DevProtocol.type(msg);
-        if (DevProtocol.T_PTY_DATA.equals(type)) {
+        if (DevProtocol.T_SESSION_OPENED.equals(type)) {
+            sessionId = DevProtocol.num(msg, "id", sessionId);
+            String name = DevProtocol.str(msg, "name");
+            if (service != null) {
+                service.setActivityDetail("shell" + (name != null ? " · " + name : ""));
+            }
+        } else if (DevProtocol.T_SESSION_GONE.equals(type)) {
+            // The old shell is gone (daemon restarted / killed) — start fresh.
+            Toast.makeText(this, "Shell ended — opening a new one", Toast.LENGTH_SHORT).show();
+            sessionId = -1;
+            term.reset();
+            if (channel >= 0 && connection != null) {
+                connection.send(DevProtocol.sessionOpen(channel, null, null,
+                        Math.max(term.cols(), 20), Math.max(term.rows(), 6)));
+            }
+        } else if (DevProtocol.T_PTY_DATA.equals(type)) {
             byte[] data = DevProtocol.bin(msg, "data");
             if (data != null) term.feed(data, data.length);
         } else if (DevProtocol.T_PTY_EXIT.equals(type)) {
@@ -144,17 +170,22 @@ public class DevTerminalActivity extends Activity implements DevService.StateLis
         bar.setOrientation(LinearLayout.HORIZONTAL);
         bar.setPadding(8, 10, 8, 10);
 
-        bar.addView(key("esc", () -> term.sendBytes(new byte[]{0x1b})));
-        bar.addView(key("tab", () -> term.sendBytes(new byte[]{'\t'})));
-        ctrlKey = key("ctrl", () -> {
-            term.armCtrl(!term.ctrlArmed());
-            paint(ctrlKey, term.ctrlArmed());
-        });
+        // Same set as the Screen key bar, plus the shell's punctuation keys.
+        ctrlKey = key("ctrl", () -> { term.armCtrl(!term.ctrlArmed()); paintMods(); });
+        altKey = key("alt", () -> { term.armAlt(!term.altArmed()); paintMods(); });
+        shiftKey = key("shift", () -> { term.armShift(!term.shiftArmed()); paintMods(); });
+        term.onModsCleared = this::paintMods;
         bar.addView(ctrlKey);
-        bar.addView(key("↑", () -> term.sendBytes(TerminalView.esc("[A"))));
-        bar.addView(key("↓", () -> term.sendBytes(TerminalView.esc("[B"))));
-        bar.addView(key("←", () -> term.sendBytes(TerminalView.esc("[D"))));
-        bar.addView(key("→", () -> term.sendBytes(TerminalView.esc("[C"))));
+        bar.addView(altKey);
+        bar.addView(shiftKey);
+        bar.addView(key("esc", () -> term.barKey(new byte[]{0x1b})));
+        bar.addView(key("tab", () -> term.barKey(new byte[]{'\t'})));
+        bar.addView(key("enter", () -> term.barKey(new byte[]{'\r'})));
+        bar.addView(key("del", () -> term.barKey(TerminalView.esc("[3~"))));
+        bar.addView(key("↑", () -> term.barArrow('A')));
+        bar.addView(key("↓", () -> term.barArrow('B')));
+        bar.addView(key("←", () -> term.barArrow('D')));
+        bar.addView(key("→", () -> term.barArrow('C')));
         bar.addView(key("/", () -> term.sendString("/")));
         bar.addView(key("|", () -> term.sendString("|")));
         bar.addView(key(":", () -> term.sendString(":")));
@@ -182,6 +213,12 @@ public class DevTerminalActivity extends Activity implements DevService.StateLis
         paint(k, false);
         k.setOnClickListener(v -> action.run());
         return k;
+    }
+
+    private void paintMods() {
+        paint(ctrlKey, term.ctrlArmed());
+        paint(altKey, term.altArmed());
+        paint(shiftKey, term.shiftArmed());
     }
 
     private void paint(TextView k, boolean on) {

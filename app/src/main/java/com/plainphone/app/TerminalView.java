@@ -44,7 +44,9 @@ final class TerminalView extends View {
 
     OnInput onInput;
     OnResize onResize;
-    private boolean ctrlArmed;
+    private boolean ctrlArmed, altArmed, shiftArmed;
+    /** Fired when the sticky modifiers auto-clear after a keystroke. */
+    Runnable onModsCleared;
 
     /** Lines scrolled up into history; 0 = following the live bottom. */
     private int scrollLines;
@@ -54,9 +56,8 @@ final class TerminalView extends View {
 
     private final float density;
     private float fontSp;
-    private static final float FONT_MIN = 7f, FONT_MAX = 26f, FONT_DEFAULT = 12.5f;
+    private static final float FONT_MIN = 7f, FONT_MAX = 26f, FONT_DEFAULT = 16f;
     private final ScaleGestureDetector scaleDetector;
-    private long badgeUntil;
 
     TerminalView(Context context) {
         super(context);
@@ -81,7 +82,6 @@ final class TerminalView extends View {
                         fontSp = next;
                         applyFont();
                         remeasure();
-                        badgeUntil = System.currentTimeMillis() + 900;
                         invalidate();
                         return true;
                     }
@@ -111,6 +111,13 @@ final class TerminalView extends View {
         }
     }
 
+    /** Clear everything — used when reattaching to a persistent shell before its replay. */
+    void reset() {
+        term.reset();
+        scrollLines = 0;
+        postInvalidate();
+    }
+
     void feed(byte[] data, int len) {
         int before = term.scrollbackSize();
         term.feed(data, len);
@@ -132,13 +139,44 @@ final class TerminalView extends View {
     int cols() { return cols; }
     int rows() { return rows; }
 
-    /** Arm Ctrl for the next character (the key-bar "ctrl" chip). */
-    void armCtrl(boolean armed) {
-        ctrlArmed = armed;
+    /** Arm a sticky modifier for the next keystroke (the key-bar chips). */
+    void armCtrl(boolean armed) { ctrlArmed = armed; }
+    void armAlt(boolean armed) { altArmed = armed; }
+    void armShift(boolean armed) { shiftArmed = armed; }
+
+    boolean ctrlArmed() { return ctrlArmed; }
+    boolean altArmed() { return altArmed; }
+    boolean shiftArmed() { return shiftArmed; }
+
+    private void clearMods() {
+        if (ctrlArmed || altArmed || shiftArmed) {
+            ctrlArmed = altArmed = shiftArmed = false;
+            if (onModsCleared != null) onModsCleared.run();
+        }
     }
 
-    boolean ctrlArmed() {
-        return ctrlArmed;
+    /** xterm modifier parameter: 1 + shift(1) + alt(2) + ctrl(4). */
+    private int modParam() {
+        return 1 + (shiftArmed ? 1 : 0) + (altArmed ? 2 : 0) + (ctrlArmed ? 4 : 0);
+    }
+
+    /** An arrow / nav key from the bar, honouring the armed modifiers. */
+    void barArrow(char dir) {
+        int m = modParam();
+        sendBytes(m == 1 ? esc("[" + dir) : esc("[1;" + m + dir));
+        clearMods();
+    }
+
+    /** A fixed control byte sequence from the bar; Alt prefixes it with ESC. */
+    void barKey(byte[] base) {
+        if (altArmed) {
+            byte[] out = new byte[base.length + 1];
+            out[0] = 0x1b;
+            System.arraycopy(base, 0, out, 1, base.length);
+            base = out;
+        }
+        sendBytes(base);
+        clearMods();
     }
 
     void sendBytes(byte[] data) {
@@ -217,18 +255,6 @@ final class TerminalView extends View {
                 }
             }
         }
-
-        if (System.currentTimeMillis() < badgeUntil) {
-            String label = cols + "×" + rows;
-            float tw = text.measureText(label);
-            float left = getWidth() - tw - 34;
-            fill.setColor(0xE6000000);
-            canvas.drawRect(left, 10, getWidth() - 12, 10 + charH + 8, fill);
-            text.setColor(DEFAULT_FG);
-            text.setFakeBoldText(false);
-            canvas.drawText(label, left + 11, 14 + baseline, text);
-            postInvalidateDelayed(120);
-        }
     }
 
     @Override
@@ -270,6 +296,7 @@ final class TerminalView extends View {
 
     private int resolve(int index, boolean fg, boolean bold) {
         if (index == TerminalEmulator.DEFAULT) return fg ? DEFAULT_FG : DEFAULT_BG;
+        if ((index & 0xFF000000) != 0) return index; // packed 24-bit truecolor
         int i = index;
         if (bold && i < 8) i += 8;
         if (i < 0 || i >= palette.length) return fg ? DEFAULT_FG : DEFAULT_BG;
@@ -319,12 +346,17 @@ final class TerminalView extends View {
     }
 
     private void type(String s) {
-        if (ctrlArmed && s.length() == 1) {
-            sendBytes(new byte[]{control(s.charAt(0))});
-            ctrlArmed = false;
-            return;
+        byte[] body = (ctrlArmed && s.length() == 1)
+                ? new byte[]{control(s.charAt(0))}
+                : s.getBytes(StandardCharsets.UTF_8);
+        if (altArmed) {
+            byte[] out = new byte[body.length + 1];
+            out[0] = 0x1b;
+            System.arraycopy(body, 0, out, 1, body.length);
+            body = out;
         }
-        sendString(s);
+        sendBytes(body);
+        clearMods();
     }
 
     @Override
@@ -338,9 +370,9 @@ final class TerminalView extends View {
         if (uni != 0) {
             if (ctrlArmed || event.isCtrlPressed()) {
                 sendBytes(new byte[]{control((char) uni)});
-                ctrlArmed = false;
+                clearMods();
             } else {
-                sendString(new String(Character.toChars(uni)));
+                type(new String(Character.toChars(uni)));
             }
             return true;
         }

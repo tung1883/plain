@@ -106,13 +106,13 @@ public class DevHostActivity extends Activity implements DevService.StateListene
         root.addView(status(stateText));
 
         boolean enabled = live;
-        root.addView(big("Shell", "interactive shell — vim / htop / tmux", enabled,
-                v -> startActivity(new Intent(this, DevTerminalActivity.class)
+        root.addView(big("Shells", enabled,
+                v -> startActivity(new Intent(this, DevShellsActivity.class)
                         .putExtra(EXTRA_HOST_ID, hostId))));
-        root.addView(big("Screen", "mirror the desktop — trackpad + keyboard", enabled,
+        root.addView(big("Screen", enabled,
                 v -> startActivity(new Intent(this, DevScreenActivity.class)
                         .putExtra(EXTRA_HOST_ID, hostId))));
-        root.addView(big("Processes", "list and signal running processes", enabled,
+        root.addView(big("Processes", enabled,
                 v -> startActivity(new Intent(this, DevProcActivity.class)
                         .putExtra(EXTRA_HOST_ID, hostId))));
 
@@ -133,7 +133,7 @@ public class DevHostActivity extends Activity implements DevService.StateListene
         return t;
     }
 
-    private View big(String title, String sub, boolean enabled, View.OnClickListener tap) {
+    private View big(String title, boolean enabled, View.OnClickListener tap) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.VERTICAL);
         row.setPadding(48, 28, 48, 28);
@@ -151,14 +151,6 @@ public class DevHostActivity extends Activity implements DevService.StateListene
         t.setTextSize(19);
         t.setTypeface(font);
         row.addView(t);
-
-        TextView s = new TextView(this);
-        s.setText(sub);
-        s.setTextColor(Color.GRAY);
-        s.setTextSize(13);
-        s.setTypeface(font);
-        s.setPadding(0, 6, 0, 0);
-        row.addView(s);
         return row;
     }
 

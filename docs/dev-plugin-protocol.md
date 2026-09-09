@@ -3,7 +3,7 @@
 
 # Dev-plugin wire protocol
 
-`PROTO = 1`. Mirrored in the Plain app's `DevProtocol.java` and vendored at
+`PROTO = 2`. Mirrored in the Plain app's `DevProtocol.java` and vendored at
 `docs/dev-plugin-protocol.md`.
 
 ## Framing
@@ -16,11 +16,11 @@
 
 | dir | message |
 |---|---|
-| C→D | `{t:"hello", proto:1, token, device}` |
-| D→C | `{t:"welcome", proto:1, host, os:"linux\|macos\|windows", caps}` |
+| C→D | `{t:"hello", proto:2, token, device}` |
+| D→C | `{t:"welcome", proto:2, host, os:"linux\|macos\|windows", caps}` |
 | D→C | `{t:"error", code:"auth", msg}` then close — bad token |
 
-- `caps` ⊆ `["pty","proc","screen","input"]` (`screen`/`input` are build-time).
+- `caps` ⊆ `["pty","session","proc","screen","input"]` (`screen`/`input` are build-time).
 - Client pings `{t:"ping"}` every 15 s → `{t:"pong"}`. 20 s silence = dead.
 
 ## Channels
@@ -28,15 +28,32 @@
 Stream messages carry a client-assigned integer `ch`. `input.*` is
 connection-global (no `ch`).
 
-### pty
+### shell sessions
+
+A session is a pty + shell that lives in the daemon, independent of any
+connection. It keeps running after the client detaches; the daemon buffers the
+last 256 KB of output and replays it on reattach.
 
 | dir | message |
 |---|---|
-| C→D | `{t:"pty.open", ch, cols, rows, cmd:null\|"<str>"}` — null = login shell |
-| C↔D | `{t:"pty.data", ch, data:<bin>}` |
+| C→D | `{t:"session.list", ch}` |
+| D→C | `{t:"session.list", ch, sessions:[{id, name, cols, rows, alive, created_ms}]}` |
+| C→D | `{t:"session.open", ch, id?, name?, cols, rows}` — `id` given = reattach; else create |
+| D→C | `{t:"session.opened", ch, id, name, cols, rows, alive}` then a `pty.data` replay |
+| D→C | `{t:"session.gone", ch, id}` — reply to `session.open {id}` for an id the daemon no longer has (restarted / killed); nothing is created |
+| C→D | `{t:"session.detach", ch}` — unbind; the shell keeps running |
+| C→D | `{t:"session.kill", ch, id}` — terminate the shell |
+| C↔D | `{t:"pty.data", ch, data:<bin>}` — output / keystrokes for the bound session |
 | C→D | `{t:"pty.resize", ch, cols, rows}` |
-| C→D | `{t:"pty.close", ch}` |
 | D→C | `{t:"pty.exit", ch, code}` |
+
+`{t:"pty.open", ch, cols, rows, cmd:null|"<str>"}` still works: it creates an
+**ephemeral** session that is killed when its channel closes (used by the test
+rig). `pty.close` detaches, and kills if the session is ephemeral.
+
+Durability: sessions survive a client disconnect, not a daemon restart. On Unix,
+set `PLAIND_TMUX=1` and each shell launches inside `tmux new -A -s plain_<name>`,
+which survives restarts too.
 
 ### screen
 

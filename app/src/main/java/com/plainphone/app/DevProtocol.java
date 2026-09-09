@@ -31,7 +31,7 @@ final class DevProtocol {
 
     private DevProtocol() {}
 
-    static final int PROTO = 1;
+    static final int PROTO = 2;
     static final int DEFAULT_PORT = 8471;
     static final int MAX_FRAME = 1 << 20; // 1 MiB
 
@@ -46,6 +46,12 @@ final class DevProtocol {
     static final String T_PTY_RESIZE = "pty.resize";
     static final String T_PTY_EXIT = "pty.exit";
     static final String T_PTY_CLOSE = "pty.close";
+    static final String T_SESSION_LIST = "session.list";
+    static final String T_SESSION_OPEN = "session.open";
+    static final String T_SESSION_OPENED = "session.opened";
+    static final String T_SESSION_GONE = "session.gone";
+    static final String T_SESSION_DETACH = "session.detach";
+    static final String T_SESSION_KILL = "session.kill";
     static final String T_SCREEN_START = "screen.start";
     static final String T_SCREEN_FRAME = "screen.frame";
     static final String T_SCREEN_STOP = "screen.stop";
@@ -161,6 +167,36 @@ final class DevProtocol {
     static Map<String, Object> ptyClose(long ch) {
         Map<String, Object> m = msg(T_PTY_CLOSE);
         m.put("ch", ch);
+        return m;
+    }
+
+    static Map<String, Object> sessionList(long ch) {
+        Map<String, Object> m = msg(T_SESSION_LIST);
+        m.put("ch", ch);
+        return m;
+    }
+
+    /** {@code id} null = a new shell; otherwise reattach to that session. */
+    static Map<String, Object> sessionOpen(long ch, Long id, String name, int cols, int rows) {
+        Map<String, Object> m = msg(T_SESSION_OPEN);
+        m.put("ch", ch);
+        if (id != null) m.put("id", (long) id);
+        if (name != null) m.put("name", name);
+        m.put("cols", (long) cols);
+        m.put("rows", (long) rows);
+        return m;
+    }
+
+    static Map<String, Object> sessionDetach(long ch) {
+        Map<String, Object> m = msg(T_SESSION_DETACH);
+        m.put("ch", ch);
+        return m;
+    }
+
+    static Map<String, Object> sessionKill(long ch, long id) {
+        Map<String, Object> m = msg(T_SESSION_KILL);
+        m.put("ch", ch);
+        m.put("id", id);
         return m;
     }
 
