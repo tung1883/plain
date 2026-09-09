@@ -86,14 +86,17 @@ final class RemoteScreenView extends View {
     private final float cursorEdgePx;
 
     private float lastX, lastY, startX, startY, lastTapX, lastTapY;
-    private boolean moved, dragging, twoFinger, armDrag, clickPending;
+    private boolean moved, dragging, twoFinger, armDrag;
+    /** Taps waiting to fire; a press-drag that follows discards them all. */
+    private int pendingTaps;
 
-    /** A drag must start this near a pending tap to swallow its click. */
+    /** A far-away tap flushes the pending ones instead of joining them. */
     private final float doubleTapSlop;
 
-    private final Runnable clickFire = () -> {
-        clickPending = false;
-        if (listener != null) listener.click("l", false);
+    private final Runnable tapFlush = () -> {
+        int n = pendingTaps;
+        pendingTaps = 0;
+        if (listener != null) for (int i = 0; i < n; i++) listener.click("l", false);
     };
 
     private float pinchDist, pinchZoom0, pinchAnchorX, pinchAnchorY, pinchMidX, pinchMidY, lastMidY;
@@ -103,8 +106,8 @@ final class RemoteScreenView extends View {
 
     private final Runnable longPress = () -> {
         if (!moved && !dragging && !twoFinger && listener != null) {
-            removeCallbacks(clickFire);
-            clickPending = false;
+            removeCallbacks(tapFlush);
+            pendingTaps = 0;
             dragging = true;
             listener.press(true);
         }
@@ -360,12 +363,12 @@ final class RemoteScreenView extends View {
                 moved = dragging = twoFinger = false;
                 armDrag = false;
                 if (relativeMode()) {
-                    boolean near = Math.hypot(startX - lastTapX, startY - lastTapY) < doubleTapSlop;
-                    armDrag = clickPending && near;
-                    if (clickPending && !near) {
-                        removeCallbacks(clickFire);
-                        clickPending = false;
-                        if (listener != null) listener.click("l", false);
+                    armDrag = pendingTaps > 0;
+                    if (pendingTaps > 0
+                            && Math.hypot(startX - lastTapX, startY - lastTapY) >= doubleTapSlop) {
+                        removeCallbacks(tapFlush);
+                        tapFlush.run();
+                        armDrag = false;
                     }
                     postDelayed(longPress, longPressTimeout);
                 }
@@ -435,9 +438,9 @@ final class RemoteScreenView extends View {
                 if (!moved && Math.hypot(e.getX() - startX, e.getY() - startY) > tapSlop) {
                     moved = true;
                     removeCallbacks(longPress);
-                    if (armDrag && !dragging) {   // tap-then-drag -> clean press-drag, no click
-                        removeCallbacks(clickFire);
-                        clickPending = false;
+                    if (armDrag && !dragging) {   // tap(s)-then-drag -> press-drag, discard the clicks
+                        removeCallbacks(tapFlush);
+                        pendingTaps = 0;
                         dragging = true;
                         hold(true);
                     }
@@ -458,21 +461,20 @@ final class RemoteScreenView extends View {
                 if (dragging) {
                     hold(false);
                     dragging = false;
-                    removeCallbacks(clickFire);
-                    clickPending = false;
+                    removeCallbacks(tapFlush);
+                    pendingTaps = 0;
                 } else if (!moved && !twoFinger) {
                     float[] nf = toFrame(e.getX(), e.getY());
                     boolean onImage = nf[0] >= 0 && nf[0] <= 1 && nf[1] >= 0 && nf[1] <= 1;
                     if (onImage) {
                         pointAt(clamp01(nf[0]), clamp01(nf[1]));  // move the cursor now
                         if (relativeMode()) {
-                            // Hold the click: a press-drag may follow. Two of these
-                            // close together read as a double-click to the OS.
+                            // Queue the tap; fires only if no press-drag follows.
                             lastTapX = e.getX();
                             lastTapY = e.getY();
-                            removeCallbacks(clickFire);
-                            clickPending = true;
-                            postDelayed(clickFire, DRAG_GRACE_MS);
+                            pendingTaps++;
+                            removeCallbacks(tapFlush);
+                            postDelayed(tapFlush, DRAG_GRACE_MS);
                         } else {
                             listener.click("l", false); // VIEW/PAD: point + click now
                         }
