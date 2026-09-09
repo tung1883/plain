@@ -211,19 +211,25 @@ final class RemoteScreenView extends View {
     // --- frames -----------------------------------------------------
 
     void setFrame(byte[] jpeg) {
-        decoder.execute(() -> {
-            Bitmap bmp = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.length);
-            if (bmp != null) {
-                main.post(() -> {
-                    Bitmap old = frame;
-                    frame = bmp;
-                    boolean aspectChanged = old == null
-                            || old.getWidth() * bmp.getHeight() != bmp.getWidth() * old.getHeight();
-                    if (old != null) old.recycle();
-                    if (aspectLock && aspectChanged) requestLayout();
-                    invalidate();
-                });
-            }
+        if (decoder.isShutdown()) return; // a late frame after release()
+        try {
+            decoder.execute(() -> onDecoded(jpeg));
+        } catch (java.util.concurrent.RejectedExecutionException ignored) {
+            // released between the check and here
+        }
+    }
+
+    private void onDecoded(byte[] jpeg) {
+        Bitmap bmp = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.length);
+        if (bmp == null) return;
+        main.post(() -> {
+            Bitmap old = frame;
+            frame = bmp;
+            boolean aspectChanged = old == null
+                    || old.getWidth() * bmp.getHeight() != bmp.getWidth() * old.getHeight();
+            if (old != null) old.recycle();
+            if (aspectLock && aspectChanged) requestLayout();
+            invalidate();
         });
     }
 

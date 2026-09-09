@@ -8,7 +8,7 @@ import android.content.Intent;
 import android.os.SystemClock;
 
 /** Schedules low-priority file index refreshes without bypassing JobQueue. */
-final class IndexScheduler {
+public final class IndexScheduler {
 
     private static final String ACTION_INDEX = "com.plainphone.app.INDEX_REFRESH";
     private static final int REQUEST_CODE = 4107;
@@ -27,7 +27,8 @@ final class IndexScheduler {
                 operation);
     }
 
-    static final class Receiver extends BroadcastReceiver {
+    /** Public so the framework's AppComponentFactory can instantiate it. */
+    public static final class Receiver extends BroadcastReceiver {
         @Override
         public void onReceive(Context context, Intent intent) {
             schedule(context);
