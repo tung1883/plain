@@ -33,6 +33,7 @@ public class DevTerminalActivity extends Activity implements DevService.StateLis
     private String hostId;
     private long sessionId = -1; // daemon session id; -1 until opened / for a new shell
     private TerminalView term;
+    private TextView status;
     private TextView ctrlKey, altKey, shiftKey;
     private DevService service;
     private DevConnection connection;
@@ -80,6 +81,16 @@ public class DevTerminalActivity extends Activity implements DevService.StateLis
                 connection.send(DevProtocol.ptyResize(channel, cols, rows));
             }
         };
+        status = new TextView(this);
+        status.setTypeface(Fonts.cascadiaMono(this));
+        status.setTextSize(11);
+        status.setTextColor(0xFFB0B0B0);
+        status.setBackgroundColor(0xFF161616);
+        status.setPadding(24, 8, 24, 8);
+        status.setVisibility(View.GONE);
+        column.addView(status, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
         column.addView(term, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
         column.addView(buildKeyBar());
@@ -122,7 +133,27 @@ public class DevTerminalActivity extends Activity implements DevService.StateLis
 
     @Override
     public void onDevState() {
-        runOnUiThread(this::tryOpen);
+        runOnUiThread(() -> {
+            DevConnection live = service != null ? service.connection() : null;
+            // The link was replaced by a reconnect — our old channel is dead.
+            if (connection != null && connection != live) {
+                connection = null;
+                channel = -1;
+                opening = false;
+            }
+            if (!DevService.isConnected()) showStatus("Reconnecting…");
+            tryOpen();
+        });
+    }
+
+    private void showStatus(String text) {
+        if (status == null) return;
+        if (text == null) {
+            status.setVisibility(View.GONE);
+        } else {
+            status.setText(text);
+            status.setVisibility(View.VISIBLE);
+        }
     }
 
     private void tryOpen() {
@@ -143,12 +174,15 @@ public class DevTerminalActivity extends Activity implements DevService.StateLis
         if (DevProtocol.T_SESSION_OPENED.equals(type)) {
             sessionId = DevProtocol.num(msg, "id", sessionId);
             String name = DevProtocol.str(msg, "name");
+            showStatus(null);
             if (service != null) {
                 service.setActivityDetail("shell" + (name != null ? " · " + name : ""));
             }
         } else if (DevProtocol.T_SESSION_GONE.equals(type)) {
             // The old shell is gone (daemon restarted / killed) — start fresh.
             Toast.makeText(this, "Shell ended — opening a new one", Toast.LENGTH_SHORT).show();
+            showStatus("Previous shell ended — new shell");
+            status.postDelayed(() -> showStatus(null), 2500);
             sessionId = -1;
             term.reset();
             if (channel >= 0 && connection != null) {
