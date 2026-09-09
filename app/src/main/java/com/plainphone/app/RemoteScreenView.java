@@ -64,6 +64,11 @@ final class RemoteScreenView extends View {
     private final RectF baseRect = new RectF();
     private final ExecutorService decoder = Executors.newSingleThreadExecutor();
     private final Handler main = new Handler(Looper.getMainLooper());
+    /** Newest undecoded JPEG; older ones are dropped so we never fall behind. */
+    private final java.util.concurrent.atomic.AtomicReference<byte[]> pendingJpeg =
+            new java.util.concurrent.atomic.AtomicReference<>();
+    private final java.util.concurrent.atomic.AtomicBoolean decoding =
+            new java.util.concurrent.atomic.AtomicBoolean();
 
     private Bitmap frame;
     private int sourceW; // real monitor width in px (from the frame's "sw")
@@ -72,19 +77,24 @@ final class RemoteScreenView extends View {
     /** Fired ~after a zoom gesture settles, so the activity can re-request detail. */
     Runnable onZoomSettle;
 
+    private static final long DRAG_GRACE_MS = 220;
+
     private final float tapSlop;
     private final int longPressTimeout;
-    private final int doubleTapTimeout;
     /** Never shrink the drawn pointer below this, so it stays findable. */
     private final float cursorMinPx;
     private final float cursorEdgePx;
 
     private float lastX, lastY, startX, startY, lastTapX, lastTapY;
-    private boolean moved, dragging, twoFinger, secondTap;
-    private long lastUpTime;
+    private boolean moved, dragging, twoFinger, armDrag, clickPending;
 
-    /** Second tap only counts as a double if it lands this close to the first. */
+    /** A drag must start this near a pending tap to swallow its click. */
     private final float doubleTapSlop;
+
+    private final Runnable clickFire = () -> {
+        clickPending = false;
+        if (listener != null) listener.click("l", false);
+    };
 
     private float pinchDist, pinchZoom0, pinchAnchorX, pinchAnchorY, pinchMidX, pinchMidY, lastMidY;
     /** 0 = undecided, 1 = pinch-zoom, 2 = two-finger scroll (mouse wheel). */
@@ -93,6 +103,8 @@ final class RemoteScreenView extends View {
 
     private final Runnable longPress = () -> {
         if (!moved && !dragging && !twoFinger && listener != null) {
+            removeCallbacks(clickFire);
+            clickPending = false;
             dragging = true;
             listener.press(true);
         }
@@ -105,11 +117,8 @@ final class RemoteScreenView extends View {
         // radius so a tap stays a tap (point + click) instead of a tiny nudge.
         tapSlop = context.getResources().getDisplayMetrics().density * 22f;
         longPressTimeout = ViewConfiguration.getLongPressTimeout();
-        // Tighter than the system's ~300ms — two deliberate quick taps still
-        // double-click, an accidental "tap, look, tap again" does not.
-        doubleTapTimeout = Math.min(ViewConfiguration.getDoubleTapTimeout(), 240);
         doubleTapSlop = context.getResources().getDisplayMetrics().density * 24f;
-        twoSlop = context.getResources().getDisplayMetrics().density * 10f;
+        twoSlop = context.getResources().getDisplayMetrics().density * 26f;
         cursorMinPx = context.getResources().getDisplayMetrics().density * 3f;
         cursorEdgePx = context.getResources().getDisplayMetrics().density * 1f;
         cursorFill.setColor(Color.WHITE);
@@ -222,16 +231,31 @@ final class RemoteScreenView extends View {
 
     void setFrame(byte[] jpeg) {
         if (decoder.isShutdown()) return; // a late frame after release()
+        pendingJpeg.set(jpeg); // keep only the newest
+        kickDecoder();
+    }
+
+    private void kickDecoder() {
+        if (pendingJpeg.get() == null || decoder.isShutdown()) return;
+        if (!decoding.compareAndSet(false, true)) return;
         try {
-            decoder.execute(() -> onDecoded(jpeg));
+            decoder.execute(this::drainDecode);
         } catch (java.util.concurrent.RejectedExecutionException ignored) {
-            // released between the check and here
+            decoding.set(false);
         }
     }
 
-    private void onDecoded(byte[] jpeg) {
-        Bitmap bmp = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.length);
-        if (bmp == null) return;
+    private void drainDecode() {
+        byte[] jpeg;
+        while ((jpeg = pendingJpeg.getAndSet(null)) != null) {
+            Bitmap bmp = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.length);
+            if (bmp != null) onDecoded(bmp);
+        }
+        decoding.set(false);
+        kickDecoder(); // a frame may have arrived in the gap above
+    }
+
+    private void onDecoded(Bitmap bmp) {
         main.post(() -> {
             Bitmap old = frame;
             frame = bmp;
@@ -334,10 +358,17 @@ final class RemoteScreenView extends View {
                 lastX = startX = e.getX();
                 lastY = startY = e.getY();
                 moved = dragging = twoFinger = false;
-                secondTap = relativeMode()
-                        && (e.getEventTime() - lastUpTime) < doubleTapTimeout
-                        && Math.hypot(startX - lastTapX, startY - lastTapY) < doubleTapSlop;
-                if (relativeMode()) postDelayed(longPress, longPressTimeout);
+                armDrag = false;
+                if (relativeMode()) {
+                    boolean near = Math.hypot(startX - lastTapX, startY - lastTapY) < doubleTapSlop;
+                    armDrag = clickPending && near;
+                    if (clickPending && !near) {
+                        removeCallbacks(clickFire);
+                        clickPending = false;
+                        if (listener != null) listener.click("l", false);
+                    }
+                    postDelayed(longPress, longPressTimeout);
+                }
                 return true;
 
             case MotionEvent.ACTION_POINTER_DOWN:
@@ -365,11 +396,15 @@ final class RemoteScreenView extends View {
                     float cx = getWidth() / 2f, cy = getHeight() / 2f;
                     float mx = (e.getX(0) + e.getX(1)) / 2f;
                     float my = (e.getY(0) + e.getY(1)) / 2f;
-                    // Classify once: fingers spreading = zoom, fingers sliding together = scroll.
+                    // Classify once, after enough travel to tell them apart:
+                    // pinch only wins if the spread change clearly dominates the
+                    // slide — otherwise it's a scroll (the common case).
                     if (twoMode == 0) {
                         float spread = Math.abs(d - pinchDist);
                         float slide = (float) Math.hypot(mx - pinchMidX, my - pinchMidY);
-                        if (Math.max(spread, slide) > twoSlop) twoMode = spread > slide ? 1 : 2;
+                        if (Math.max(spread, slide) > twoSlop) {
+                            twoMode = (spread > slide * 1.5f && spread > twoSlop * 0.6f) ? 1 : 2;
+                        }
                     }
                     if (twoMode == 1) { // pinch-zoom, anchored under the fingers
                         zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, pinchZoom0 * d / pinchDist));
@@ -400,7 +435,9 @@ final class RemoteScreenView extends View {
                 if (!moved && Math.hypot(e.getX() - startX, e.getY() - startY) > tapSlop) {
                     moved = true;
                     removeCallbacks(longPress);
-                    if (secondTap && !dragging) {   // double-tap-drag: hold the button
+                    if (armDrag && !dragging) {   // tap-then-drag -> clean press-drag, no click
+                        removeCallbacks(clickFire);
+                        clickPending = false;
                         dragging = true;
                         hold(true);
                     }
@@ -421,23 +458,25 @@ final class RemoteScreenView extends View {
                 if (dragging) {
                     hold(false);
                     dragging = false;
-                    lastUpTime = 0;
+                    removeCallbacks(clickFire);
+                    clickPending = false;
                 } else if (!moved && !twoFinger) {
                     float[] nf = toFrame(e.getX(), e.getY());
                     boolean onImage = nf[0] >= 0 && nf[0] <= 1 && nf[1] >= 0 && nf[1] <= 1;
                     if (onImage) {
-                        pointAt(clamp01(nf[0]), clamp01(nf[1]));
-                        listener.click("l", secondTap);   // tap the screen = left-click
+                        pointAt(clamp01(nf[0]), clamp01(nf[1]));  // move the cursor now
+                        if (relativeMode()) {
+                            // Hold the click: a press-drag may follow. Two of these
+                            // close together read as a double-click to the OS.
+                            lastTapX = e.getX();
+                            lastTapY = e.getY();
+                            removeCallbacks(clickFire);
+                            clickPending = true;
+                            postDelayed(clickFire, DRAG_GRACE_MS);
+                        } else {
+                            listener.click("l", false); // VIEW/PAD: point + click now
+                        }
                     }
-                    if (secondTap) {
-                        lastUpTime = 0;          // consumed — no triple-click chain
-                    } else {
-                        lastUpTime = e.getEventTime();
-                        lastTapX = e.getX();
-                        lastTapY = e.getY();
-                    }
-                } else {
-                    lastUpTime = 0;
                 }
                 maybeNotifyZoom();
                 return true;

@@ -836,7 +836,7 @@ class Config {
     }
 
     static void setDevScreenFps(Context context, int fps) {
-        prefs(context).edit().putInt("dev_screen_fps", Math.max(1, Math.min(20, fps))).apply();
+        prefs(context).edit().putInt("dev_screen_fps", Math.max(1, Math.min(60, fps))).apply();
     }
 
     /** Dev screen trackpad style: {@code "pad"} (dedicated pad below) or {@code "whole"} (the view is the pad). */
