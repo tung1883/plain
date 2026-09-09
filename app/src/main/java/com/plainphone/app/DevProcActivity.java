@@ -84,6 +84,7 @@ public class DevProcActivity extends Activity implements DevService.StateListene
         hostId = getIntent().getStringExtra(DevHostActivity.EXTRA_HOST_ID);
         DevHost host = DevHost.find(this, hostId);
         if (host == null) { finish(); return; }
+        setTaskDescription(new android.app.ActivityManager.TaskDescription(host.label + " · processes"));
         font = Fonts.cascadiaMono(this);
 
         LinearLayout root = new LinearLayout(this);

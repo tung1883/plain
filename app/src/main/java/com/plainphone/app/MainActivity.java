@@ -134,6 +134,14 @@ public class MainActivity extends Activity {
         super.onNewIntent(intent);
         setIntent(intent);
 
+        // Coming back from another app via the Home button: if a content screen
+        // (To-do, Notes, a shell…) was open when Plain went to the background,
+        // reopen it instead of dropping to the bare home grid.
+        if (Nav.consumeRestore()) {
+            startActivity(Nav.restoreIntent());
+            return;
+        }
+
         // Default-launcher Home button re-delivers ACTION_MAIN here. If the home UI
         // is already up, pressing Home must NOT rebuild it (that reloads the whole
         // screen and drops the swipe-away header stage). Just return to a clean
@@ -1879,6 +1887,7 @@ public class MainActivity extends Activity {
                     live ? "connected — tap to open" : host.address(), -1, () -> {
                 DevService.connect(this, host.id);
                 startActivity(new Intent(this, DevHostActivity.class)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         .putExtra(DevHostActivity.EXTRA_HOST_ID, host.id));
             }));
         }

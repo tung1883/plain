@@ -67,6 +67,7 @@ public class DevTerminalActivity extends Activity implements DevService.StateLis
             finish();
             return;
         }
+        setTaskDescription(new android.app.ActivityManager.TaskDescription(host.label + " · shell"));
 
         LinearLayout column = new LinearLayout(this);
         column.setOrientation(LinearLayout.VERTICAL);

@@ -50,6 +50,7 @@ public class DevHostActivity extends Activity implements DevService.StateListene
             finish();
             return;
         }
+        setTaskDescription(new android.app.ActivityManager.TaskDescription(host.label));
         font = Fonts.current(this);
         root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);

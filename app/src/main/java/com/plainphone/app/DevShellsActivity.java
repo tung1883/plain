@@ -60,6 +60,7 @@ public class DevShellsActivity extends Activity implements DevService.StateListe
             finish();
             return;
         }
+        setTaskDescription(new android.app.ActivityManager.TaskDescription(host.label + " · shells"));
         font = Fonts.current(this);
         root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
