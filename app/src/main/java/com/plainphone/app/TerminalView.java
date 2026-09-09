@@ -6,10 +6,14 @@ import android.graphics.Paint;
 import android.graphics.Typeface;
 import android.text.InputType;
 import android.view.KeyEvent;
+import android.view.MotionEvent;
+import android.view.ScaleGestureDetector;
+import android.view.View;
+import android.view.ViewConfiguration;
 import android.view.inputmethod.BaseInputConnection;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
-import android.view.View;
+import android.view.inputmethod.InputMethodManager;
 
 import java.nio.charset.StandardCharsets;
 
@@ -42,26 +46,87 @@ final class TerminalView extends View {
     OnResize onResize;
     private boolean ctrlArmed;
 
+    /** Lines scrolled up into history; 0 = following the live bottom. */
+    private int scrollLines;
+    private final int touchSlop;
+    private float downY, lastY, scrollAccum;
+    private boolean touchMoved;
+
+    private final float density;
+    private float fontSp;
+    private static final float FONT_MIN = 7f, FONT_MAX = 26f, FONT_DEFAULT = 12.5f;
+    private final ScaleGestureDetector scaleDetector;
+    private long badgeUntil;
+
     TerminalView(Context context) {
         super(context);
         setFocusable(true);
         setFocusableInTouchMode(true);
         setBackgroundColor(DEFAULT_BG);
+        touchSlop = ViewConfiguration.get(context).getScaledTouchSlop();
+        density = context.getResources().getDisplayMetrics().scaledDensity;
 
-        Typeface mono = Fonts.cascadiaMono(context);
-        text.setTypeface(mono);
-        text.setTextSize(context.getResources().getDisplayMetrics().scaledDensity * 12.5f);
+        text.setTypeface(Fonts.cascadiaMono(context));
+        fontSp = FONT_DEFAULT;
+        applyFont();
+
+        term = new TerminalEmulator(cols, rows, this::emit);
+
+        scaleDetector = new ScaleGestureDetector(context,
+                new ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                    @Override
+                    public boolean onScale(ScaleGestureDetector d) {
+                        float next = Math.max(FONT_MIN, Math.min(FONT_MAX, fontSp * d.getScaleFactor()));
+                        if (Math.abs(next - fontSp) < 0.1f) return false;
+                        fontSp = next;
+                        applyFont();
+                        remeasure();
+                        badgeUntil = System.currentTimeMillis() + 900;
+                        invalidate();
+                        return true;
+                    }
+                });
+    }
+
+    private void applyFont() {
+        text.setTextSize(density * fontSp);
         Paint.FontMetrics fm = text.getFontMetrics();
         charW = text.measureText("M");
         charH = fm.bottom - fm.top;
         baseline = -fm.top;
+    }
 
-        term = new TerminalEmulator(cols, rows, this::emit);
+    /** Recompute cols/rows for the current view size + font and push a resize. */
+    private void remeasure() {
+        int w = getWidth(), h = getHeight();
+        if (w == 0 || h == 0) return;
+        int newCols = Math.max(20, (int) (w / charW));
+        int newRows = Math.max(6, (int) (h / charH));
+        if (newCols != cols || newRows != rows) {
+            cols = newCols;
+            rows = newRows;
+            scrollLines = 0;
+            term.resize(cols, rows);
+            if (onResize != null) onResize.size(cols, rows);
+        }
     }
 
     void feed(byte[] data, int len) {
+        int before = term.scrollbackSize();
         term.feed(data, len);
+        if (scrollLines > 0) {
+            // keep the same history visible as new lines push in
+            scrollLines = Math.min(term.scrollbackSize(), scrollLines + term.scrollbackSize() - before);
+        }
         postInvalidate();
+    }
+
+    /** Bring the soft keyboard back — a tap on the terminal, or the key-bar button. */
+    void showKeyboard() {
+        requestFocus();
+        InputMethodManager imm = (InputMethodManager) getContext()
+                .getSystemService(Context.INPUT_METHOD_SERVICE);
+        if (imm != null) imm.showSoftInput(this, InputMethodManager.SHOW_IMPLICIT);
     }
 
     int cols() { return cols; }
@@ -77,7 +142,13 @@ final class TerminalView extends View {
     }
 
     void sendBytes(byte[] data) {
-        if (data != null && data.length > 0 && onInput != null) onInput.bytes(data);
+        if (data != null && data.length > 0 && onInput != null) {
+            if (scrollLines != 0) {
+                scrollLines = 0; // snap to the live bottom on any input
+                postInvalidate();
+            }
+            onInput.bytes(data);
+        }
     }
 
     void sendString(String s) {
@@ -92,33 +163,43 @@ final class TerminalView extends View {
     @Override
     protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         super.onSizeChanged(w, h, oldw, oldh);
-        int newCols = Math.max(20, (int) (w / charW));
-        int newRows = Math.max(6, (int) (h / charH));
-        if (newCols != cols || newRows != rows) {
-            cols = newCols;
-            rows = newRows;
-            term.resize(cols, rows);
-            if (onResize != null) onResize.size(cols, rows);
-        }
+        remeasure();
     }
 
     @Override
     protected void onDraw(Canvas canvas) {
         canvas.drawColor(DEFAULT_BG);
         boolean focused = isFocused();
-        for (int y = 0; y < term.rows; y++) {
+        int sb = term.scrollbackSize();
+        int off = Math.min(scrollLines, sb);
+
+        for (int y = 0; y < rows; y++) {
+            int virt = sb - off + y;
+            char[] gRow;
+            int[] fRow, bRow, flRow;
+            int gy = -1; // grid row when this line is live, else -1
+            if (virt < sb) {
+                TerminalEmulator.Line ln = term.scrollbackLine(virt);
+                if (ln == null) continue;
+                gRow = ln.g; fRow = ln.f; bRow = ln.b; flRow = ln.fl;
+            } else {
+                gy = virt - sb;
+                if (gy < 0 || gy >= term.rows) continue;
+                gRow = term.glyph[gy]; fRow = term.fg[gy]; bRow = term.bg[gy]; flRow = term.flags[gy];
+            }
             float top = y * charH;
-            for (int x = 0; x < term.cols; x++) {
-                int flags = term.flags[y][x];
-                boolean inverse = (flags & TerminalEmulator.FLAG_INVERSE) != 0;
-                boolean bold = (flags & TerminalEmulator.FLAG_BOLD) != 0;
-                int fgc = resolve(term.fg[y][x], true, bold);
-                int bgc = resolve(term.bg[y][x], false, false);
+            int w = Math.min(term.cols, gRow.length);
+            for (int x = 0; x < w; x++) {
+                int cflags = flRow[x];
+                boolean inverse = (cflags & TerminalEmulator.FLAG_INVERSE) != 0;
+                boolean bold = (cflags & TerminalEmulator.FLAG_BOLD) != 0;
+                int fgc = resolve(fRow[x], true, bold);
+                int bgc = resolve(bRow[x], false, false);
                 if (inverse) {
                     int t = fgc; fgc = bgc; bgc = t;
                 }
-                boolean cursorHere = focused && term.cursorVisible
-                        && x == term.cursorX && y == term.cursorY;
+                boolean cursorHere = focused && term.cursorVisible && off == 0 && gy >= 0
+                        && x == term.cursorX && gy == term.cursorY;
                 if (cursorHere) {
                     int t = fgc; fgc = bgc; bgc = t;
                     if (bgc == DEFAULT_BG) bgc = DEFAULT_FG;
@@ -128,7 +209,7 @@ final class TerminalView extends View {
                     fill.setColor(bgc);
                     canvas.drawRect(x * charW, top, (x + 1) * charW, top + charH, fill);
                 }
-                char g = term.glyph[y][x];
+                char g = gRow[x];
                 if (g != ' ' && g != 0) {
                     text.setColor(fgc);
                     text.setFakeBoldText(bold);
@@ -136,6 +217,55 @@ final class TerminalView extends View {
                 }
             }
         }
+
+        if (System.currentTimeMillis() < badgeUntil) {
+            String label = cols + "×" + rows;
+            float tw = text.measureText(label);
+            float left = getWidth() - tw - 34;
+            fill.setColor(0xE6000000);
+            canvas.drawRect(left, 10, getWidth() - 12, 10 + charH + 8, fill);
+            text.setColor(DEFAULT_FG);
+            text.setFakeBoldText(false);
+            canvas.drawText(label, left + 11, 14 + baseline, text);
+            postInvalidateDelayed(120);
+        }
+    }
+
+    @Override
+    public boolean onTouchEvent(MotionEvent e) {
+        scaleDetector.onTouchEvent(e);
+        if (scaleDetector.isInProgress()) {
+            touchMoved = true; // suppress tap-to-keyboard after a pinch
+            return true;
+        }
+        switch (e.getActionMasked()) {
+            case MotionEvent.ACTION_DOWN:
+                downY = lastY = e.getY();
+                scrollAccum = 0;
+                touchMoved = false;
+                return true;
+            case MotionEvent.ACTION_MOVE: {
+                if (e.getPointerCount() > 1) return true; // let the pinch own it
+                float dy = e.getY() - lastY;
+                lastY = e.getY();
+                if (Math.abs(e.getY() - downY) > touchSlop) touchMoved = true;
+                if (touchMoved && !term.onAlt()) {
+                    scrollAccum += dy;
+                    int steps = (int) (scrollAccum / charH);
+                    if (steps != 0) {
+                        scrollAccum -= steps * charH;
+                        scrollLines = Math.max(0,
+                                Math.min(term.scrollbackSize(), scrollLines + steps));
+                        invalidate();
+                    }
+                }
+                return true;
+            }
+            case MotionEvent.ACTION_UP:
+                if (!touchMoved) showKeyboard();
+                return true;
+        }
+        return super.onTouchEvent(e);
     }
 
     private int resolve(int index, boolean fg, boolean bold) {

@@ -19,9 +19,28 @@ final class TerminalEmulator {
     static final int FLAG_BOLD = 1;
     static final int FLAG_INVERSE = 2;
 
+    static final int SCROLLBACK_MAX = 2000;
+
     interface Output {
         void write(byte[] bytes);
     }
+
+    /** One line that has scrolled off the top of the primary screen. */
+    static final class Line {
+        final char[] g;
+        final int[] f;
+        final int[] b;
+        final int[] fl;
+
+        Line(char[] g, int[] f, int[] b, int[] fl) {
+            this.g = g;
+            this.f = f;
+            this.b = b;
+            this.fl = fl;
+        }
+    }
+
+    private final java.util.ArrayList<Line> scrollback = new java.util.ArrayList<>();
 
     int cols;
     int rows;
@@ -103,6 +122,18 @@ final class TerminalEmulator {
         for (int i = 0; i < len; i++) {
             handleByte(data[i] & 0xff);
         }
+    }
+
+    synchronized int scrollbackSize() {
+        return scrollback.size();
+    }
+
+    synchronized Line scrollbackLine(int i) {
+        return (i >= 0 && i < scrollback.size()) ? scrollback.get(i) : null;
+    }
+
+    boolean onAlt() {
+        return onAlt;
     }
 
     // --- byte handling -------------------------------------------------
@@ -289,6 +320,10 @@ final class TerminalEmulator {
 
     private void scrollUp(int n) {
         for (int k = 0; k < n; k++) {
+            if (!onAlt && scrollTop == 0) {
+                scrollback.add(new Line(glyph[0], fg[0], bg[0], flags[0]));
+                if (scrollback.size() > SCROLLBACK_MAX) scrollback.remove(0);
+            }
             for (int y = scrollTop; y < scrollBottom; y++) {
                 glyph[y] = glyph[y + 1]; fg[y] = fg[y + 1]; bg[y] = bg[y + 1]; flags[y] = flags[y + 1];
             }

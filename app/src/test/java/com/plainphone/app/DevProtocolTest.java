@@ -97,6 +97,15 @@ public class DevProtocolTest {
     }
 
     @Test
+    public void inputPointCarriesNormalisedCoords() {
+        Map<String, Object> back = DevProtocol.decode(
+                DevProtocol.encode(DevProtocol.inputPoint(0.25, 0.5)));
+        assertEquals(DevProtocol.T_INPUT_POINT, DevProtocol.type(back));
+        assertEquals(0.25, DevProtocol.dbl(back, "x", -1), 0.0001);
+        assertEquals(0.5, DevProtocol.dbl(back, "y", -1), 0.0001);
+    }
+
+    @Test
     public void ptyDataPreservesRawBytes() throws Exception {
         byte[] keystrokes = "ls -la\n[A".getBytes(StandardCharsets.UTF_8);
         ByteArrayOutputStream sink = new ByteArrayOutputStream();

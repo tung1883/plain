@@ -18,22 +18,30 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
+import android.widget.FrameLayout;
+import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import java.util.List;
 import java.util.Map;
 
-/** Remote GUI: {@code screen} frames in a {@link RemoteScreenView} plus trackpad and keyboard. */
+/** Remote GUI: {@code screen} frames + a trackpad. Two layouts (Dev setting). */
 public class DevScreenActivity extends Activity implements DevService.StateListener {
 
     private String hostId;
     private RemoteScreenView screen;
+    private TrackpadView pad;
     private EditText keyInput;
-    private TextView rightBtn;
+    private View keyBar;
+    private TextView chip;
     private DevService service;
     private DevConnection connection;
     private long channel = -1;
     private boolean opening;
+    private int baseMaxW = 1280;
+    private int curMaxW = 1280;
+    private final android.os.Handler restream = new android.os.Handler();
 
     private final DevConnection.Sink sink = this::onChannelMessage;
 
@@ -60,29 +68,62 @@ public class DevScreenActivity extends Activity implements DevService.StateListe
             return;
         }
 
+        boolean padStyle = "pad".equals(Config.getDevTrackpadStyle(this));
+
         LinearLayout column = new LinearLayout(this);
         column.setOrientation(LinearLayout.VERTICAL);
         column.setBackgroundColor(Color.BLACK);
 
         screen = new RemoteScreenView(this);
+        screen.layout = padStyle ? RemoteScreenView.Layout.PAD : RemoteScreenView.Layout.WHOLE;
+        screen.aspectLock = padStyle; // dedicated pad: size the mirror to the desktop, no black bars
         screen.listener = new RemoteScreenView.Listener() {
-            @Override
-            public void move(float dx, float dy, float scroll) {
+            @Override public void move(float dx, float dy, float scroll) {
                 send(DevProtocol.inputMove(dx, dy, scroll));
             }
-
-            @Override
-            public void click(String button, boolean doubleClick) {
+            @Override public void click(String button, boolean doubleClick) {
                 send(DevProtocol.inputClick(button, doubleClick));
             }
-
-            @Override
-            public void press(boolean down) {
+            @Override public void press(boolean down) {
                 send(DevProtocol.msg(down ? DevProtocol.T_INPUT_DOWN : DevProtocol.T_INPUT_UP));
             }
+            @Override public void point(float nx, float ny) {
+                send(DevProtocol.inputPoint(nx, ny));
+            }
         };
-        column.addView(screen, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        screen.onZoomSettle = this::scheduleRestream;
+        screen.onModeChange = () -> {
+            if (chip != null) {
+                chip.setText(screen.mode() == RemoteScreenView.Mode.MOVE ? "MOVE" : "VIEW");
+                paintChip();
+            }
+        };
+
+        if (padStyle) {
+            column.addView(screen, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            pad = new TrackpadView(this);
+            pad.screen = screen;
+            column.addView(pad, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        } else {
+            FrameLayout stage = new FrameLayout(this);
+            stage.addView(screen, new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            chip = new TextView(this);
+            chip.setText("MOVE");
+            chip.setTypeface(Fonts.cascadiaMono(this));
+            chip.setTextSize(11);
+            chip.setPadding(24, 12, 24, 12);
+            paintChip();
+            chip.setOnClickListener(v -> screen.toggleMode());
+            FrameLayout.LayoutParams cp = new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            cp.leftMargin = cp.topMargin = 20;
+            stage.addView(chip, cp);
+            column.addView(stage, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        }
 
         keyInput = new EditText(this);
         keyInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
@@ -96,9 +137,11 @@ public class DevScreenActivity extends Activity implements DevService.StateListe
             public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
             public void onTextChanged(CharSequence s, int start, int before, int count) {
                 if (count > before) {
-                    send(DevProtocol.inputKey(s.subSequence(start + before, start + count).toString(), null));
+                    send(DevProtocol.inputKey(
+                            s.subSequence(start + before, start + count).toString(), null,
+                            consumeMods()));
                 } else if (before > count) {
-                    send(DevProtocol.inputKey(null, "Backspace"));
+                    send(DevProtocol.inputKey(null, "Backspace", consumeMods()));
                 }
                 if (s.length() > 64) keyInput.setText("");
             }
@@ -117,8 +160,122 @@ public class DevScreenActivity extends Activity implements DevService.StateListe
         });
         column.addView(keyInput, new LinearLayout.LayoutParams(1, 1));
 
-        column.addView(buildControls());
-        UiKit.screen(this, host.label + " · screen", column);
+        // Screen chrome: the "← Title" bar with a keyboard toggle pinned right.
+        LinearLayout head = UiKit.header(this, host.label + " · screen");
+        TextView kbd = new TextView(this);
+        kbd.setText("⌨");
+        kbd.setTextColor(Color.WHITE);
+        kbd.setTextSize(18);
+        kbd.setTypeface(Fonts.cascadiaMono(this));
+        kbd.setGravity(Gravity.CENTER);
+        kbd.setPadding(28, 0, 28, 0);
+        kbd.setOnClickListener(v -> toggleKeyboard());
+        head.addView(kbd, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackgroundColor(Color.BLACK);
+        root.addView(head, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        View hair = new View(this);
+        hair.setBackgroundColor(0xFF1C1C1C);
+        root.addView(hair, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 1));
+        root.addView(column, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        keyBar = buildKeyBar();
+        keyBar.setVisibility(View.GONE);
+        root.addView(keyBar, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        setContentView(root);
+
+        // When the keyboard goes away (back press, swipe-down), drop the key bar too.
+        root.getViewTreeObserver().addOnGlobalLayoutListener(() -> {
+            android.graphics.Rect r = new android.graphics.Rect();
+            root.getWindowVisibleDisplayFrame(r);
+            int screenH = root.getRootView().getHeight();
+            boolean kbShown = screenH - r.bottom > screenH * 0.15f;
+            if (!kbShown && keyBar.getVisibility() == View.VISIBLE) {
+                keyBar.setVisibility(View.GONE);
+                keyInput.clearFocus();
+            }
+        });
+    }
+
+    /** ctrl/alt/shift armed for the next keystroke (sticky, like a terminal Ctrl). */
+    private final java.util.LinkedHashSet<String> armedMods = new java.util.LinkedHashSet<>();
+    private final Map<String, TextView> modKeys = new java.util.HashMap<>();
+
+    /** Special keys the soft keyboard lacks, shown only while the keyboard is up. */
+    private View buildKeyBar() {
+        LinearLayout bar = new LinearLayout(this);
+        bar.setOrientation(LinearLayout.HORIZONTAL);
+        bar.setPadding(8, 10, 8, 10);
+        bar.addView(modKey("ctrl", "ctrl"));
+        bar.addView(modKey("alt", "alt"));
+        bar.addView(modKey("shift", "shift"));
+        bar.addView(specialKey("esc", () -> sendKey("Escape")));
+        bar.addView(specialKey("tab", () -> sendKey("Tab")));
+        bar.addView(specialKey("enter", () -> sendKey("Enter")));
+        bar.addView(specialKey("del", () -> sendKey("Delete")));
+        bar.addView(specialKey("↑", () -> sendKey("Up")));
+        bar.addView(specialKey("↓", () -> sendKey("Down")));
+        bar.addView(specialKey("←", () -> sendKey("Left")));
+        bar.addView(specialKey("→", () -> sendKey("Right")));
+
+        HorizontalScrollView scroller = new HorizontalScrollView(this);
+        scroller.setHorizontalScrollBarEnabled(false);
+        scroller.setBackgroundColor(0xFF0A0A0A);
+        scroller.addView(bar);
+        return scroller;
+    }
+
+    private void sendKey(String named) {
+        send(DevProtocol.inputKey(null, named, consumeMods()));
+    }
+
+    /** The armed modifiers as a list, then disarm and repaint the mod keys. */
+    private List<String> consumeMods() {
+        if (armedMods.isEmpty()) return null;
+        List<String> out = new java.util.ArrayList<>(armedMods);
+        armedMods.clear();
+        for (Map.Entry<String, TextView> e : modKeys.entrySet()) paintKey(e.getValue(), false);
+        return out;
+    }
+
+    private TextView modKey(String label, String mod) {
+        TextView k = specialKey(label, null);
+        modKeys.put(mod, k);
+        k.setOnClickListener(v -> {
+            if (!armedMods.remove(mod)) armedMods.add(mod);
+            paintKey(k, armedMods.contains(mod));
+        });
+        return k;
+    }
+
+    private TextView specialKey(String label, Runnable action) {
+        TextView k = new TextView(this);
+        k.setText(label);
+        k.setTextSize(14);
+        k.setTypeface(Fonts.cascadiaMono(this));
+        k.setGravity(Gravity.CENTER);
+        k.setPadding(26, 20, 26, 20);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.rightMargin = 8;
+        k.setLayoutParams(lp);
+        paintKey(k, false);
+        if (action != null) k.setOnClickListener(v -> action.run());
+        return k;
+    }
+
+    private void paintKey(TextView k, boolean on) {
+        GradientDrawable box = new GradientDrawable();
+        box.setColor(on ? Color.WHITE : Color.BLACK);
+        box.setStroke(2, 0xFF2C2C2C);
+        k.setBackground(box);
+        k.setTextColor(on ? Color.BLACK : 0xFF8B8B8B);
     }
 
     @Override
@@ -139,6 +296,7 @@ public class DevScreenActivity extends Activity implements DevService.StateListe
     protected void onStop() {
         super.onStop();
         DevService.removeStateListener(this);
+        restream.removeCallbacksAndMessages(null);
         if (channel >= 0 && connection != null) {
             connection.send(DevProtocol.screenStop(channel));
             connection.closeChannel(channel);
@@ -169,8 +327,9 @@ public class DevScreenActivity extends Activity implements DevService.StateListe
         if (connection == null) return;
         opening = true;
         channel = connection.openChannel(sink);
-        int width = Math.min(1280, getResources().getDisplayMetrics().widthPixels * 2);
-        connection.send(DevProtocol.screenStart(channel, width, Config.getDevScreenFps(this)));
+        baseMaxW = Math.min(1280, getResources().getDisplayMetrics().widthPixels * 2);
+        curMaxW = targetMaxW(screen.zoom());
+        connection.send(DevProtocol.screenStart(channel, curMaxW, Config.getDevScreenFps(this), false));
         service.setActivityDetail("screen");
     }
 
@@ -180,56 +339,57 @@ public class DevScreenActivity extends Activity implements DevService.StateListe
 
     private void onChannelMessage(Map<String, Object> msg) {
         if (DevProtocol.T_SCREEN_FRAME.equals(DevProtocol.type(msg))) {
+            int sw = (int) DevProtocol.num(msg, "sw", 0);
+            int sh = (int) DevProtocol.num(msg, "sh", 0);
+            if (sw > 0) screen.setSourceSize(sw, sh);
             byte[] data = DevProtocol.bin(msg, "data");
             if (data != null) screen.setFrame(data);
         }
     }
 
-    private View buildControls() {
-        LinearLayout bar = new LinearLayout(this);
-        bar.setOrientation(LinearLayout.HORIZONTAL);
-        bar.setBackgroundColor(0xFF0A0A0A);
-        bar.setPadding(12, 12, 12, 12);
+    /** Higher stream resolution while zoomed in, so cropping stays sharp. */
+    private int targetMaxW(float zoom) {
+        int want = Math.round(baseMaxW * Math.max(1f, zoom));
+        want = Math.min(want, 2560);
+        // Bucket to 640-px steps so small zoom changes don't thrash the stream.
+        int bucket = Math.max(baseMaxW, ((want + 319) / 640) * 640);
+        return Math.min(bucket, 2560);
+    }
 
-        rightBtn = control("R-CLICK", () -> {
-            screen.rightClickArmed = !screen.rightClickArmed;
-            paint(rightBtn, screen.rightClickArmed);
-        });
-        bar.addView(rightBtn, weight());
-        bar.addView(control("KEYBOARD", () -> {
+    private void scheduleRestream() {
+        restream.removeCallbacksAndMessages(null);
+        restream.postDelayed(() -> {
+            if (channel < 0 || connection == null) return;
+            int want = targetMaxW(screen.zoom());
+            if (want == curMaxW) return;
+            curMaxW = want;
+            connection.send(DevProtocol.screenStart(
+                    channel, curMaxW, Config.getDevScreenFps(this), false));
+        }, 280);
+    }
+
+    // --- controls -------------------------------------------------
+
+    private void toggleKeyboard() {
+        InputMethodManager imm = getSystemService(InputMethodManager.class);
+        if (imm == null) return;
+        if (keyInput.hasFocus()) {
+            imm.hideSoftInputFromWindow(keyInput.getWindowToken(), 0);
+            keyInput.clearFocus();
+            keyBar.setVisibility(View.GONE);
+        } else {
             keyInput.requestFocus();
-            InputMethodManager imm = getSystemService(InputMethodManager.class);
-            if (imm != null) imm.toggleSoftInput(InputMethodManager.SHOW_IMPLICIT, 0);
-        }), weight());
-        bar.addView(control("C-A-DEL", () ->
-                send(DevProtocol.inputKey(null, "ctrl-alt-delete"))), weight());
-        return bar;
+            imm.showSoftInput(keyInput, InputMethodManager.SHOW_IMPLICIT);
+            keyBar.setVisibility(View.VISIBLE);
+        }
     }
 
-    private LinearLayout.LayoutParams weight() {
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0,
-                ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        lp.leftMargin = lp.rightMargin = 6;
-        return lp;
-    }
-
-    private TextView control(String label, Runnable action) {
-        TextView t = new TextView(this);
-        t.setText(label);
-        t.setTextSize(12);
-        t.setGravity(Gravity.CENTER);
-        t.setTypeface(Fonts.cascadiaMono(this));
-        t.setPadding(0, 22, 0, 22);
-        paint(t, false);
-        t.setOnClickListener(v -> action.run());
-        return t;
-    }
-
-    private void paint(TextView t, boolean on) {
+    private void paintChip() {
+        boolean move = screen.mode() == RemoteScreenView.Mode.MOVE;
         GradientDrawable box = new GradientDrawable();
-        box.setColor(on ? Color.WHITE : Color.BLACK);
-        box.setStroke(2, Color.WHITE);
-        t.setBackground(box);
-        t.setTextColor(on ? Color.BLACK : Color.WHITE);
+        box.setColor(move ? Color.WHITE : Color.BLACK);
+        box.setStroke(1, move ? Color.WHITE : 0xFF2C2C2C);
+        chip.setBackground(box);
+        chip.setTextColor(move ? Color.BLACK : 0xFF8B8B8B);
     }
 }

@@ -832,11 +832,20 @@ class Config {
 
     /** Default frame rate for the Dev screen mirror. */
     static int getDevScreenFps(Context context) {
-        return prefs(context).getInt("dev_screen_fps", 5);
+        return prefs(context).getInt("dev_screen_fps", 12);
     }
 
     static void setDevScreenFps(Context context, int fps) {
         prefs(context).edit().putInt("dev_screen_fps", Math.max(1, Math.min(20, fps))).apply();
+    }
+
+    /** Dev screen trackpad style: {@code "pad"} (dedicated pad below) or {@code "whole"} (the view is the pad). */
+    static String getDevTrackpadStyle(Context context) {
+        return prefs(context).getString("dev_trackpad_style", "pad");
+    }
+
+    static void setDevTrackpadStyle(Context context, String style) {
+        prefs(context).edit().putString("dev_trackpad_style", style).apply();
     }
 
     /** The last host the Dev section connected to, so the service can rebuild after a kill. */
