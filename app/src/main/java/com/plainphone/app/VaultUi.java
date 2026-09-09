@@ -31,10 +31,11 @@ final class VaultUi {
         Typeface font = Fonts.current(host);
         LinearLayout box = new LinearLayout(host);
         box.setOrientation(LinearLayout.VERTICAL);
-        GradientDrawable bg = new GradientDrawable();
-        bg.setColor(Color.BLACK);
-        box.setBackground(bg);
-        box.setPadding(0, 24, 0, 8);
+        box.setBackground(UiKit.dialogBackground(host));
+        UiKit.clipRounded(host, box, UiKit.R_MD);
+        // Inset so the full-bleed option rows don't paint over the box border
+        // (bottom inset clears the rounded-corner arc too).
+        box.setPadding(2, 24, 2, UiKit.dp(host, UiKit.R_MD));
 
         box.addView(titleRow(host, font, title));
 
@@ -63,6 +64,7 @@ final class VaultUi {
         }));
 
         dialog.show();
+        UiKit.unboxDialog(box);
         if (dialog.getWindow() != null) {
             WindowManager.LayoutParams params = dialog.getWindow().getAttributes();
             params.width = (int) (host.getResources().getDisplayMetrics().widthPixels * 0.85);
@@ -80,10 +82,11 @@ final class VaultUi {
         Typeface font = Fonts.current(host);
         LinearLayout box = new LinearLayout(host);
         box.setOrientation(LinearLayout.VERTICAL);
-        GradientDrawable bg = new GradientDrawable();
-        bg.setColor(Color.BLACK);
-        box.setBackground(bg);
-        box.setPadding(0, 24, 0, 8);
+        box.setBackground(UiKit.dialogBackground(host));
+        UiKit.clipRounded(host, box, UiKit.R_MD);
+        // Inset so the full-bleed option rows don't paint over the box border
+        // (bottom inset clears the rounded-corner arc too).
+        box.setPadding(2, 24, 2, UiKit.dp(host, UiKit.R_MD));
 
         box.addView(titleRow(host, font, title));
 
@@ -113,6 +116,7 @@ final class VaultUi {
         }
 
         dialog.show();
+        UiKit.unboxDialog(box);
         if (dialog.getWindow() != null) {
             WindowManager.LayoutParams params = dialog.getWindow().getAttributes();
             params.width = (int) (host.getResources().getDisplayMetrics().widthPixels * 0.85);

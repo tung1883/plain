@@ -133,6 +133,14 @@ public class DevHostActivity extends Activity implements DevService.StateListene
         return t;
     }
 
+    private View divider() {
+        View v = new View(this);
+        v.setBackgroundColor(0xFF1C1C1C);
+        v.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 1));
+        return v;
+    }
+
     private View big(String title, boolean enabled, View.OnClickListener tap) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.VERTICAL);
@@ -152,14 +160,6 @@ public class DevHostActivity extends Activity implements DevService.StateListene
         t.setTypeface(font);
         row.addView(t);
         return row;
-    }
-
-    private View divider() {
-        View v = new View(this);
-        v.setBackgroundColor(0xFF1C1C1C);
-        v.setLayoutParams(new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 1));
-        return v;
     }
 
     private TextView action(String label, int color, View.OnClickListener tap) {

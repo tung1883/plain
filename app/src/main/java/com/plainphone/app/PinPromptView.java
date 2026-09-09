@@ -120,10 +120,7 @@ class PinPromptView extends FrameLayout {
         display.setMinWidth(dp(180));
         display.setMinHeight(dp(56));
         display.setPadding(dp(24), dp(12), dp(24), dp(12));
-        GradientDrawable box = new GradientDrawable();
-        box.setColor(Color.BLACK);
-        box.setStroke(dp(2), Color.WHITE);
-        display.setBackground(box);
+        display.setBackground(UiKit.rounded(getContext(), Color.BLACK, Color.WHITE, dp(2), UiKit.R_SM));
         LinearLayout.LayoutParams displayParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         displayParams.bottomMargin = dp(14);

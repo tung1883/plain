@@ -33,7 +33,7 @@ public class DevTerminalActivity extends Activity implements DevService.StateLis
     private String hostId;
     private long sessionId = -1; // daemon session id; -1 until opened / for a new shell
     private TerminalView term;
-    private TextView status;
+    private View headerSpinner;
     private View keyBar;
     private boolean kbVisible;
     private TextView ctrlKey, altKey, shiftKey;
@@ -83,16 +83,6 @@ public class DevTerminalActivity extends Activity implements DevService.StateLis
                 connection.send(DevProtocol.ptyResize(channel, cols, rows));
             }
         };
-        status = new TextView(this);
-        status.setTypeface(Fonts.cascadiaMono(this));
-        status.setTextSize(11);
-        status.setTextColor(0xFFB0B0B0);
-        status.setBackgroundColor(0xFF161616);
-        status.setPadding(24, 8, 24, 8);
-        status.setVisibility(View.GONE);
-        column.addView(status, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-
         column.addView(term, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
         keyBar = buildKeyBar();
@@ -102,6 +92,13 @@ public class DevTerminalActivity extends Activity implements DevService.StateLis
 
         // "← host · shell" bar with a keyboard toggle pinned right.
         LinearLayout head = UiKit.header(this, host.label + " · shell");
+        headerSpinner = UiKit.spinner(this);
+        headerSpinner.setVisibility(View.GONE);
+        int sp = UiKit.dp(this, 18);
+        LinearLayout.LayoutParams splp = new LinearLayout.LayoutParams(sp, sp);
+        splp.rightMargin = UiKit.dp(this, 6);
+        splp.gravity = Gravity.CENTER_VERTICAL;
+        head.addView(headerSpinner, splp);
         TextView kbd = new TextView(this);
         kbd.setText("⌨");
         kbd.setTextColor(Color.WHITE);
@@ -184,6 +181,9 @@ public class DevTerminalActivity extends Activity implements DevService.StateLis
         }
     }
 
+    /** Wall-clock time before which the status strip must not be hidden. */
+    private long statusHoldUntil;
+
     @Override
     public void onDevState() {
         runOnUiThread(() -> {
@@ -194,18 +194,25 @@ public class DevTerminalActivity extends Activity implements DevService.StateLis
                 channel = -1;
                 opening = false;
             }
-            if (!DevService.isConnected()) showStatus("Reconnecting…");
+            // Spin in the header while the link is down OR back but the shell
+            // not yet reattached; only T_SESSION_OPENED stops it.
+            reconnecting(!DevService.isConnected() || channel < 0);
             tryOpen();
         });
     }
 
-    private void showStatus(String text) {
-        if (status == null) return;
-        if (text == null) {
-            status.setVisibility(View.GONE);
+    private void reconnecting(boolean on) {
+        if (headerSpinner == null) return;
+        if (on) {
+            headerSpinner.setVisibility(View.VISIBLE);
+            statusHoldUntil = android.os.SystemClock.uptimeMillis() + 1200;
         } else {
-            status.setText(text);
-            status.setVisibility(View.VISIBLE);
+            long wait = statusHoldUntil - android.os.SystemClock.uptimeMillis();
+            if (wait > 0) {
+                headerSpinner.postDelayed(() -> { if (channel >= 0) reconnecting(false); }, wait);
+                return;
+            }
+            headerSpinner.setVisibility(View.GONE);
         }
     }
 
@@ -227,15 +234,14 @@ public class DevTerminalActivity extends Activity implements DevService.StateLis
         if (DevProtocol.T_SESSION_OPENED.equals(type)) {
             sessionId = DevProtocol.num(msg, "id", sessionId);
             String name = DevProtocol.str(msg, "name");
-            showStatus(null);
+            reconnecting(false);
             if (service != null) {
                 service.setActivityDetail("shell" + (name != null ? " · " + name : ""));
             }
         } else if (DevProtocol.T_SESSION_GONE.equals(type)) {
             // The old shell is gone (daemon restarted / killed) — start fresh.
             Toast.makeText(this, "Shell ended — opening a new one", Toast.LENGTH_SHORT).show();
-            showStatus("Previous shell ended — new shell");
-            status.postDelayed(() -> showStatus(null), 2500);
+            reconnecting(true);
             sessionId = -1;
             term.reset();
             if (channel >= 0 && connection != null) {
@@ -308,6 +314,7 @@ public class DevTerminalActivity extends Activity implements DevService.StateLis
         GradientDrawable box = new GradientDrawable();
         box.setColor(on ? Color.WHITE : Color.BLACK);
         box.setStroke(2, 0xFF2C2C2C);
+        box.setCornerRadius(UiKit.dp(this, 6));
         k.setBackground(box);
         k.setTextColor(on ? Color.BLACK : 0xFF8B8B8B);
     }
