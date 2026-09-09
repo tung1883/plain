@@ -102,6 +102,12 @@ public class DevProcActivity extends Activity implements DevService.StateListene
     @Override
     public void onDevState() {
         runOnUiThread(() -> {
+            DevConnection live = service != null ? service.connection() : null;
+            if (connection != null && connection != live) {
+                connection = null;
+                channel = -1;
+                opening = false;
+            }
             tryOpen();
             refresh();
         });

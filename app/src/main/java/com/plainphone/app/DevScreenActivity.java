@@ -318,7 +318,15 @@ public class DevScreenActivity extends Activity implements DevService.StateListe
 
     @Override
     public void onDevState() {
-        runOnUiThread(this::tryOpen);
+        runOnUiThread(() -> {
+            DevConnection live = service != null ? service.connection() : null;
+            if (connection != null && connection != live) {
+                connection = null;
+                channel = -1;
+                opening = false;
+            }
+            tryOpen();
+        });
     }
 
     private void tryOpen() {
