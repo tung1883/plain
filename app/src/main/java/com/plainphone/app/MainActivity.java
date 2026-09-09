@@ -1132,6 +1132,8 @@ public class MainActivity extends Activity {
                 renderVaultSection();
             } else if (homeMode == HomeMode.DEV) {
                 renderDevSection();
+            } else if (homeMode == HomeMode.WORKSPACE) {
+                renderWorkspaceSection();
             } else if (homeMode == HomeMode.STATS) {
                 rows.add(new SearchResult(SearchResult.Kind.APP, "App list is locked",
                         "Tap to unlock", -1, () -> startActivityForResult(
@@ -1868,6 +1870,24 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void renderWorkspaceSection() {
+        for (Workspaces.Meta m : Workspaces.list(this)) {
+            final String id = m.id;
+            int n = WorkspaceStore.count(this, id);
+            rows.add(new SearchResult(SearchResult.Kind.WORKSPACE, m.name,
+                    n == 0 ? "empty" : n + (n == 1 ? " window" : " windows"), -1,
+                    () -> startActivity(new Intent(this, WorkspaceActivity.class)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            .putExtra(WorkspaceActivity.EXTRA_ID, id))));
+        }
+        rows.add(new SearchResult(SearchResult.Kind.WORKSPACE, "+ New workspace", null, -1, () -> {
+            Workspaces.Meta m = Workspaces.create(this, null);
+            startActivity(new Intent(this, WorkspaceActivity.class)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    .putExtra(WorkspaceActivity.EXTRA_ID, m.id));
+        }));
+    }
+
     private void renderDevSection() {
         if (Lock.DEV.gateActive(this)) {
             rows.add(new SearchResult(SearchResult.Kind.DEV, "Dev is locked",
@@ -1881,11 +1901,6 @@ public class MainActivity extends Activity {
                 () -> startActivity(new Intent(this, DevSettingsActivity.class))));
 
         java.util.List<DevHost> devHosts = DevHost.all(this);
-        if (!devHosts.isEmpty()) {
-            rows.add(new SearchResult(SearchResult.Kind.DEV, "Workspace", "windows across your devices", -1,
-                    () -> startActivity(new Intent(this, WorkspaceActivity.class)
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))));
-        }
         for (DevHost host : devHosts) {
             boolean live = DevService.isConnected(host.id);
             rows.add(new SearchResult(SearchResult.Kind.DEV, host.label,

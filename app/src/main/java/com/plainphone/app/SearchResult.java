@@ -14,7 +14,8 @@ class SearchResult {
         FILE("Files"),
         CONTACT("Contacts"),
         VAULT("Vault"),
-        DEV("Dev");
+        DEV("Dev"),
+        WORKSPACE("Workspace");
 
         final String header;
 

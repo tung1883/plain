@@ -29,8 +29,12 @@ import java.util.List;
  */
 public class WorkspaceActivity extends Activity implements DevService.StateListener {
 
+    static final String EXTRA_ID = "workspaceId";
+
+    private String workspaceId;
     private PanelHost panelHost;
     private View spinner;
+    private TextView titleView;
     private LinearLayout taskbar;
     private HorizontalScrollView taskbarScroller;
 
@@ -51,13 +55,19 @@ public class WorkspaceActivity extends Activity implements DevService.StateListe
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setTaskDescription(new android.app.ActivityManager.TaskDescription("Workspace"));
+        workspaceId = resolveId(getIntent());
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(Color.BLACK);
 
         LinearLayout head = UiKit.header(this, "Workspace");
+        if (head.getChildAt(1) instanceof TextView) {
+            titleView = (TextView) head.getChildAt(1);
+            titleView.setOnClickListener(v -> showWorkspaceMenu(titleView));
+        }
+        applyName();
+
         TextView add = new TextView(this);
         add.setText("+");
         add.setTextColor(Color.WHITE);
@@ -77,7 +87,13 @@ public class WorkspaceActivity extends Activity implements DevService.StateListe
 
         android.widget.FrameLayout stage = new android.widget.FrameLayout(this);
         panelHost = new PanelHost(this);
-        panelHost.setListener(this::onPanelsChanged);
+        panelHost.setListener(new PanelHost.Listener() {
+            @Override public void onPanelsChanged() { WorkspaceActivity.this.onPanelsChanged(); }
+            @Override public void confirmClose(String title, Runnable doClose) {
+                VaultUi.confirm(WorkspaceActivity.this, "Close " + title + "?",
+                        "It has unsaved changes.", "Close", doClose::run, "Keep", null);
+            }
+        });
         stage.addView(panelHost, new android.widget.FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         spinner = UiKit.spinner(this);
@@ -102,6 +118,14 @@ public class WorkspaceActivity extends Activity implements DevService.StateListe
 
         // Rebuild the saved layout once the host has a size.
         panelHost.post(this::restore);
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        String want = resolveId(intent);
+        if (!want.equals(workspaceId)) switchTo(want);
     }
 
     @Override
@@ -155,11 +179,100 @@ public class WorkspaceActivity extends Activity implements DevService.StateListe
         return ids;
     }
 
+    // --- workspaces -----------------------------------------------
+
+    private String resolveId(Intent intent) {
+        String id = intent != null ? intent.getStringExtra(EXTRA_ID) : null;
+        if (id != null) {
+            for (Workspaces.Meta m : Workspaces.list(this)) {
+                if (m.id.equals(id)) { Workspaces.setCurrent(this, id); return id; }
+            }
+        }
+        return Workspaces.currentId(this);
+    }
+
+    private void applyName() {
+        String name = "Workspace";
+        for (Workspaces.Meta m : Workspaces.list(this)) {
+            if (m.id.equals(workspaceId)) name = m.name;
+        }
+        if (titleView != null) titleView.setText(name + "  ▾");
+        setTaskDescription(new android.app.ActivityManager.TaskDescription(name));
+    }
+
+    private void switchTo(String id) {
+        saveNow();
+        panelHost.clear();
+        workspaceId = id;
+        Workspaces.setCurrent(this, id);
+        applyName();
+        spinner.setVisibility(View.VISIBLE);
+        panelHost.post(this::restore);
+    }
+
+    private void showWorkspaceMenu(View anchor) {
+        List<Workspaces.Meta> all = Workspaces.list(this);
+        List<String> items = new ArrayList<>();
+        for (Workspaces.Meta m : all) {
+            items.add((m.id.equals(workspaceId) ? "● " : "○ ") + m.name);
+        }
+        items.add("+ New workspace");
+        items.add("Rename…");
+        if (all.size() > 1) items.add("Delete workspace");
+        buildPopup(anchor, items.toArray(new String[0]), choice -> {
+            if (choice.equals("+ New workspace")) {
+                switchTo(Workspaces.create(this, null).id);
+            } else if (choice.equals("Rename…")) {
+                promptText("Rename workspace", currentName(), name -> {
+                    Workspaces.rename(this, workspaceId, name);
+                    applyName();
+                });
+            } else if (choice.equals("Delete workspace")) {
+                VaultUi.confirm(this, "Delete " + currentName() + "?",
+                        "Its windows are forgotten. Daemon sessions keep running.",
+                        "Delete", () -> {
+                            String gone = workspaceId;
+                            Workspaces.delete(this, gone);
+                            switchTo(Workspaces.currentId(this));
+                        }, "Cancel", null);
+            } else {
+                for (Workspaces.Meta m : all) {
+                    if (choice.endsWith(m.name) && !m.id.equals(workspaceId)) {
+                        switchTo(m.id);
+                        return;
+                    }
+                }
+            }
+        }, 0, Gravity.START);
+    }
+
+    private String currentName() {
+        for (Workspaces.Meta m : Workspaces.list(this)) {
+            if (m.id.equals(workspaceId)) return m.name;
+        }
+        return "Workspace";
+    }
+
+    private void promptText(String title, String initial, java.util.function.Consumer<String> onOk) {
+        final android.widget.EditText f = new android.widget.EditText(this);
+        f.setText(initial == null ? "" : initial);
+        f.setSelectAllOnFocus(true);
+        f.setTextColor(Color.WHITE);
+        int p = dp(16);
+        f.setPadding(p, p, p, p);
+        new android.app.AlertDialog.Builder(this)
+                .setTitle(title)
+                .setView(f)
+                .setPositiveButton("OK", (d, w) -> onOk.accept(f.getText().toString()))
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
     // --- restore / save ---------------------------------------------
 
     private void restore() {
         restoring = true;
-        for (WorkspaceStore.Rec r : WorkspaceStore.load(this)) {
+        for (WorkspaceStore.Rec r : WorkspaceStore.load(this, workspaceId)) {
             PanelContent c = build(r);
             if (c == null) continue;
             Panel p = panelHost.addAt(c, r.x, r.y, r.w, r.h, r.minimized);
@@ -173,19 +286,13 @@ public class WorkspaceActivity extends Activity implements DevService.StateListe
     }
 
     private PanelContent build(WorkspaceStore.Rec r) {
-        if ("web".equals(r.kind)) return new WebPanel(r.extra);
+        PanelKind k = PanelKind.byId(r.kind);
+        if (k == null) return null;
         String hostId = r.hostId.isEmpty() ? null : r.hostId;
-        if (hostId == null || DevHost.find(this, hostId) == null) return null; // device gone
-        String label = labelFor(hostId);
-        switch (r.kind) {
-            case "shell":
-                long sid = -1;
-                try { sid = Long.parseLong(r.extra); } catch (NumberFormatException ignored) {}
-                return new ShellPanel(label, hostId, sid);
-            case "screen": return new ScreenPanel(label, hostId);
-            case "proc":   return new ProcPanel(label, hostId);
-            default: return null;
+        if (k.needsDevice && (hostId == null || DevHost.find(this, hostId) == null)) {
+            return null; // device gone
         }
+        return k.factory.create(this, hostId, r.extra);
     }
 
     private void onPanelsChanged() {
@@ -203,18 +310,23 @@ public class WorkspaceActivity extends Activity implements DevService.StateListe
             recs.add(new WorkspaceStore.Rec(p.content.kind(), p.content.hostId(),
                     b[0], b[1], b[2], b[3], p.minimized(), p.content.saveExtra()));
         }
-        WorkspaceStore.save(this, recs);
+        WorkspaceStore.save(this, workspaceId, recs);
     }
 
     // --- add / taskbar --------------------------------------------
 
     private void showAddMenu(View anchor) {
-        popup(anchor, new String[]{"Shell", "Screen", "Processes", "Web"}, choice -> {
-            switch (choice) {
-                case "Shell":     pickHost(h -> open(new ShellPanel(labelFor(h), h, -1))); break;
-                case "Screen":    pickHost(h -> open(new ScreenPanel(labelFor(h), h))); break;
-                case "Processes": pickHost(h -> open(new ProcPanel(labelFor(h), h))); break;
-                case "Web":       open(new WebPanel()); break;
+        String[] labels = new String[PanelKind.ALL.size()];
+        for (int i = 0; i < labels.length; i++) labels[i] = PanelKind.ALL.get(i).label;
+        popup(anchor, labels, choice -> {
+            for (PanelKind k : PanelKind.ALL) {
+                if (!k.label.equals(choice)) continue;
+                if (k.needsDevice) {
+                    pickHost(h -> open(k.factory.create(this, h, "")));
+                } else {
+                    open(k.factory.create(this, null, ""));
+                }
+                return;
             }
         });
     }

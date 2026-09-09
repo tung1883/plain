@@ -39,11 +39,20 @@ interface PanelContent {
 
     // --- lifecycle --------------------------------------------------
 
-    /** The shared link came up ({@code conn != null}) or dropped ({@code null}). */
+    /** The shared link came up ({@code conn != null}) or dropped ({@code null}). Dev panels only. */
     default void onConnection(DevConnection conn) {}
 
     /** The panel was brought to the front / given focus. */
     default void onFocus() {}
+
+    /** The panel became visible (opened or restored from the taskbar). */
+    default void onShow() {}
+
+    /** The panel was minimised to the taskbar. */
+    default void onHide() {}
+
+    /** {@code false} = there is unsaved work; the host confirms before closing. */
+    default boolean confirmClose() { return true; }
 
     /**
      * The workspace went to the background (or is being torn down). Stop streams

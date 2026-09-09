@@ -15,6 +15,8 @@ final class PanelHost extends FrameLayout implements Panel.Host {
 
     interface Listener {
         void onPanelsChanged();
+        /** Ask the user before closing a panel with unsaved work; run {@code doClose} if confirmed. */
+        default void confirmClose(String title, Runnable doClose) { doClose.run(); }
     }
 
     private final List<Panel> panels = new ArrayList<>();
@@ -49,8 +51,10 @@ final class PanelHost extends FrameLayout implements Panel.Host {
         spawnCount++;
         if (minimized) {
             p.setVisibility(GONE);
+            p.content.onHide();
         } else {
             p.bringToFront();
+            p.content.onShow();
             p.content.onFocus();
         }
         notifyChanged();
@@ -73,6 +77,15 @@ final class PanelHost extends FrameLayout implements Panel.Host {
         for (Panel p : panels) p.content.onLeave();
     }
 
+    /** Switching to another workspace — drop all panel views, keep sessions alive. */
+    void clear() {
+        leaveAll();
+        panels.clear();
+        removeAllViews();
+        spawnCount = 0;
+        notifyChanged();
+    }
+
     // --- Panel.Host ----------------------------------------------------
 
     @Override public void onFocusPanel(Panel p) {
@@ -83,14 +96,20 @@ final class PanelHost extends FrameLayout implements Panel.Host {
     }
 
     @Override public void onClosePanel(Panel p) {
-        p.content.onClose();
-        panels.remove(p);
-        removeView(p);
-        notifyChanged();
+        Runnable doClose = () -> {
+            p.content.onClose();
+            panels.remove(p);
+            removeView(p);
+            notifyChanged();
+        };
+        if (p.content.confirmClose()) doClose.run();
+        else if (listener != null) listener.confirmClose(p.content.title(), doClose);
+        else doClose.run();
     }
 
     @Override public void onMinimizePanel(Panel p) {
         p.setVisibility(GONE);
+        p.content.onHide();
         notifyChanged();
     }
 
@@ -108,6 +127,7 @@ final class PanelHost extends FrameLayout implements Panel.Host {
 
     void restore(Panel p) {
         p.setVisibility(VISIBLE);
+        p.content.onShow();
         onFocusPanel(p);
     }
 
