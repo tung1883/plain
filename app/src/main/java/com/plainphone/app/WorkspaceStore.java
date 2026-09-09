@@ -7,12 +7,11 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Persists the workspace layout — one line per panel in
- * {@code filesDir/workspace.txt} — so leaving and reopening the workspace brings
- * back the same windows (and, for shells, reattaches the same daemon session).
+ * Persists one workspace's layout — one line per panel in
+ * {@code filesDir/workspaces/<id>.txt} — so leaving and reopening brings back the
+ * same windows (and, for shells, reattaches the same daemon session).
  *
- * <p>Line: {@code kind \t hostId \t x \t y \t w \t h \t min \t extra}. {@code extra}
- * is last and free-form (a URL, a session id).
+ * <p>Line: {@code kind \t hostId \t x \t y \t w \t h \t min \t extra}.
  */
 final class WorkspaceStore {
 
@@ -32,13 +31,20 @@ final class WorkspaceStore {
         }
     }
 
-    private static File file(Context c) {
-        return new File(c.getFilesDir(), "workspace.txt");
+    static File dir(Context c) {
+        File d = new File(c.getFilesDir(), "workspaces");
+        //noinspection ResultOfMethodCallIgnored
+        d.mkdirs();
+        return d;
     }
 
-    static List<Rec> load(Context c) {
+    static File file(Context c, String id) {
+        return new File(dir(c), id + ".txt");
+    }
+
+    static List<Rec> load(Context c, String id) {
         List<Rec> out = new ArrayList<>();
-        File f = file(c);
+        File f = file(c, id);
         if (!f.exists()) return out;
         try (java.io.BufferedReader r = new java.io.BufferedReader(
                 new java.io.InputStreamReader(new java.io.FileInputStream(f), "UTF-8"))) {
@@ -59,7 +65,7 @@ final class WorkspaceStore {
         return out;
     }
 
-    static void save(Context c, List<Rec> recs) {
+    static void save(Context c, String id, List<Rec> recs) {
         StringBuilder sb = new StringBuilder();
         for (Rec r : recs) {
             sb.append(r.kind).append('\t').append(r.hostId).append('\t')
@@ -68,9 +74,18 @@ final class WorkspaceStore {
                     .append(r.minimized ? '1' : '0').append('\t')
                     .append(r.extra.replace('\t', ' ').replace('\n', ' ')).append('\n');
         }
-        try (java.io.FileOutputStream o = new java.io.FileOutputStream(file(c))) {
+        try (java.io.FileOutputStream o = new java.io.FileOutputStream(file(c, id))) {
             o.write(sb.toString().getBytes("UTF-8"));
         } catch (Exception ignored) {
         }
+    }
+
+    static int count(Context c, String id) {
+        return load(c, id).size();
+    }
+
+    static void deleteFile(Context c, String id) {
+        //noinspection ResultOfMethodCallIgnored
+        file(c, id).delete();
     }
 }

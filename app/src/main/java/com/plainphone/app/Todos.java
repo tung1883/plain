@@ -15,6 +15,8 @@ import android.provider.OpenableColumns;
 import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
+import android.view.inputmethod.EditorInfo;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -385,6 +387,59 @@ class Todos {
             sb.append(todos.get(i).toLine());
         }
         return sb.toString();
+    }
+
+    /** The "New task" dialog — the same one the home To-do section uses. */
+    static void promptAdd(Activity host, Runnable after) {
+        Typeface font = Fonts.current(host);
+
+        LinearLayout root = new LinearLayout(host);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackground(popupBackground());
+        root.setPadding(0, 32, 0, 8);
+        root.addView(UiKit.dialogTitle(host, "New task"));
+
+        EditText input = new EditText(host);
+        input.setBackground(null);
+        input.setTextColor(Color.WHITE);
+        input.setHintTextColor(Color.GRAY);
+        input.setHint("Buy milk +groceries");
+        input.setTypeface(font);
+        input.setTextSize(18);
+        input.setSingleLine(true);
+        input.setImeOptions(EditorInfo.IME_ACTION_DONE);
+        input.setInputType(android.text.InputType.TYPE_CLASS_TEXT
+                | android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        input.setPadding(48, 8, 48, 24);
+        root.addView(input);
+
+        AlertDialog dialog = new AlertDialog.Builder(host).setView(root).create();
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        }
+
+        Runnable add = () -> {
+            String text = input.getText().toString().trim();
+            if (!text.isEmpty()) {
+                quickAdd(host, text);
+                if (after != null) after.run();
+            }
+            dialog.dismiss();
+        };
+        input.setOnEditorActionListener((v, id, e) -> {
+            if (id != EditorInfo.IME_ACTION_DONE) return false;
+            add.run();
+            return true;
+        });
+        root.addView(optionRow(host, font, "Add", v -> add.run()));
+        root.addView(optionRow(host, font, "Cancel", v -> dialog.dismiss()));
+
+        dialog.show();
+        if (dialog.getWindow() != null) {
+            WindowManager.LayoutParams params = dialog.getWindow().getAttributes();
+            params.width = (int) (host.getResources().getDisplayMetrics().widthPixels * 0.85);
+            dialog.getWindow().setAttributes(params);
+        }
     }
 
     // --- popup chrome (mirrors Notes) --------------------------------

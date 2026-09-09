@@ -67,19 +67,22 @@ final class ShellSurface extends LinearLayout {
         addView(keyBar, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        // The key bar mirrors the soft keyboard: up while it's up, gone when it's
-        // dismissed. Keyed off the window's visible frame.
+        // The key bar shows only while the soft keyboard is up AND this terminal
+        // holds focus — the IME frame is window-global, so without the focus
+        // check every shell panel in a workspace would pop its key bar when any
+        // one of them (or a web URL bar) raised the keyboard.
         getViewTreeObserver().addOnGlobalLayoutListener(() -> {
             View rootView = getRootView();
             if (rootView == null) return;
             Rect r = new Rect();
             rootView.getWindowVisibleDisplayFrame(r);
             int screenH = rootView.getHeight();
-            boolean up = screenH - r.bottom > screenH * 0.15f;
-            if (up != kbVisible) {
-                kbVisible = up;
-                if (up) keyBarShownAt = SystemClock.uptimeMillis();
-                keyBar.setVisibility(up ? VISIBLE : GONE);
+            boolean imeUp = screenH - r.bottom > screenH * 0.15f;
+            boolean want = imeUp && term.hasFocus();
+            if (want != kbVisible) {
+                kbVisible = want;
+                if (want) keyBarShownAt = SystemClock.uptimeMillis();
+                keyBar.setVisibility(want ? VISIBLE : GONE);
             }
         });
     }
