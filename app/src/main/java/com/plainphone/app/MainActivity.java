@@ -522,6 +522,7 @@ public class MainActivity extends Activity implements SelectionHost {
     }
 
     private boolean isDefaultHomeApp() {
+        if (true) return false;   // TEMP: force the reminder screen
         Intent homeIntent = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
         ResolveInfo resolveInfo = pm.resolveActivity(homeIntent, PackageManager.MATCH_DEFAULT_ONLY);
         return resolveInfo != null && getPackageName().equals(resolveInfo.activityInfo.packageName);
@@ -542,11 +543,12 @@ public class MainActivity extends Activity implements SelectionHost {
         message.setTextSize(18);
         message.setTypeface(georgia);
         message.setGravity(Gravity.CENTER);
-        message.setText("Plain isn't set as your Home app right now.");
+        message.setSingleLine(true);
+        message.setText("Set Plain as your Home app");
         root.addView(message);
 
         Button openHomeSettings = new Button(this);
-        openHomeSettings.setText("Open Home app settings");
+        openHomeSettings.setText("Open Settings");
         UiKit.style(this, openHomeSettings);
         openHomeSettings.setOnClickListener(v ->
                 startActivity(new Intent(android.provider.Settings.ACTION_HOME_SETTINGS)));
