@@ -852,6 +852,12 @@ public class MainActivity extends Activity implements SelectionHost {
                 else enterSelection(HomeMode.TODOS, tid);
                 return true;
             }
+            if (result.payload instanceof Workspaces.Meta && currentQuery.isEmpty()) {
+                String wid = ((Workspaces.Meta) result.payload).id;
+                if (selectMode == HomeMode.WORKSPACE) toggle(wid);
+                else enterSelection(HomeMode.WORKSPACE, wid);
+                return true;
+            }
             if (result.payload instanceof FileIndex.Entry) {
                 FileIndex.Entry entry = (FileIndex.Entry) result.payload;
 
@@ -1406,14 +1412,44 @@ public class MainActivity extends Activity implements SelectionHost {
     }
 
     private void renderWorkspaceSection() {
-        for (Workspaces.Meta m : Workspaces.list(this)) {
+        java.util.List<Workspaces.Meta> all = Workspaces.list(this);
+
+        if (selectMode == HomeMode.WORKSPACE) {
+            java.util.List<Workspaces.Meta> sel = new ArrayList<>();
+            for (Workspaces.Meta m : all) if (selection.contains(m.id)) sel.add(m);
+            java.util.List<String> ids = new ArrayList<>();
+            for (Workspaces.Meta m : all) ids.add(m.id);
+
+            java.util.List<BarAction> actions = new ArrayList<>();
+            if (sel.size() == 1) {
+                Workspaces.Meta one = sel.get(0);
+                actions.add(new BarAction("Rename", () -> UiKit.textPrompt(this, "Rename workspace",
+                        one.name, "Save", name -> { Workspaces.rename(this, one.id, name); refresh(); })));
+            }
+            actions.add(new BarAction("Delete", () -> VaultUi.confirm(this,
+                    "Delete " + sel.size() + " workspace" + (sel.size() == 1 ? "" : "s") + "?",
+                    null, "Delete", () -> {
+                        for (Workspaces.Meta m : sel) Workspaces.delete(this, m.id);
+                        exitSelection();
+                    }, "Cancel", null)));
+            selectionBar.bind(this, ids, actions);
+
+            for (Workspaces.Meta m : all) {
             final String id = m.id;
-            int n = WorkspaceStore.count(this, id);
+                rows.add(new SearchResult(SearchResult.Kind.WORKSPACE, m.name,
+                        null, -1,
+                        () -> toggle(id), m).check(selection.contains(id)));
+            }
+            return;
+        }
+
+        for (Workspaces.Meta m : all) {
+            final String id = m.id;
             rows.add(new SearchResult(SearchResult.Kind.WORKSPACE, m.name,
-                    n == 0 ? "empty" : n + (n == 1 ? " window" : " windows"), -1,
+                    null, -1,
                     () -> startActivity(new Intent(this, WorkspaceActivity.class)
                             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            .putExtra(WorkspaceActivity.EXTRA_ID, id))));
+                            .putExtra(WorkspaceActivity.EXTRA_ID, id)), m));
         }
         rows.add(new SearchResult(SearchResult.Kind.WORKSPACE, "+ New workspace", null, -1, () -> {
             Workspaces.Meta m = Workspaces.create(this, null);

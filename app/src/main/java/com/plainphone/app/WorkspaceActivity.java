@@ -235,8 +235,7 @@ public class WorkspaceActivity extends Activity implements DevService.StateListe
                     applyName();
                 });
             } else if (choice.equals("Delete workspace")) {
-                VaultUi.confirm(this, "Delete " + currentName() + "?",
-                        "Its windows are forgotten. Daemon sessions keep running.",
+                VaultUi.confirm(this, "Delete " + currentName() + "?", null,
                         "Delete", () -> {
                             String gone = workspaceId;
                             Workspaces.delete(this, gone);
