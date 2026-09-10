@@ -50,15 +50,21 @@ public class DevProcActivity extends Activity implements DevService.StateListene
     @Override protected void onResume() {
         super.onResume();
         DevService.connect(this, hostId);
+        if (surface != null) surface.setShown(true);
         pushConnection();
     }
 
     @Override protected void onStop() {
         super.onStop();
         DevService.removeStateListener(this);
-        surface.detach();
+        if (surface != null) surface.setShown(false);   // pause the poll; keep the channel for a quick resume
         if (service != null) service.setActivityDetail(hostId, null);
         try { unbindService(conn); } catch (IllegalArgumentException ignored) {}
+    }
+
+    @Override protected void onDestroy() {
+        super.onDestroy();
+        if (surface != null) surface.detach();
     }
 
     @Override
@@ -67,6 +73,7 @@ public class DevProcActivity extends Activity implements DevService.StateListene
     }
 
     private void pushConnection() {
+        if (surface == null) return;
         DevConnection live = (service != null && DevService.isConnected(hostId)) ? service.connection(hostId) : null;
         surface.attach(live);
         if (live != null && service != null) service.setActivityDetail(hostId, "processes");
