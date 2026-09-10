@@ -43,6 +43,7 @@ last 256 KB of output and replays it on reattach.
 | D→C | `{t:"session.gone", ch, id}` — reply to `session.open {id}` for an id the daemon no longer has (restarted / killed); nothing is created |
 | C→D | `{t:"session.detach", ch}` — unbind; the shell keeps running |
 | C→D | `{t:"session.kill", ch, id}` — terminate the shell |
+| C→D | `{t:"session.rename", ch, id, name}` — rename a persistent shell; daemon replies `session.list` |
 | C↔D | `{t:"pty.data", ch, data:<bin>}` — output / keystrokes for the bound session |
 | C→D | `{t:"pty.resize", ch, cols, rows}` |
 | D→C | `{t:"pty.exit", ch, code}` |
