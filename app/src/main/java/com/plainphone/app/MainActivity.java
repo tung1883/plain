@@ -522,7 +522,6 @@ public class MainActivity extends Activity implements SelectionHost {
     }
 
     private boolean isDefaultHomeApp() {
-        if (true) return false;   // TEMP: force the reminder screen
         Intent homeIntent = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
         ResolveInfo resolveInfo = pm.resolveActivity(homeIntent, PackageManager.MATCH_DEFAULT_ONLY);
         return resolveInfo != null && getPackageName().equals(resolveInfo.activityInfo.packageName);
