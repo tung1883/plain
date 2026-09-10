@@ -209,6 +209,11 @@ final class RemoteScreenView extends View {
         if (listener != null) listener.click("l", doubleClick);
     }
 
+    /** Click a specific button ("l" / "r" / "m") where the cursor already is. */
+    void padClick(String button) {
+        if (listener != null) listener.click(button, false);
+    }
+
     void scroll(float amount) {
         if (listener != null) listener.move(0, 0, amount);
     }
