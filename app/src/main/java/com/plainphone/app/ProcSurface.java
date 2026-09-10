@@ -112,8 +112,12 @@ final class ProcSurface extends LinearLayout {
         emptyLabel.setTextSize(13);
         emptyLabel.setTypeface(font);
         emptyLabel.setPadding(dp(20), dp(30), dp(20), dp(30));
-        emptyLabel.setText("Connecting…");
-        rowsBox.addView(emptyLabel);
+
+        android.widget.LinearLayout.LayoutParams spLp = new android.widget.LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        spLp.topMargin = dp(40);
+        spLp.gravity = Gravity.CENTER_HORIZONTAL;
+        rowsBox.addView(UiKit.spinner(ctx), spLp);   // replaced by renderRows() once data arrives
 
         renderHeader();
     }

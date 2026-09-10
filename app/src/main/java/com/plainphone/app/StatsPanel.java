@@ -82,15 +82,11 @@ class StatsPanel {
 
         LinearLayout shell = newContent();
         addToggle(shell, georgia, r);
-        TextView loading = new TextView(host);
-        loading.setText("Loading…");
-        loading.setTextColor(Color.GRAY);
-        loading.setTextSize(14);
-        loading.setTypeface(georgia);
-        LinearLayout.LayoutParams loadingParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        loadingParams.topMargin = 36;
-        shell.addView(loading, loadingParams);
+        int sz = (int) (26 * host.getResources().getDisplayMetrics().density);
+        LinearLayout.LayoutParams loadingParams = new LinearLayout.LayoutParams(sz, sz);
+        loadingParams.topMargin = 48;
+        loadingParams.gravity = Gravity.CENTER_HORIZONTAL;
+        shell.addView(UiKit.spinner(host), loadingParams);
         scroll.removeAllViews();
         scroll.addView(shell);
 
@@ -215,7 +211,9 @@ class StatsPanel {
             tab.setTextSize(15);
             tab.setGravity(Gravity.CENTER);
             tab.setPadding(0, 20, 0, 20);
-            tab.setBackgroundColor(selected ? Color.WHITE : Color.DKGRAY);
+            tab.setBackground(selected
+                    ? UiKit.rounded(host, Color.WHITE, 0, 0f, UiKit.R_SM)
+                    : UiKit.rounded(host, Color.BLACK, 0xFF2C2C2C, 2f, UiKit.R_SM));
             tab.setTextColor(selected ? Color.BLACK : Color.WHITE);
             tab.setOnClickListener(v -> setRange(r));
 
@@ -334,7 +332,8 @@ class StatsPanel {
 
         LinearLayout track = new LinearLayout(host);
         track.setOrientation(LinearLayout.HORIZONTAL);
-        track.setBackgroundColor(Color.DKGRAY);
+        track.setBackground(UiKit.rounded(host, Color.DKGRAY, 0, 0f, UiKit.R_XS));
+        UiKit.clipRounded(host, track, UiKit.R_XS);
         LinearLayout.LayoutParams trackParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, BAR_HEIGHT);
         trackParams.topMargin = 8;

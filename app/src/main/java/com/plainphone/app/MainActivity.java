@@ -584,18 +584,7 @@ public class MainActivity extends Activity implements SelectionHost {
         root.setGravity(Gravity.CENTER);
         root.setBackgroundColor(Color.BLACK);
 
-        ProgressBar spinner = UiKit.spinner(this);
-        root.addView(spinner);
-
-        TextView label = new TextView(this);
-        label.setText("Loading...");
-        label.setTextColor(Color.WHITE);
-        label.setTypeface(Fonts.current(this));
-        label.setTextSize(16);
-        label.setGravity(Gravity.CENTER);
-        label.setPadding(0, 32, 0, 0);
-        root.addView(label, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        root.addView(UiKit.spinner(this));
 
         setContentView(root, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
