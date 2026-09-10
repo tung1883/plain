@@ -228,7 +228,8 @@ class UiKit {
         LinearLayout root = new LinearLayout(host);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackground(dialogBackground(host));
-        root.setPadding(0, 32, 0, 8);
+        clipRounded(host, root, R_MD);
+        root.setPadding(2, 32, 2, dp(host, R_MD)); // inset so option rows clear the rounded border
         root.addView(dialogTitle(host, title));
 
         EditText input = new EditText(host);
@@ -251,6 +252,7 @@ class UiKit {
         }));
         root.addView(promptRow(host, font, "Cancel", dialog::dismiss));
         dialog.show();
+        unboxDialog(root); // drop the AlertDialog's square panel behind the rounded box
         if (dialog.getWindow() != null) {
             android.view.WindowManager.LayoutParams p = dialog.getWindow().getAttributes();
             p.width = (int) (host.getResources().getDisplayMetrics().widthPixels * 0.85);
