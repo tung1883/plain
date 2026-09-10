@@ -9,6 +9,7 @@ import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.StateListDrawable;
 import android.view.ContextThemeWrapper;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.ViewOutlineProvider;
 import android.widget.Button;
 import android.widget.EditText;
@@ -149,9 +150,11 @@ class UiKit {
     static ProgressBar spinner(Context context) {
         ProgressBar bar = new ProgressBar(
                 new ContextThemeWrapper(context, android.R.style.Theme_Material),
-                null, android.R.attr.progressBarStyleLarge);
+                null, android.R.attr.progressBarStyle);   // medium — not the oversized "large"
         bar.setIndeterminate(true);
         bar.setIndeterminateTintList(ColorStateList.valueOf(Color.WHITE));
+        int s = Math.round(24 * context.getResources().getDisplayMetrics().density);
+        bar.setLayoutParams(new ViewGroup.LayoutParams(s, s));
         return bar;
     }
 
