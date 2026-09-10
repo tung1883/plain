@@ -18,12 +18,19 @@ final class PanelKind {
     final String id;
     final String label;
     final boolean needsDevice;
+    /** Non-null for the cloud-service kinds — the {@link DevAccount} kind they bind to. */
+    final String accountKind;
     final Factory factory;
 
     private PanelKind(String id, String label, boolean needsDevice, Factory factory) {
+        this(id, label, needsDevice, null, factory);
+    }
+
+    private PanelKind(String id, String label, boolean needsDevice, String accountKind, Factory factory) {
         this.id = id;
         this.label = label;
         this.needsDevice = needsDevice;
+        this.accountKind = accountKind;
         this.factory = factory;
     }
 
@@ -52,7 +59,19 @@ final class PanelKind {
             new PanelKind("vault", "Vault", false,
                     (c, h, x) -> new VaultPanel()),
             new PanelKind("web", "Web", false,
-                    (c, h, x) -> new WebPanel(x))
+                    (c, h, x) -> new WebPanel(x)),
+            new PanelKind("github", "GitHub", false, "github",
+                    (c, h, x) -> new GithubPanel(x)),
+            new PanelKind("vercel", "Vercel", false, "vercel",
+                    (c, h, x) -> new VercelPanel(x)),
+            new PanelKind("supabase", "Supabase", false, "supabase",
+                    (c, h, x) -> new SupabasePanel(x)),
+            new PanelKind("stats", "Stats", true,
+                    (c, h, x) -> new StatsPanel2(devLabel(c, h), h)),
+            new PanelKind("net", "Network", true,
+                    (c, h, x) -> new NetworkPanel(devLabel(c, h), h)),
+            new PanelKind("disk", "Storage", true,
+                    (c, h, x) -> new StoragePanel(devLabel(c, h), h))
     );
 
     static PanelKind byId(String id) {

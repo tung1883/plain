@@ -298,6 +298,8 @@ public class WorkspaceActivity extends Activity implements DevService.StateListe
         if (k.needsDevice && (hostId == null || DevHost.find(this, hostId) == null)) {
             return null; // device gone
         }
+        // Cloud panels keep their window even if the account was removed — they
+        // render a "no account" state and pick up again once a token is re-added.
         return k.factory.create(this, hostId, r.extra);
     }
 
@@ -329,6 +331,8 @@ public class WorkspaceActivity extends Activity implements DevService.StateListe
                 if (!k.label.equals(choice)) continue;
                 if (k.needsDevice) {
                     pickHost(h -> open(k.factory.create(this, h, "")));
+                } else if (k.accountKind != null) {
+                    pickAccount(k.accountKind, id -> open(k.factory.create(this, null, id)));
                 } else {
                     open(k.factory.create(this, null, ""));
                 }
@@ -367,6 +371,26 @@ public class WorkspaceActivity extends Activity implements DevService.StateListe
     }
 
     private interface HostPick { void on(String hostId); }
+
+    /** Resolve a service account for a new cloud panel: the only one, a chooser, or open settings. */
+    private void pickAccount(String accountKind, HostPick then) {
+        List<DevAccount> accts = DevAccount.ofKind(this, accountKind);
+        if (accts.isEmpty()) {
+            startActivity(new Intent(this, DevAccountsActivity.class));
+            return;
+        }
+        if (accts.size() == 1) {
+            then.on(accts.get(0).id);
+            return;
+        }
+        String[] labels = new String[accts.size()];
+        for (int i = 0; i < accts.size(); i++) labels[i] = accts.get(i).label;
+        popupAt(labels, choice -> {
+            for (int i = 0; i < labels.length; i++) {
+                if (labels[i].equals(choice)) { then.on(accts.get(i).id); return; }
+            }
+        });
+    }
 
     private void open(PanelContent content) {
         Panel p = panelHost.add(content);

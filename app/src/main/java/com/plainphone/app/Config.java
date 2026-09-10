@@ -866,6 +866,15 @@ class Config {
         prefs(context).edit().putString("dev_hosts", json).apply();
     }
 
+    /** Dev service accounts (GitHub/Vercel/Supabase) as an opaque JSON array of {@link DevAccount} records (never the token). */
+    static String getDevAccountsJson(Context context) {
+        return prefs(context).getString("dev_accounts", "[]");
+    }
+
+    static void setDevAccountsJson(Context context, String json) {
+        prefs(context).edit().putString("dev_accounts", json).apply();
+    }
+
     /** Absolute path of the vault directory, or null for the app-private default. */
     static String getVaultLocationPath(Context context) {
         return prefs(context).getString("vault_location_path", null);

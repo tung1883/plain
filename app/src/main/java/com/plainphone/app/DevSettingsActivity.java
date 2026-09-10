@@ -47,6 +47,9 @@ public class DevSettingsActivity extends Activity {
         root.addView(row("Devices: " + count, v ->
                 startActivity(new Intent(this, DevHostsActivity.class))));
 
+        root.addView(row("Dev accounts: " + DevAccount.all(this).size(), v ->
+                startActivity(new Intent(this, DevAccountsActivity.class))));
+
         root.addView(row("Screen frame rate: " + Config.getDevScreenFps(this) + " fps", v -> {
             int cur = Config.getDevScreenFps(this);
             int next = cur < 12 ? 12 : cur < 20 ? 20 : cur < 30 ? 30 : cur < 60 ? 60 : 8;

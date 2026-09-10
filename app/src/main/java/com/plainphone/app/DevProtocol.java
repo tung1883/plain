@@ -66,11 +66,18 @@ final class DevProtocol {
     static final String T_PROC_LIST = "proc.list";
     static final String T_PROC_KILL = "proc.kill";
     static final String T_PROC_KILLED = "proc.killed";
+    static final String T_STATS_GET = "stats.get";
+    static final String T_STATS = "stats";
+    static final String T_NET_GET = "net.get";
+    static final String T_NET = "net";
+    static final String T_DISK_GET = "disk.get";
+    static final String T_DISK = "disk";
 
     static final String CAP_PTY = "pty";
     static final String CAP_SCREEN = "screen";
     static final String CAP_INPUT = "input";
     static final String CAP_PROC = "proc";
+    static final String CAP_METRICS = "metrics";
 
     // ---- framing -------------------------------------------------------------
 
@@ -279,6 +286,24 @@ final class DevProtocol {
         m.put("ch", ch);
         m.put("pid", pid);
         m.put("sig", signal);
+        return m;
+    }
+
+    static Map<String, Object> statsGet(long ch) {
+        Map<String, Object> m = msg(T_STATS_GET);
+        m.put("ch", ch);
+        return m;
+    }
+
+    static Map<String, Object> netGet(long ch) {
+        Map<String, Object> m = msg(T_NET_GET);
+        m.put("ch", ch);
+        return m;
+    }
+
+    static Map<String, Object> diskGet(long ch) {
+        Map<String, Object> m = msg(T_DISK_GET);
+        m.put("ch", ch);
         return m;
     }
 
