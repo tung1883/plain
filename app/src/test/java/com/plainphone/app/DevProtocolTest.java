@@ -115,6 +115,60 @@ public class DevProtocolTest {
         assertArrayEquals(keystrokes, DevProtocol.bin(back, "data"));
     }
 
+    @Test
+    public void metricRequestsCarryOnlyTypeAndChannel() {
+        for (Map<String, Object> req : Arrays.asList(
+                DevProtocol.statsGet(7), DevProtocol.netGet(7), DevProtocol.diskGet(7))) {
+            Map<String, Object> back = DevProtocol.decode(DevProtocol.encode(req));
+            assertEquals(7L, DevProtocol.num(back, "ch", 0));
+            assertTrue(DevProtocol.type(back).endsWith(".get"));
+        }
+        assertEquals(DevProtocol.T_STATS_GET, DevProtocol.type(DevProtocol.statsGet(1)));
+    }
+
+    @Test
+    public void decodesAStatsFrameWithNestedDoubleArrays() throws Exception {
+        Map<String, Object> frame = new LinkedHashMap<>();
+        frame.put("t", DevProtocol.T_STATS);
+        frame.put("ch", 3L);
+        frame.put("cpu", 37.5);
+        frame.put("cpu_count", 8L);
+        frame.put("cpu_hist", Arrays.asList(10.0, 22.5, 88.0, 94.0));
+        frame.put("load", Arrays.asList(1.24, 1.08, 0.97));
+
+        ByteArrayOutputStream sink = new ByteArrayOutputStream();
+        DevProtocol.writeFrame(sink, frame);
+        Map<String, Object> back = DevProtocol.readFrame(new ByteArrayInputStream(sink.toByteArray()));
+
+        assertEquals(DevProtocol.T_STATS, DevProtocol.type(back));
+        assertEquals(37.5, DevProtocol.dbl(back, "cpu", 0), 0.0001);
+        List<Object> hist = DevProtocol.list(back, "cpu_hist");
+        assertEquals(4, hist.size());
+        assertEquals(94.0, ((Number) hist.get(3)).doubleValue(), 0.0001);
+        assertEquals(3, DevProtocol.list(back, "load").size());
+    }
+
+    @Test
+    public void decodesNetAndDiskFrames() throws Exception {
+        Map<String, Object> net = new LinkedHashMap<>();
+        net.put("t", DevProtocol.T_NET);
+        net.put("ch", 2L);
+        net.put("ifaces", Arrays.asList(mapOf("name", "eth0", "rx_bps", 1200.0),
+                mapOf("name", "lo", "rx_bps", 0.0)));
+        net.put("ports", Arrays.asList(mapOf("proto", "tcp", "port", 8471L)));
+        Map<String, Object> back = DevProtocol.decode(DevProtocol.encode(net));
+        assertEquals(2, DevProtocol.list(back, "ifaces").size());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> port0 = (Map<String, Object>) DevProtocol.list(back, "ports").get(0);
+        assertEquals(8471L, DevProtocol.num(port0, "port", 0));
+
+        Map<String, Object> disk = new LinkedHashMap<>();
+        disk.put("t", DevProtocol.T_DISK);
+        disk.put("disks", Arrays.asList(mapOf("mount", "/", "total", 480L, "used", 214L)));
+        Map<String, Object> dback = DevProtocol.decode(DevProtocol.encode(disk));
+        assertEquals(1, DevProtocol.list(dback, "disks").size());
+    }
+
     private static Map<String, Object> mapOf(Object... kv) {
         Map<String, Object> m = new LinkedHashMap<>();
         for (int i = 0; i < kv.length; i += 2) m.put((String) kv[i], kv[i + 1]);

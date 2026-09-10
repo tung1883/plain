@@ -85,7 +85,7 @@ final class ProcSurface extends LinearLayout {
         statsPanel.setPadding(dp(18), dp(14), dp(18), dp(14));
         statsPanel.setMinimumHeight(dp(150));   // hold height so it doesn't jump on load
         LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(150));
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         sp.setMargins(dp(20), dp(12), dp(20), dp(4));
         addView(statsPanel, sp);
         statsSpinner = UiKit.spinner(ctx);
@@ -251,48 +251,7 @@ final class ProcSurface extends LinearLayout {
     }
 
     private View bar(String label, double frac, int fillColor) {
-        final float f = (float) Math.max(0, Math.min(1, frac));
-        LinearLayout row = new LinearLayout(ctx);
-        row.setLayoutParams(new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(0, dp(4), 0, dp(4));
-
-        TextView l = new TextView(ctx);
-        l.setText(label);
-        l.setTextColor(0xFF8B8B8B);
-        l.setTextSize(11);
-        l.setTypeface(font);
-        l.setWidth(dp(34));
-        row.addView(l);
-
-        // Weighted fill + spacer — no post-layout callback, never renders empty.
-        LinearLayout track = new LinearLayout(ctx);
-        track.setOrientation(LinearLayout.HORIZONTAL);
-        track.setBackground(UiKit.rounded(ctx, 0xFF161616, 0, 0f, 4f));
-        UiKit.clipRounded(ctx, track, 4f);
-        LinearLayout.LayoutParams trackP = new LinearLayout.LayoutParams(0, dp(8), 1f);
-        trackP.rightMargin = dp(10);
-        View fill = new View(ctx);
-        fill.setBackgroundColor(fillColor);
-        track.addView(fill, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, f));
-        if (f < 1f) {
-            View spacer = new View(ctx);
-            track.addView(spacer, new LinearLayout.LayoutParams(
-                    0, ViewGroup.LayoutParams.MATCH_PARENT, 1f - f));
-        }
-        row.addView(track, trackP);
-
-        TextView pct = new TextView(ctx);
-        pct.setText(Math.round(frac * 100) + "%");
-        pct.setTextColor(Color.WHITE);
-        pct.setTextSize(11);
-        pct.setTypeface(font);
-        pct.setWidth(dp(42));
-        pct.setGravity(Gravity.END);
-        row.addView(pct);
-        return row;
+        return Meters.bar(ctx, font, label, frac, fillColor);
     }
 
     private TextView metaText(String t) {

@@ -99,6 +99,24 @@ PageUp PageDown Space ctrl-alt-delete`. `mods` are held around `text`/`key`.
 swap_total_kb, load:[1m,5m,15m], uptime_s,
 tasks:{total,running,sleeping,stopped,zombie,other}}` (`load` is zeros on Windows).
 
+### metrics — stats / net / disk
+
+Advertised as the `metrics` capability (implies all three). Poll-response like
+`proc.list`; additive, so `PROTO` stays `2`.
+
+| dir | message |
+|---|---|
+| C→D | `{t:"stats.get", ch}` |
+| D→C | `{t:"stats", ch, cpu, cpu_count, per_cpu:[…], mem_used_kb, mem_total_kb, swap_used_kb, swap_total_kb, cpu_hist:[…], mem_hist:[…], load:[1m,5m,15m], uptime_s, boot_s}` |
+| C→D | `{t:"net.get", ch}` |
+| D→C | `{t:"net", ch, ifaces:[{name, rx_bps, tx_bps, rx_total, tx_total, mac, mtu, addrs:[…]}], rx_total, tx_total, ports:[{proto, addr, port, pids:[…]}]}` |
+| C→D | `{t:"disk.get", ch}` |
+| D→C | `{t:"disk", ch, disks:[{mount, name, fs, kind, total, avail, used, read_bps, write_bps, read_total, write_total}]}` |
+
+`cpu_hist` / `mem_hist` are newest-last percent ring buffers (≤120), per
+connection, reset on reconnect. Bytes throughout; `*_bps` = bytes since the
+previous poll.
+
 ## Errors
 
 `{t:"error", code, msg}` — closes the socket, or scoped to a channel if it

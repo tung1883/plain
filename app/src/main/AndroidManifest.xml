@@ -376,6 +376,12 @@
             android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.PlainPhone" />
 
+        <activity
+            android:name=".DevAccountsActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.PlainPhone" />
+
         <!-- The Dev session screens live in their own task (taskAffinity) so
              pressing Home doesn't tear them down and Recents shows a distinct,
              labelled card ("shell · host", "screen · host") instead of a blank
