@@ -221,6 +221,60 @@ class UiKit {
         return t;
     }
 
+    /** The black "title / input / Save / Cancel" prompt (rename, etc.). */
+    static void textPrompt(android.app.Activity host, String title, String initial,
+                           String okLabel, java.util.function.Consumer<String> onOk) {
+        android.graphics.Typeface font = Fonts.current(host);
+        LinearLayout root = new LinearLayout(host);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackground(dialogBackground(host));
+        root.setPadding(0, 32, 0, 8);
+        root.addView(dialogTitle(host, title));
+
+        EditText input = new EditText(host);
+        input.setText(initial == null ? "" : initial);
+        input.setSelectAllOnFocus(true);
+        input.setBackground(null);
+        input.setTextColor(Color.WHITE);
+        input.setTypeface(font);
+        input.setTextSize(18);
+        input.setSingleLine(true);
+        input.setPadding(48, 8, 48, 16);
+        root.addView(input);
+
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(host).setView(root).create();
+        clearDialogChrome(dialog);
+        root.addView(promptRow(host, font, okLabel, () -> {
+            String s = input.getText().toString().trim();
+            if (!s.isEmpty()) onOk.accept(s);
+            dialog.dismiss();
+        }));
+        root.addView(promptRow(host, font, "Cancel", dialog::dismiss));
+        dialog.show();
+        if (dialog.getWindow() != null) {
+            android.view.WindowManager.LayoutParams p = dialog.getWindow().getAttributes();
+            p.width = (int) (host.getResources().getDisplayMetrics().widthPixels * 0.85);
+            dialog.getWindow().setAttributes(p);
+        }
+    }
+
+    private static android.widget.TextView promptRow(Context c, android.graphics.Typeface font,
+                                                     String label, Runnable action) {
+        android.widget.TextView row = new android.widget.TextView(c);
+        row.setText(label);
+        row.setTextColor(Color.WHITE);
+        row.setTextSize(20);
+        row.setTypeface(font);
+        row.setPadding(48, 32, 48, 32);
+        StateListDrawable bg = new StateListDrawable();
+        bg.addState(new int[]{android.R.attr.state_pressed},
+                new android.graphics.drawable.ColorDrawable(Color.DKGRAY));
+        bg.addState(new int[]{}, new android.graphics.drawable.ColorDrawable(Color.BLACK));
+        row.setBackground(bg);
+        row.setOnClickListener(v -> action.run());
+        return row;
+    }
+
     static void clearDialogChrome(android.app.AlertDialog dialog) {
         if (dialog.getWindow() != null) {
             dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(

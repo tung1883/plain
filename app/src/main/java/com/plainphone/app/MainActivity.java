@@ -47,7 +47,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-public class MainActivity extends Activity {
+public class MainActivity extends Activity implements SelectionHost {
 
     private static final long DEVICE_SEARCH_DEBOUNCE_MS = 180;
 
@@ -126,7 +126,7 @@ public class MainActivity extends Activity {
     /** Shared multi-select: null unless a section is in selection mode. */
     private HomeMode selectMode;
     private final java.util.LinkedHashSet<String> selection = new java.util.LinkedHashSet<>();
-    private LinearLayout selectionBar;
+    private SelectionBar selectionBar;
     private FontChoice builtWithFont;
 
     @Override
@@ -223,6 +223,47 @@ public class MainActivity extends Activity {
     private SearchResult inertRow(SearchResult.Kind kind, String title) {
         return new SearchResult(kind, title, null, -1, () -> {});
     }
+
+    // --- SectionHost (shared with workspace PluginPanels) -------------
+
+    @Override public Activity activity() { return this; }
+
+    @Override public void refresh() { filter(search.getText().toString()); }
+
+    @Override public boolean settingsOpen(HomeMode section) {
+        switch (section) {
+            case NOTES: return notesSettingsOpen;
+            case TODOS: return todoSettingsOpen;
+            case RECORDER: return recorderSettingsOpen;
+            default: return false;
+        }
+    }
+
+    @Override public void setSettingsOpen(HomeMode section, boolean open) {
+        switch (section) {
+            case NOTES: notesSettingsOpen = open; break;
+            case TODOS: todoSettingsOpen = open; break;
+            case RECORDER: recorderSettingsOpen = open; break;
+            default: break;
+        }
+    }
+
+    @Override public void pickImport(HomeMode section, String mimeType) {
+        int code = section == HomeMode.NOTES ? REQUEST_IMPORT_NOTES
+                : section == HomeMode.TODOS ? REQUEST_IMPORT_TODOS
+                : REQUEST_IMPORT_RECORDINGS;
+        pickImport(mimeType, code);
+    }
+
+    @Override public void pickTodoFile() {
+        Todos.showFileOptions(this, REQUEST_PICK_TODO_FILE, this::refresh);
+    }
+
+    @Override public void pickNotesFolder() {
+        Notes.showFolderOptions(this, REQUEST_PICK_NOTES_FOLDER, this::refresh);
+    }
+
+    @Override public void unlockVault() { unlockVaultThen(this::refresh); }
 
     /** Open a multi-select document picker for the given MIME type. */
     private void pickImport(String mime, int requestCode) {
@@ -717,10 +758,7 @@ public class MainActivity extends Activity {
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
         modeToggleScroller.post(this::scrollActiveTabIntoView);
 
-        selectionBar = new LinearLayout(this);
-        selectionBar.setOrientation(LinearLayout.VERTICAL);
-        selectionBar.setBackgroundColor(Color.BLACK);
-        selectionBar.setVisibility(View.GONE);
+        selectionBar = new SelectionBar(this);
         root.addView(selectionBar, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
@@ -797,20 +835,20 @@ public class MainActivity extends Activity {
             }
             if (result.payload instanceof Note && currentQuery.isEmpty()) {
                 Note n = (Note) result.payload;
-                if (selectMode == HomeMode.NOTES) toggleSelected(n.id);
+                if (selectMode == HomeMode.NOTES) toggle(n.id);
                 else enterSelection(HomeMode.NOTES, n.id);
                 return true;
             }
             if (result.payload instanceof Recording) {
                 Recording rec = (Recording) result.payload;
-                if (selectMode == HomeMode.RECORDER) toggleSelected(rec.id);
+                if (selectMode == HomeMode.RECORDER) toggle(rec.id);
                 else enterSelection(HomeMode.RECORDER, rec.id);
                 return true;
             }
             if (result.payload instanceof Todos.Item && currentQuery.isEmpty()) {
                 Todos.Item item = (Todos.Item) result.payload;
                 String tid = "todo:" + item.index;
-                if (selectMode == HomeMode.TODOS) toggleSelected(tid);
+                if (selectMode == HomeMode.TODOS) toggle(tid);
                 else enterSelection(HomeMode.TODOS, tid);
                 return true;
             }
@@ -1107,22 +1145,10 @@ public class MainActivity extends Activity {
                             "Tap to unlock", -1, () -> startActivityForResult(
                             Lock.NOTES.pinGate(this), REQUEST_NOTES_UNLOCK)));
                 } else if (selecting) {
-                    renderNoteSelection();
+                    NotesSection.renderSelection(this, rows);
                 } else {
                     if (Lock.NOTES.isLocked(this)) Lock.NOTES.keepUnlocked(this);
-                    renderNoteSettingsGroup();
-                    if (SectionJobs.pendingFor(this, HomeMode.NOTES)) {
-                        rows.add(inertRow(SearchResult.Kind.NOTE,
-                                SectionJobs.progressLine(this, HomeMode.NOTES)));
-                    } else if (ImportJobs.pendingForPlugin(this, HomeMode.NOTES)) {
-                        rows.add(inertRow(SearchResult.Kind.NOTE,
-                                ImportJobs.progressLine(this, HomeMode.NOTES)));
-                    } else {
-                        rows.add(new SearchResult(SearchResult.Kind.NOTE, "+ Import files",
-                                null, -1, () -> pickImport("text/*", REQUEST_IMPORT_NOTES)));
-                    }
-                    rows.add(newNoteRow());
-                    rows.addAll(noteBrowseResults());
+                    NotesSection.render(this, this::openNote, rows);
                 }
             } else if (homeMode == HomeMode.TODOS) {
                 renderTodoSection();
@@ -1231,26 +1257,6 @@ public class MainActivity extends Activity {
         return results;
     }
 
-    private List<SearchResult> noteBrowseResults() {
-        List<Note> notes = new ArrayList<>(Config.getNotes(this));
-        notes.addAll(Notes.vaultNotes(this));
-        Collections.sort(notes, (a, b) -> Long.compare(b.updatedAt, a.updatedAt));
-        List<SearchResult> results = new ArrayList<>();
-        for (int i = 0; i < notes.size(); i++) {
-            Note note = notes.get(i);
-            results.add(new SearchResult(SearchResult.Kind.NOTE, note.title(), note.preview(), i,
-                    () -> openNote(note.id), note));
-        }
-        if (!VaultSession.get().isUnlocked() && VaultFormat.exists(VaultSession.vaultRoot(this))
-                && Config.getVaultNoteCount(this) > 0) {
-            int n = Config.getVaultNoteCount(this);
-            results.add(new SearchResult(SearchResult.Kind.NOTE,
-                    n + (n == 1 ? " note in the vault" : " notes in the vault"), "Unlock to read", -1,
-                    () -> unlockVaultThen(() -> filter(search.getText().toString()))));
-        }
-        return results;
-    }
-
     private List<SearchResult> noteResults(String needle) {
         if (Lock.NOTES.gateActive(this)) return new ArrayList<>();
         List<SearchResult> results = new ArrayList<>();
@@ -1263,59 +1269,6 @@ public class MainActivity extends Activity {
                     () -> openNote(note.id), note));
         }
         return results;
-    }
-
-    private SearchResult newNoteRow() {
-        return new SearchResult(SearchResult.Kind.NOTE, "+ New note", null, -1, () -> {
-            Note note = Note.create();
-            List<Note> all = Config.getNotes(this);
-            all.add(note);
-            Config.setNotes(this, all);
-            openNote(note.id);
-        });
-    }
-
-    private void renderNoteSettingsGroup() {
-        boolean expanded = notesSettingsOpen;
-        rows.add(new SearchResult(SearchResult.Kind.NOTE,
-                (expanded ? "▾  " : "▸  ") + "Notes settings", null, -1, () -> {
-            notesSettingsOpen = !expanded;
-            filter(search.getText().toString());
-        }));
-        if (!expanded) return;
-
-        rows.add(new SearchResult(SearchResult.Kind.NOTE,
-                "Export folder: " + Notes.exportFolderLabel(this), null, -1,
-                () -> Notes.showFolderOptions(this, REQUEST_PICK_NOTES_FOLDER,
-                        () -> filter(search.getText().toString()))));
-        rows.add(new SearchResult(SearchResult.Kind.NOTE,
-                "Locked: " + (Lock.NOTES.isLocked(this) ? "On" : "Off"), null, -1,
-                () -> Lock.NOTES.toggleLock(this, () -> filter(search.getText().toString()))));
-
-        int plainCount = Config.getNotes(this).size();
-        if (plainCount > 0 && VaultFormat.exists(VaultSession.vaultRoot(this))) {
-            rows.add(new SearchResult(SearchResult.Kind.NOTE,
-                    "Move all notes to vault", null, -1,
-                    () -> confirmMoveAllNotesToVault(plainCount)));
-        }
-    }
-
-    private void confirmMoveAllNotesToVault(int count) {
-        if (!VaultSession.get().isUnlocked()) {
-            unlockVaultThen(() -> confirmMoveAllNotesToVault(count));
-            return;
-        }
-        VaultUi.confirm(this, "Move " + count + " note" + (count == 1 ? "" : "s") + " to the vault?",
-                "They'll be encrypted and only readable while the vault is unlocked.",
-                "Move", () -> {
-                    List<String> ids = new ArrayList<>();
-                    for (Note n : Config.getNotes(this)) {
-                        if (!n.isBlank()) ids.add(n.id);
-                    }
-                    SectionJobs.startNotesToVault(this, ids);
-                    Toast.makeText(this, "Move queued", Toast.LENGTH_SHORT).show();
-                    filter(search.getText().toString());
-                }, "Cancel", null);
     }
 
     private void openNote(String id) {
@@ -1347,81 +1300,27 @@ public class MainActivity extends Activity {
         if (Lock.RECORDER.isLocked(this)) Lock.RECORDER.keepUnlocked(this);
 
         if (selectMode == HomeMode.RECORDER) {
-            renderRecorderSelection(recorderAll());
+            RecorderSection.renderSelection(this, rows);
             return;
         }
-        boolean expanded = recorderSettingsOpen;
-        rows.add(new SearchResult(SearchResult.Kind.RECORDING,
-                (expanded ? "▾  " : "▸  ") + "Recorder settings", null, -1, () -> {
-            recorderSettingsOpen = !expanded;
-            filter(search.getText().toString());
-        }));
-        if (expanded) {
-            rows.add(new SearchResult(SearchResult.Kind.RECORDING,
-                    "Format: " + Config.getRecorderFormat(this).toUpperCase(java.util.Locale.US),
-                    null, -1, () -> startActivity(new Intent(this, RecorderSettingsActivity.class))));
-            rows.add(new SearchResult(SearchResult.Kind.RECORDING,
-                    "Sample rate: " + Config.getRecorderSampleRate(this) + " Hz", null, -1,
-                    () -> startActivity(new Intent(this, RecorderSettingsActivity.class))));
-            rows.add(new SearchResult(SearchResult.Kind.RECORDING,
-                    "Locked: " + (Lock.RECORDER.isLocked(this) ? "On" : "Off"), null, -1,
-                    () -> Lock.RECORDER.toggleLock(this, () -> filter(search.getText().toString()))));
-            int local = Recorder.all(this).size();
-            if (local > 0 && VaultFormat.exists(VaultSession.vaultRoot(this))) {
-                rows.add(new SearchResult(SearchResult.Kind.RECORDING,
-                        "Move all recordings to vault", null, -1,
-                        () -> confirmMoveAllRecordingsToVault(local)));
-            }
-        }
-
-        if (SectionJobs.pendingFor(this, HomeMode.RECORDER)) {
-            rows.add(inertRow(SearchResult.Kind.RECORDING,
-                    SectionJobs.progressLine(this, HomeMode.RECORDER)));
-        } else if (ImportJobs.pendingForPlugin(this, HomeMode.RECORDER)) {
-            rows.add(inertRow(SearchResult.Kind.RECORDING,
-                    ImportJobs.progressLine(this, HomeMode.RECORDER)));
-        } else {
-            rows.add(new SearchResult(SearchResult.Kind.RECORDING, "+ Import audio", null, -1,
-                    () -> pickImport("audio/*", REQUEST_IMPORT_RECORDINGS)));
-        }
-        rows.add(new SearchResult(SearchResult.Kind.RECORDING, "+ New recording", null, -1,
-                () -> startActivity(new Intent(this, RecordActivity.class))));
-        rows.addAll(recorderBrowseResults());
-
-        // Vault recordings added straight into the vault carry no duration — probe
-        // them once in the background, then refresh the list.
-        Recorder.healVaultDurations(this, () -> runOnUiThread(() -> {
-            if (!isFinishing() && !isDestroyed() && homeUiBuilt) {
-                filter(search.getText().toString());
-            }
-        }));
-    }
-
-    private List<SearchResult> recorderBrowseResults() {
-        List<Recording> list = recorderAll();
-        List<SearchResult> results = new ArrayList<>();
-        for (int i = 0; i < list.size(); i++) {
-            Recording r = list.get(i);
-            results.add(new SearchResult(SearchResult.Kind.RECORDING, r.displayName(),
-                    r.subtitle(), i, () -> openRecording(r.id), r));
-        }
-        if (!VaultSession.get().isUnlocked() && VaultFormat.exists(VaultSession.vaultRoot(this))
-                && Config.getRecordingCount(this) > 0) {
-            int n = Config.getRecordingCount(this);
-            results.add(new SearchResult(SearchResult.Kind.RECORDING,
-                    n + (n == 1 ? " recording in the vault" : " recordings in the vault"),
-                    "Unlock to play", -1,
-                    () -> unlockVaultThen(() -> filter(search.getText().toString()))));
-        }
-        return results;
+        RecorderSection.render(this, rows);
     }
 
     // --- shared multi-select ------------------------------------------------
 
-    private static final class BarAction {
-        final String label;
-        final Runnable run;
-        BarAction(String label, Runnable run) { this.label = label; this.run = run; }
+    @Override public java.util.Set<String> selection() { return selection; }
+
+    @Override public SelectionBar selectionBar() { return selectionBar; }
+
+    @Override public void toggle(String id) {
+        if (!selection.remove(id)) selection.add(id);
+        filter(search.getText().toString());
+    }
+
+    @Override public void setSelected(java.util.Collection<String> ids) {
+        selection.clear();
+        selection.addAll(ids);
+        filter(search.getText().toString());
     }
 
     private void enterSelection(HomeMode mode, String firstId) {
@@ -1431,334 +1330,10 @@ public class MainActivity extends Activity {
         filter(search.getText().toString());
     }
 
-    private void toggleSelected(String id) {
-        if (!selection.remove(id)) selection.add(id);
-        // Empty selection stays in selection mode — only ✕ (or a tab switch / search) leaves.
-        filter(search.getText().toString());
-    }
-
-    private void exitSelection() {
+    @Override public void exitSelection() {
         selectMode = null;
         selection.clear();
         filter(search.getText().toString());
-    }
-
-    private void selectAllOrNone(List<String> allIds) {
-        boolean all = !allIds.isEmpty() && selection.size() == allIds.size();
-        selection.clear();
-        if (!all) selection.addAll(allIds);
-        // "Select none" keeps you in selection mode — only unchecking the last row leaves.
-        filter(search.getText().toString());
-    }
-
-    /** Rebuild the two-row selection bar: ✕ / "N selected" / select-all, then actions. */
-    private void buildSelectionBar(List<String> allIds, List<BarAction> actions) {
-        Typeface font = Fonts.current(this);
-        selectionBar.removeAllViews();
-        boolean all = !allIds.isEmpty() && selection.size() == allIds.size();
-
-        LinearLayout top = new LinearLayout(this);
-        top.setOrientation(LinearLayout.HORIZONTAL);
-        top.setGravity(Gravity.CENTER_VERTICAL);
-        top.setPadding(40, 28, 40, 14);
-
-        TextView close = new TextView(this);
-        close.setText("✕");
-        close.setTextColor(Color.WHITE);
-        close.setTextSize(16);
-        close.setTypeface(font);
-        close.setPadding(8, 8, 28, 8);
-        close.setOnClickListener(v -> exitSelection());
-        top.addView(close);
-
-        TextView count = new TextView(this);
-        count.setText(selection.size() + " selected");
-        count.setTextColor(Color.WHITE);
-        count.setTextSize(14);
-        count.setTypeface(font);
-        top.addView(count, new LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-
-        TextView selAll = new TextView(this);
-        selAll.setText(all ? "SELECT NONE" : "SELECT ALL");
-        selAll.setTextColor(Color.GRAY);
-        selAll.setTextSize(12);
-        selAll.setLetterSpacing(0.1f);
-        selAll.setTypeface(font);
-        selAll.setPadding(16, 8, 8, 8);
-        selAll.setOnClickListener(v -> selectAllOrNone(allIds));
-        top.addView(selAll);
-        selectionBar.addView(top);
-
-        LinearLayout actionRow = new LinearLayout(this);
-        actionRow.setOrientation(LinearLayout.HORIZONTAL);
-        actionRow.setPadding(40, 6, 40, 22);
-        boolean enabled = !selection.isEmpty();
-        for (BarAction a : actions) {
-            TextView t = new TextView(this);
-            t.setText(a.label.toUpperCase(java.util.Locale.US));
-            t.setTextColor(enabled ? Color.WHITE : 0xFF555555);
-            t.setTextSize(12);
-            t.setLetterSpacing(0.08f);
-            t.setTypeface(font);
-            t.setPadding(0, 10, 44, 10);
-            if (enabled) t.setOnClickListener(v -> a.run.run());
-            actionRow.addView(t);
-        }
-        android.widget.HorizontalScrollView scroller = new android.widget.HorizontalScrollView(this);
-        scroller.setHorizontalScrollBarEnabled(false);
-        scroller.addView(actionRow);
-        selectionBar.addView(scroller);
-
-        selectionBar.addView(divider());
-    }
-
-    private List<Recording> selectedRecordings(List<Recording> all) {
-        List<Recording> out = new ArrayList<>();
-        for (Recording r : all) if (selection.contains(r.id)) out.add(r);
-        return out;
-    }
-
-    private void renderRecorderSelection(List<Recording> list) {
-        List<String> ids = new ArrayList<>();
-        for (Recording r : list) ids.add(r.id);
-        List<Recording> sel = selectedRecordings(list);
-        int locals = 0, vaulted = 0;
-        for (Recording r : sel) {
-            if (Recorder.isVaulted(r.id)) vaulted++; else locals++;
-        }
-
-        List<BarAction> actions = new ArrayList<>();
-        if (locals > 0 && VaultFormat.exists(VaultSession.vaultRoot(this))) {
-            actions.add(new BarAction("Move to vault", () -> recorderMoveToVault(sel)));
-        }
-        if (vaulted > 0) {
-            actions.add(new BarAction("Move out", () -> {
-                List<String> moveIds = new ArrayList<>();
-                for (Recording r : sel) if (Recorder.isVaulted(r.id)) moveIds.add(r.id);
-                SectionJobs.startRecorderFromVault(this, moveIds);
-                Toast.makeText(this, "Move queued", Toast.LENGTH_SHORT).show();
-                exitSelection();
-            }));
-        }
-        if (locals > 0) {
-            actions.add(new BarAction("Export", () -> recorderExport(sel)));
-        }
-        if (sel.size() == 1 && locals == 1) {
-            Recording one = sel.get(0);
-            actions.add(new BarAction("Rename", () -> promptRenameRecording(one)));
-        }
-        actions.add(new BarAction("Delete", () -> VaultUi.confirm(this,
-                "Delete " + sel.size() + " recording" + (sel.size() == 1 ? "" : "s") + "?",
-                null, "Delete", () -> {
-                    for (Recording r : sel) {
-                        if (Recorder.isVaulted(r.id)) Recorder.deleteVaultRecording(this, r.id);
-                        else Recorder.deleteLocal(this, r);
-                    }
-                    exitSelection();
-                }, "Cancel", null)));
-        buildSelectionBar(ids, actions);
-
-        for (Recording r : list) {
-            rows.add(new SearchResult(SearchResult.Kind.RECORDING, r.displayName(), r.subtitle(),
-                    -1, () -> toggleSelected(r.id), r).check(selection.contains(r.id)));
-        }
-    }
-
-    private void recorderMoveToVault(List<Recording> sel) {
-        if (!VaultFormat.exists(VaultSession.vaultRoot(this))) {
-            VaultUi.confirm(this, "Set up the vault?",
-                    "Recordings you move in are encrypted with your vault password.",
-                    "Set up", () -> startActivity(new Intent(this, VaultActivity.class)),
-                    "Cancel", null);
-            return;
-        }
-        if (!VaultSession.get().isUnlocked()) {
-            unlockVaultThen(() -> recorderMoveToVault(sel));
-            return;
-        }
-        int moved = 0;
-        List<String> ids = new ArrayList<>();
-        for (Recording r : sel) if (!Recorder.isVaulted(r.id)) ids.add(r.id);
-        SectionJobs.startRecorderToVault(this, ids);
-        Toast.makeText(this, "Move queued", Toast.LENGTH_SHORT).show();
-        exitSelection();
-    }
-
-    private void noteMoveToVault(List<Note> sel) {
-        if (!VaultSession.get().isUnlocked()) {
-            unlockVaultThen(() -> noteMoveToVault(sel));
-            return;
-        }
-        List<String> ids = new ArrayList<>();
-        for (Note n : sel) if (!Notes.isVaulted(n.id)) ids.add(n.id);
-        SectionJobs.startNotesToVault(this, ids);
-        Toast.makeText(this, "Move queued", Toast.LENGTH_SHORT).show();
-        exitSelection();
-    }
-
-    private void confirmMoveAllRecordingsToVault(int count) {
-        if (!VaultSession.get().isUnlocked()) {
-            unlockVaultThen(() -> confirmMoveAllRecordingsToVault(count));
-            return;
-        }
-        VaultUi.confirm(this, "Move " + count + " recording" + (count == 1 ? "" : "s")
-                        + " to the vault?",
-                "They'll be encrypted and only playable while the vault is unlocked.",
-                "Move", () -> {
-                    List<String> ids = new ArrayList<>();
-                    for (Recording r : Recorder.all(this)) ids.add(r.id);
-                    SectionJobs.startRecorderToVault(this, ids);
-                    Toast.makeText(this, "Move queued", Toast.LENGTH_SHORT).show();
-                    filter(search.getText().toString());
-                }, "Cancel", null);
-    }
-
-    private void recorderExport(List<Recording> sel) {
-        java.util.ArrayList<Uri> uris = new java.util.ArrayList<>();
-        for (Recording r : sel) {
-            if (Recorder.isVaulted(r.id)) continue;
-            java.io.File f = Recorder.fileFor(this, r);
-            if (f.isFile()) uris.add(PlainFileProvider.uriFor(getPackageName() + ".files", f));
-        }
-        sendFiles(uris, "audio/*", "Send recordings");
-    }
-
-    private void sendFiles(java.util.ArrayList<Uri> uris, String mime, String chooser) {
-        if (uris.isEmpty()) {
-            Toast.makeText(this, "Nothing to export", Toast.LENGTH_SHORT).show();
-            return;
-        }
-        try {
-            Intent send = new Intent(uris.size() == 1
-                    ? Intent.ACTION_SEND : Intent.ACTION_SEND_MULTIPLE);
-            send.setType(mime);
-            if (uris.size() == 1) send.putExtra(Intent.EXTRA_STREAM, uris.get(0));
-            else send.putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris);
-            send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            startActivity(Intent.createChooser(send, chooser));
-        } catch (Exception e) {
-            Toast.makeText(this, "Export failed", Toast.LENGTH_SHORT).show();
-        }
-    }
-
-    // --- notes multi-select ---
-
-    private void renderNoteSelection() {
-        List<Note> list = new ArrayList<>(Config.getNotes(this));
-        list.addAll(Notes.vaultNotes(this));
-        Collections.sort(list, (a, b) -> Long.compare(b.updatedAt, a.updatedAt));
-
-        List<String> ids = new ArrayList<>();
-        for (Note n : list) ids.add(n.id);
-        List<Note> sel = new ArrayList<>();
-        for (Note n : list) if (selection.contains(n.id)) sel.add(n);
-        int locals = 0, vaulted = 0;
-        for (Note n : sel) {
-            if (Notes.isVaulted(n.id)) vaulted++; else locals++;
-        }
-
-        List<BarAction> actions = new ArrayList<>();
-        if (locals > 0 && VaultFormat.exists(VaultSession.vaultRoot(this))) {
-            actions.add(new BarAction("Move to vault", () -> noteMoveToVault(sel)));
-        }
-        if (vaulted > 0) {
-            actions.add(new BarAction("Move out", () -> {
-                List<String> moveIds = new ArrayList<>();
-                for (Note n : sel) if (Notes.isVaulted(n.id)) moveIds.add(n.id);
-                SectionJobs.startNotesFromVault(this, moveIds);
-                Toast.makeText(this, "Move queued", Toast.LENGTH_SHORT).show();
-                exitSelection();
-            }));
-        }
-        if (locals > 0) {
-            actions.add(new BarAction("Export", () -> {
-                java.util.ArrayList<Uri> uris = new java.util.ArrayList<>();
-                for (Note n : sel) {
-                    if (Notes.isVaulted(n.id)) continue;
-                    try {
-                        java.io.File f = new java.io.File(getCacheDir(), Notes.exportFileName(n));
-                        try (java.io.OutputStream os = new java.io.FileOutputStream(f)) {
-                            os.write(Notes.exportText(n).getBytes(java.nio.charset.StandardCharsets.UTF_8));
-                        }
-                        uris.add(PlainFileProvider.uriFor(getPackageName() + ".files", f));
-                    } catch (Exception ignored) {
-                    }
-                }
-                sendFiles(uris, Notes.EXPORT_MIME, "Send notes");
-            }));
-        }
-        actions.add(new BarAction("Delete", () -> VaultUi.confirm(this,
-                "Delete " + sel.size() + " note" + (sel.size() == 1 ? "" : "s") + "?",
-                null, "Delete", () -> {
-                    List<Note> keep = Config.getNotes(this);
-                    keep.removeIf(n -> selection.contains(n.id));
-                    Config.setNotes(this, keep);
-                    for (Note n : sel) if (Notes.isVaulted(n.id)) Notes.deleteVaultNote(this, n.id);
-                    exitSelection();
-                }, "Cancel", null)));
-        buildSelectionBar(ids, actions);
-
-        for (Note n : list) {
-            rows.add(new SearchResult(SearchResult.Kind.NOTE, n.title(), n.preview(), -1,
-                    () -> toggleSelected(n.id), n).check(selection.contains(n.id)));
-        }
-    }
-
-    // --- to-do multi-select ---
-
-    private void renderTodoSelection() {
-        List<Todos.Item> items = Todos.sortedForView(Todos.load(this),
-                Config.isTodosShowCompleted(this));
-        List<String> ids = new ArrayList<>();
-        for (Todos.Item it : items) ids.add("todo:" + it.index);
-
-        java.util.List<Integer> selIdx = new ArrayList<>();
-        int done = 0, open = 0;
-        for (Todos.Item it : items) {
-            if (selection.contains("todo:" + it.index)) {
-                selIdx.add(it.index);
-                if (it.todo.done) done++; else open++;
-            }
-        }
-
-        List<BarAction> actions = new ArrayList<>();
-        if (open > 0) {
-            actions.add(new BarAction("Complete", () -> {
-                Todos.setDone(this, selIdx, true);
-                exitSelection();
-            }));
-        }
-        if (done > 0) {
-            actions.add(new BarAction("Reopen", () -> {
-                Todos.setDone(this, selIdx, false);
-                exitSelection();
-            }));
-        }
-        if (selIdx.size() == 1) {
-            char cur = 0;
-            for (Todos.Item it : items) if (it.index == selIdx.get(0)) cur = it.todo.priority;
-            char nextP = nextPriority(cur);
-            int only = selIdx.get(0);
-            actions.add(new BarAction("Priority " + nextPriorityLabel(cur), () -> {
-                Todos.setPriority(this, only, nextP);
-                exitSelection();
-            }));
-        }
-        actions.add(new BarAction("Delete", () -> VaultUi.confirm(this,
-                "Delete " + selIdx.size() + " task" + (selIdx.size() == 1 ? "" : "s") + "?",
-                null, "Delete", () -> {
-                    Todos.deleteAll(this, selIdx);
-                    exitSelection();
-                }, "Cancel", null)));
-        buildSelectionBar(ids, actions);
-
-        for (Todos.Item it : items) {
-            String id = "todo:" + it.index;
-            rows.add(new SearchResult(SearchResult.Kind.TODO, todoTitle(it.todo),
-                    todoSubtitle(it.todo), -1, () -> toggleSelected(id), it)
-                    .withStrike(it.todo.done).check(selection.contains(id)));
-        }
     }
 
     private List<SearchResult> recordingResults(String needle) {
@@ -1786,46 +1361,6 @@ public class MainActivity extends Activity {
             intent.putExtra("recId", id);
         }
         startActivity(intent);
-    }
-
-    private void promptRenameRecording(Recording rec) {
-        Typeface georgia = Fonts.current(this);
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackground(popupBackground());
-        root.setPadding(0, 32, 0, 8);
-
-        root.addView(UiKit.dialogTitle(this, "Rename recording"));
-
-        EditText input = new EditText(this);
-        input.setText(rec.displayName());
-        input.setSelectAllOnFocus(true);
-        input.setBackground(null);
-        input.setTextColor(Color.WHITE);
-        input.setTypeface(georgia);
-        input.setTextSize(18);
-        input.setSingleLine(true);
-        input.setPadding(48, 8, 48, 16);
-        root.addView(input);
-
-        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
-                .setView(root).create();
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-        }
-        root.addView(optionRow(georgia, "Save", v -> {
-            String name = input.getText().toString().trim();
-            if (!name.isEmpty()) Recorder.rename(this, rec.id, name);
-            dialog.dismiss();
-            exitSelection();
-        }));
-        root.addView(optionRow(georgia, "Cancel", v -> dialog.dismiss()));
-        dialog.show();
-        if (dialog.getWindow() != null) {
-            android.view.WindowManager.LayoutParams params = dialog.getWindow().getAttributes();
-            params.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.85);
-            dialog.getWindow().setAttributes(params);
-        }
     }
 
     private void renderVaultSection() {
@@ -1931,72 +1466,11 @@ public class MainActivity extends Activity {
         if (Lock.TODOS.isLocked(this)) Lock.TODOS.keepUnlocked(this);
 
         if (selectMode == HomeMode.TODOS) {
-            renderTodoSelection();
+            TodoSection.renderSelection(this, rows);
             return;
         }
 
-        boolean expanded = todoSettingsOpen;
-        rows.add(new SearchResult(SearchResult.Kind.TODO,
-                (expanded ? "▾  " : "▸  ") + "To-do settings", null, -1, () -> {
-            todoSettingsOpen = !expanded;
-            filter(search.getText().toString());
-        }));
-        if (expanded) {
-            rows.add(new SearchResult(SearchResult.Kind.TODO,
-                    "Locked: " + (Lock.TODOS.isLocked(this) ? "On" : "Off"), null, -1,
-                    () -> Lock.TODOS.toggleLock(this, () -> filter(search.getText().toString()))));
-            rows.add(new SearchResult(SearchResult.Kind.TODO,
-                    "Show completed: " + (Config.isTodosShowCompleted(this) ? "On" : "Off"), null, -1,
-                    () -> {
-                        Config.setTodosShowCompleted(this, !Config.isTodosShowCompleted(this));
-                        filter(search.getText().toString());
-                    }));
-            int done = Todos.completedCount(this);
-            rows.add(new SearchResult(SearchResult.Kind.TODO,
-                    "Archive completed (" + done + ")", null, -1, () -> {
-                if (done == 0) {
-                    android.widget.Toast.makeText(this, "Nothing to archive",
-                            android.widget.Toast.LENGTH_SHORT).show();
-                    return;
-                }
-                confirmArchiveTodos(done);
-            }));
-            rows.add(new SearchResult(SearchResult.Kind.TODO, "Edit as text", null, -1,
-                    () -> startActivity(new Intent(this, TodoListEditActivity.class))));
-            rows.add(new SearchResult(SearchResult.Kind.TODO,
-                    "Todo file: " + Todos.fileLabel(this), null, -1,
-                    () -> Todos.showFileOptions(this, REQUEST_PICK_TODO_FILE,
-                            () -> filter(search.getText().toString()))));
-            rows.add(new SearchResult(SearchResult.Kind.TODO, "Guide", null, -1,
-                    () -> startActivity(new Intent(this, TodoGuideActivity.class))));
-        }
-
-        if (ImportJobs.pendingForPlugin(this, HomeMode.TODOS)) {
-            rows.add(inertRow(SearchResult.Kind.TODO,
-                    ImportJobs.progressLine(this, HomeMode.TODOS)));
-        } else {
-            rows.add(new SearchResult(SearchResult.Kind.TODO, "+ Import files", null, -1,
-                    () -> pickImport("text/*", REQUEST_IMPORT_TODOS)));
-        }
-        rows.add(new SearchResult(SearchResult.Kind.TODO, "+ New task", null, -1,
-                this::promptNewTask));
-
-        List<Todos.Item> items = Todos.sortedForView(Todos.load(this),
-                Config.isTodosShowCompleted(this));
-        for (int i = 0; i < items.size(); i++) {
-            rows.add(todoRow(items.get(i), i));
-        }
-    }
-
-    private void confirmArchiveTodos(int done) {
-        VaultUi.confirm(this,
-                "Archive " + done + " completed task" + (done == 1 ? "" : "s") + "?",
-                "They move out of the list into the done archive.",
-                "Archive", () -> {
-                    Todos.archiveCompleted(this);
-                    filter(search.getText().toString());
-                },
-                "Cancel", null);
+        TodoSection.render(this, rows);
     }
 
     private SearchResult todoRow(Todos.Item item, int rank) {
@@ -2038,79 +1512,6 @@ public class MainActivity extends Activity {
             results.add(todoRow(new Todos.Item(todo, i), score));
         }
         return results;
-    }
-
-    private void promptNewTask() {
-        Typeface georgia = Fonts.current(this);
-
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackground(popupBackground());
-        root.setPadding(0, 32, 0, 8);
-
-        root.addView(UiKit.dialogTitle(this, "New task"));
-
-        EditText input = new EditText(this);
-        input.setBackground(null);
-        input.setTextColor(Color.WHITE);
-        input.setHintTextColor(Color.GRAY);
-        input.setHint("Buy milk +groceries");
-        input.setTypeface(georgia);
-        input.setTextSize(18);
-        input.setSingleLine(true);
-        input.setImeOptions(EditorInfo.IME_ACTION_DONE);
-        input.setInputType(android.text.InputType.TYPE_CLASS_TEXT
-                | android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
-        input.setPadding(48, 8, 48, 24);
-        root.addView(input);
-
-        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
-                .setView(root)
-                .create();
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-        }
-
-        Runnable add = () -> {
-            String text = input.getText().toString().trim();
-            if (text.isEmpty()) {
-                dialog.dismiss();
-                return;
-            }
-            Todos.quickAdd(this, text);
-            dialog.dismiss();
-            filter(search.getText().toString());
-        };
-
-        input.setOnEditorActionListener((v, actionId, event) -> {
-            if (actionId != EditorInfo.IME_ACTION_DONE) return false;
-            add.run();
-            return true;
-        });
-
-        root.addView(optionRow(georgia, "Add", v -> add.run()));
-        root.addView(optionRow(georgia, "Cancel", v -> dialog.dismiss()));
-
-        dialog.show();
-        if (dialog.getWindow() != null) {
-            android.view.WindowManager.LayoutParams params = dialog.getWindow().getAttributes();
-            params.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.85);
-            dialog.getWindow().setAttributes(params);
-        }
-    }
-
-    private static char nextPriority(char current) {
-        switch (current) {
-            case 0: return 'A';
-            case 'A': return 'B';
-            case 'B': return 'C';
-            default: return 0;
-        }
-    }
-
-    private static String nextPriorityLabel(char current) {
-        char next = nextPriority(current);
-        return next == 0 ? "none" : String.valueOf(next);
     }
 
     /**

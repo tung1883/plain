@@ -424,7 +424,7 @@
             android:launchMode="singleTask"
             android:taskAffinity="com.plainphone.app.dev"
             android:autoRemoveFromRecents="false"
-            android:windowSoftInputMode="adjustResize"
+            android:windowSoftInputMode="adjustNothing"
             android:theme="@style/Theme.PlainPhone" />
 
         <activity

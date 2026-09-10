@@ -22,9 +22,15 @@ final class SectionListView extends ListView {
         void fill(List<Object> rows);
     }
 
+    interface OnLongPress {
+        /** @return true to consume (e.g. enter selection mode). */
+        boolean onLongPress(SearchResult row);
+    }
+
     private final List<Object> rows = new ArrayList<>();
     private final SearchResultsAdapter adapter;
     private Provider provider;
+    private OnLongPress longPress;
 
     SectionListView(Context ctx) {
         super(ctx);
@@ -35,14 +41,19 @@ final class SectionListView extends ListView {
         setOverScrollMode(View.OVER_SCROLL_NEVER);
         setSelector(new ColorDrawable(Color.TRANSPARENT)); // no rounded long-press highlight
         setCacheColorHint(Color.BLACK);
-        setLongClickable(false);
         adapter = new SearchResultsAdapter(ctx, rows, Fonts.current(ctx));
         setAdapter(adapter);
         setOnItemClickListener((parent, view, pos, id) -> {
             SearchResult r = adapter.resultAt(pos);
             if (r != null) r.activate();
         });
+        setOnItemLongClickListener((parent, view, pos, id) -> {
+            SearchResult r = adapter.resultAt(pos);
+            return r != null && longPress != null && longPress.onLongPress(r);
+        });
     }
+
+    void setLongPress(OnLongPress l) { this.longPress = l; }
 
     void setProvider(Provider p) {
         this.provider = p;
