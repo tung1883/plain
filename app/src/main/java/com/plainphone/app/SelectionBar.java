@@ -27,7 +27,7 @@ final class SelectionBar extends LinearLayout {
         setVisibility(GONE);
     }
 
-    void bind(SelectionHost host, List<String> allIds, List<BarAction> actions) {
+    void bind(SelBarHost host, List<String> allIds, List<BarAction> actions) {
         Context c = getContext();
         Typeface font = Fonts.current(c);
         removeAllViews();

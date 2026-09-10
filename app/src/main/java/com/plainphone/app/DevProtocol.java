@@ -52,6 +52,7 @@ final class DevProtocol {
     static final String T_SESSION_GONE = "session.gone";
     static final String T_SESSION_DETACH = "session.detach";
     static final String T_SESSION_KILL = "session.kill";
+    static final String T_SESSION_RENAME = "session.rename";
     static final String T_SCREEN_START = "screen.start";
     static final String T_SCREEN_FRAME = "screen.frame";
     static final String T_SCREEN_STOP = "screen.stop";
@@ -198,6 +199,14 @@ final class DevProtocol {
         Map<String, Object> m = msg(T_SESSION_KILL);
         m.put("ch", ch);
         m.put("id", id);
+        return m;
+    }
+
+    static Map<String, Object> sessionRename(long ch, long id, String name) {
+        Map<String, Object> m = msg(T_SESSION_RENAME);
+        m.put("ch", ch);
+        m.put("id", id);
+        m.put("name", name);
         return m;
     }
 
