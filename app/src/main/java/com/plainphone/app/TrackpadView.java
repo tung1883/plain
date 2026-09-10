@@ -36,8 +36,15 @@ final class TrackpadView extends View {
     private static final long DRAG_GRACE_MS = 220;
 
     private final Paint hatch = new Paint();
+    private final Paint btnText = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint btnLine = new Paint();
     private final float tapSlop;
     private final int longPressTimeout;
+
+    /** Height of the bottom L | R click strip. */
+    private final float btnH;
+    /** 'L' / 'R' while a strip button is held, else 0. */
+    private char btnDown;
 
     private float lastX, lastY, startX, startY, lastTapX, lastTapY;
     private boolean moved, dragging, twoFinger, armDrag;
@@ -81,14 +88,40 @@ final class TrackpadView extends View {
         pinchStep = context.getResources().getDisplayMetrics().density * 34f;
         hatch.setColor(0xFF151515);
         hatch.setStrokeWidth(2f);
+
+        float density = context.getResources().getDisplayMetrics().density;
+        btnH = density * 56f;
+        btnText.setColor(0xFF8B8B8B);
+        btnText.setTextSize(density * 15f);
+        btnText.setTextAlign(Paint.Align.CENTER);
+        btnText.setTypeface(Fonts.cascadiaMono(context));
+        btnLine.setColor(0xFF262626);
+        btnLine.setStrokeWidth(density);
     }
+
+    private boolean inStrip(float y) { return y >= getHeight() - btnH; }
 
     @Override
     protected void onDraw(Canvas canvas) {
         canvas.drawColor(0xFF0D0D0D);
-        for (int x = -getHeight(); x < getWidth(); x += 14) {
-            canvas.drawLine(x, 0, x + getHeight(), getHeight(), hatch);
+        int padBottom = (int) (getHeight() - btnH);
+        for (int x = -padBottom; x < getWidth(); x += 14) {
+            canvas.drawLine(x, 0, x + padBottom, padBottom, hatch);
         }
+
+        // --- L | R click strip ---
+        float top = getHeight() - btnH, mid = getWidth() / 2f;
+        canvas.drawLine(0, top, getWidth(), top, btnLine);
+        canvas.drawLine(mid, top, mid, getHeight(), btnLine);
+        if (btnDown != 0) {
+            float l = btnDown == 'L' ? 0 : mid, r = btnDown == 'L' ? mid : getWidth();
+            Paint hi = new Paint();
+            hi.setColor(0xFF1E1E1E);
+            canvas.drawRect(l, top, r, getHeight(), hi);
+        }
+        float baseY = top + btnH / 2f - (btnText.ascent() + btnText.descent()) / 2f;
+        canvas.drawText("L", mid / 2f, baseY, btnText);
+        canvas.drawText("R", mid + mid / 2f, baseY, btnText);
     }
 
     @Override
@@ -96,6 +129,12 @@ final class TrackpadView extends View {
         if (screen == null) return false;
         switch (e.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
+                if (inStrip(e.getY())) {
+                    btnDown = e.getX() < getWidth() / 2f ? 'L' : 'R';
+                    invalidate();
+                    return true;
+                }
+                btnDown = 0;
                 lastX = startX = e.getX();
                 lastY = startY = e.getY();
                 moved = dragging = twoFinger = false;
@@ -125,6 +164,12 @@ final class TrackpadView extends View {
                 return true;
 
             case MotionEvent.ACTION_MOVE:
+                if (btnDown != 0) {
+                    char now = inStrip(e.getY()) && (e.getX() < getWidth() / 2f) == (btnDown == 'L')
+                            ? btnDown : 0;
+                    if (now != btnDown) { btnDown = now; invalidate(); }
+                    return true;
+                }
                 if (twoFinger && e.getPointerCount() >= 2) {
                     float d = Math.max(1, spread(e));
                     float my = (e.getY(0) + e.getY(1)) / 2f;
@@ -167,6 +212,14 @@ final class TrackpadView extends View {
 
             case MotionEvent.ACTION_UP:
                 removeCallbacks(longPress);
+                if (btnDown != 0) {
+                    if (inStrip(e.getY()) && (e.getX() < getWidth() / 2f) == (btnDown == 'L')) {
+                        screen.padClick(btnDown == 'L' ? "l" : "r");
+                    }
+                    btnDown = 0;
+                    invalidate();
+                    return true;
+                }
                 if (dragging) {
                     screen.hold(false);
                     dragging = false;
@@ -187,6 +240,7 @@ final class TrackpadView extends View {
                 removeCallbacks(longPress);
                 if (dragging) screen.hold(false);
                 dragging = false;
+                if (btnDown != 0) { btnDown = 0; invalidate(); }
                 return true;
         }
         return super.onTouchEvent(e);
