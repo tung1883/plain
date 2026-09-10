@@ -135,14 +135,13 @@ final class Panel extends LinearLayout {
 
     // --- touch: focus on any tap, resize from any corner -------------
 
+    /** Resize from the two BOTTOM corners only — the top edge is the title bar
+     *  (drag = move) and its right side holds the ⌨ / – / × buttons. */
     private int cornerAt(float x, float y) {
-        int m = 0;
-        if (x <= cornerZone) m |= 1;
-        else if (x >= getWidth() - cornerZone) m |= 4;
-        if (y <= cornerZone) m |= 2;
-        else if (y >= getHeight() - cornerZone) m |= 8;
-        // only count it as a corner grab if BOTH an x-edge and a y-edge are hit
-        return ((m & 5) != 0 && (m & 10) != 0) ? m : 0;
+        if (y < getHeight() - cornerZone) return 0;
+        if (x <= cornerZone) return 1 | 8;              // bottom-left
+        if (x >= getWidth() - cornerZone) return 4 | 8; // bottom-right
+        return 0;
     }
 
     @Override

@@ -64,6 +64,8 @@ final class ScreenSurface extends LinearLayout {
         boolean padStyle = "pad".equals(Config.getDevTrackpadStyle(ctx));
 
         screen = new RemoteScreenView(ctx);
+        screen.setFocusable(false);            // don't steal focus from keyInput on touch
+        screen.setFocusableInTouchMode(false);
         screen.layout = padStyle ? RemoteScreenView.Layout.PAD : RemoteScreenView.Layout.WHOLE;
         screen.aspectLock = padStyle;
         screen.listener = new RemoteScreenView.Listener() {

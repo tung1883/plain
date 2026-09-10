@@ -77,12 +77,15 @@ final class ShellSurface extends LinearLayout {
             Rect r = new Rect();
             rootView.getWindowVisibleDisplayFrame(r);
             int screenH = rootView.getHeight();
+            if (SystemClock.uptimeMillis() - keyBarShownAt < 800) return; // let the IME settle
             boolean imeUp = screenH - r.bottom > screenH * 0.15f;
-            boolean want = imeUp && term.hasFocus();
-            if (want != kbVisible) {
-                kbVisible = want;
-                if (want) keyBarShownAt = SystemClock.uptimeMillis();
-                keyBar.setVisibility(want ? VISIBLE : GONE);
+            if (kbVisible && !imeUp) {                       // keyboard dismissed → hide the bar
+                kbVisible = false;
+                keyBar.setVisibility(GONE);
+            } else if (!kbVisible && imeUp && term.hasFocus()) { // this terminal raised it
+                kbVisible = true;
+                keyBarShownAt = SystemClock.uptimeMillis();
+                keyBar.setVisibility(VISIBLE);
             }
         });
     }
@@ -111,8 +114,16 @@ final class ShellSurface extends LinearLayout {
         InputMethodManager imm = (InputMethodManager) getContext()
                 .getSystemService(Context.INPUT_METHOD_SERVICE);
         if (imm == null) return;
-        if (kbVisible) imm.hideSoftInputFromWindow(term.getWindowToken(), 0);
-        else term.showKeyboard();
+        if (kbVisible) {
+            imm.hideSoftInputFromWindow(term.getWindowToken(), 0);
+            kbVisible = false;
+            keyBar.setVisibility(GONE);
+        } else {
+            term.showKeyboard();
+            kbVisible = true;
+            keyBarShownAt = SystemClock.uptimeMillis();
+            keyBar.setVisibility(VISIBLE);
+        }
     }
 
     void focusKeyboardSoon() {
