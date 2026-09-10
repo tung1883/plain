@@ -584,7 +584,8 @@ public class MainActivity extends Activity implements SelectionHost {
         root.setGravity(Gravity.CENTER);
         root.setBackgroundColor(Color.BLACK);
 
-        root.addView(UiKit.spinner(this));
+        int spSize = Math.round(28 * getResources().getDisplayMetrics().density);
+        root.addView(UiKit.spinner(this), new LinearLayout.LayoutParams(spSize, spSize));
 
         setContentView(root, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
