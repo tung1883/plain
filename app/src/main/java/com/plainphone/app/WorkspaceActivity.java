@@ -121,6 +121,12 @@ public class WorkspaceActivity extends Activity implements DevService.StateListe
     }
 
     @Override
+    protected void onActivityResult(int req, int res, Intent data) {
+        super.onActivityResult(req, res, data);
+        SectionImports.onResult(this, req, res, data, () -> panelHost.notifyResumed());
+    }
+
+    @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
@@ -140,6 +146,7 @@ public class WorkspaceActivity extends Activity implements DevService.StateListe
         super.onResume();
         for (String id : neededHosts()) DevService.connect(this, id);
         syncConnections();
+        panelHost.notifyResumed();  // re-check plugin/vault locks after returning from a gate
     }
 
     @Override

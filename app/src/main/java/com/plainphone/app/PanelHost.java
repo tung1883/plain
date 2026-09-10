@@ -77,6 +77,13 @@ final class PanelHost extends FrameLayout implements Panel.Host {
         for (Panel p : panels) p.content.onLeave();
     }
 
+    /** Workspace resumed — re-run onShow() on every visible panel (re-checks locks). */
+    void notifyResumed() {
+        for (Panel p : panels) {
+            if (p.getVisibility() == VISIBLE) p.content.onShow();
+        }
+    }
+
     /** Switching to another workspace — drop all panel views, keep sessions alive. */
     void clear() {
         leaveAll();

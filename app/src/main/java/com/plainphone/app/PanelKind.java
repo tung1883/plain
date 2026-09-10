@@ -49,6 +49,8 @@ final class PanelKind {
                     (c, h, x) -> new TodoPanel()),
             new PanelKind("recorder", "Recorder", false,
                     (c, h, x) -> new RecorderPanel()),
+            new PanelKind("vault", "Vault", false,
+                    (c, h, x) -> new VaultPanel()),
             new PanelKind("web", "Web", false,
                     (c, h, x) -> new WebPanel(x))
     );
