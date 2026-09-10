@@ -31,5 +31,11 @@ final class ProcPanel implements PanelContent {
 
     @Override public void onConnection(DevConnection conn) { surface.attach(conn); }
 
+    @Override public void onShow() { surface.setShown(true); }
+
+    @Override public void onHide() { surface.setShown(false); }
+
+    @Override public void onLeave() { surface.setShown(false); }
+
     @Override public void onClose() { surface.detach(); }
 }

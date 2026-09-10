@@ -47,16 +47,19 @@ final class ProcSurface extends LinearLayout {
     private final LinearLayout statsPanel;
     private EditText searchBox;
     private final LinearLayout headerRow;
-    private final LinearLayout rowsBox;
-    private final HorizontalScrollView hsv;
-    private final ScrollView vs;
+    private final android.widget.ListView procList;
+    private final ProcAdapter adapter = new ProcAdapter();
     private final TextView emptyLabel;
+    private final View statsSpinner;
+    private final View listSpinner;
 
+    private static final long POLL_MS = 2500;
     private final Handler poll = new Handler();
+    private boolean polling;
     private final Runnable tick = new Runnable() {
         @Override public void run() {
             refresh();
-            poll.postDelayed(this, 2000);
+            poll.postDelayed(this, POLL_MS);
         }
     };
 
@@ -77,35 +80,24 @@ final class ProcSurface extends LinearLayout {
 
         statsPanel = new LinearLayout(ctx);
         statsPanel.setOrientation(LinearLayout.VERTICAL);
+        statsPanel.setGravity(Gravity.CENTER);
         statsPanel.setBackground(UiKit.rounded(ctx, 0xFF0B0B0B, 0xFF1C1C1C, 1f, UiKit.R_MD));
         statsPanel.setPadding(dp(18), dp(14), dp(18), dp(14));
+        statsPanel.setMinimumHeight(dp(150));   // hold height so it doesn't jump on load
         LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(150));
         sp.setMargins(dp(20), dp(12), dp(20), dp(4));
         addView(statsPanel, sp);
+        statsSpinner = UiKit.spinner(ctx);
+        statsPanel.addView(statsSpinner, new LinearLayout.LayoutParams(dp(24), dp(24)));
 
         addView(buildSearch());
 
         headerRow = tableRow();
         headerRow.setBackgroundColor(Color.BLACK);
-        hsv = new HorizontalScrollView(ctx);
-        hsv.setHorizontalScrollBarEnabled(false);
-        hsv.setFillViewport(true);
-        LinearLayout tableCol = new LinearLayout(ctx);
-        tableCol.setOrientation(LinearLayout.VERTICAL);
-        tableCol.addView(headerRow, wrap());
-        tableCol.addView(rule());
-        vs = new ScrollView(ctx);
-        vs.setFillViewport(true);
-        rowsBox = new LinearLayout(ctx);
-        rowsBox.setOrientation(LinearLayout.VERTICAL);
-        vs.addView(rowsBox, new ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        tableCol.addView(vs, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, 0, 1f));
-        hsv.addView(tableCol);
-        addView(hsv, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        addView(headerRow, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        addView(rule(), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1));
 
         emptyLabel = new TextView(ctx);
         emptyLabel.setTextColor(Color.GRAY);
@@ -113,23 +105,40 @@ final class ProcSurface extends LinearLayout {
         emptyLabel.setTypeface(font);
         emptyLabel.setPadding(dp(20), dp(30), dp(20), dp(30));
 
-        android.widget.LinearLayout.LayoutParams spLp = new android.widget.LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        spLp.topMargin = dp(40);
-        spLp.gravity = Gravity.CENTER_HORIZONTAL;
-        rowsBox.addView(UiKit.spinner(ctx), spLp);   // replaced by renderRows() once data arrives
+        FrameLayout tableWrap = new FrameLayout(ctx);
+        procList = new android.widget.ListView(ctx);
+        procList.setBackgroundColor(Color.BLACK);
+        procList.setDivider(null);
+        procList.setDividerHeight(0);
+        procList.setVerticalScrollBarEnabled(false);
+        procList.setOverScrollMode(OVER_SCROLL_NEVER);
+        procList.setSelector(new ColorDrawable(Color.TRANSPARENT));
+        procList.setAdapter(adapter);
+        procList.setOnItemClickListener((parent, v, pos, id) -> signal(adapter.at(pos)));
+        tableWrap.addView(procList, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        tableWrap.addView(emptyLabel, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.CENTER_HORIZONTAL));
+        emptyLabel.setVisibility(View.GONE);
+        listSpinner = UiKit.spinner(ctx);
+        tableWrap.addView(listSpinner, new FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER));
+        addView(tableWrap, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
         renderHeader();
     }
 
     // --- connection -----------------------------------------------
 
+    private boolean shown = true;
+
     void attach(DevConnection conn) {
         if (conn == null) {
             connection = null;
             channel = -1;
             opening = false;
-            poll.removeCallbacks(tick);
+            stopPoll();
             return;
         }
         if (connection != null && connection != conn) {
@@ -144,15 +153,33 @@ final class ProcSurface extends LinearLayout {
         } else {
             connection = conn;
         }
+        startPoll();
+    }
+
+    void detach() {
+        stopPoll();
+        if (channel >= 0 && connection != null) connection.closeChannel(channel);
+        channel = -1;
+        opening = false;
+    }
+
+    /** Panel minimised / activity stopped — pause the 2.5 s poll, keep the channel. */
+    void setShown(boolean visible) {
+        shown = visible;
+        if (visible) startPoll();
+        else stopPoll();
+    }
+
+    private void startPoll() {
+        if (polling || !shown || channel < 0 || connection == null) return;
+        polling = true;
         poll.removeCallbacks(tick);
         poll.post(tick);
     }
 
-    void detach() {
+    private void stopPoll() {
+        polling = false;
         poll.removeCallbacks(tick);
-        if (channel >= 0 && connection != null) connection.closeChannel(channel);
-        channel = -1;
-        opening = false;
     }
 
     private void refresh() {
@@ -181,7 +208,10 @@ final class ProcSurface extends LinearLayout {
 
     private void renderStats() {
         statsPanel.removeAllViews();
-        if (sys == null) return;
+        if (sys == null) {
+            statsPanel.addView(statsSpinner, new LinearLayout.LayoutParams(dp(24), dp(24)));
+            return;
+        }
         long memU = DevProtocol.num(sys, "mem_used_kb", 0);
         long memT = DevProtocol.num(sys, "mem_total_kb", 1);
         long swU = DevProtocol.num(sys, "swap_used_kb", 0);
@@ -221,8 +251,10 @@ final class ProcSurface extends LinearLayout {
     }
 
     private View bar(String label, double frac, int fillColor) {
-        final double f = Math.max(0, Math.min(1, frac));
+        final float f = (float) Math.max(0, Math.min(1, frac));
         LinearLayout row = new LinearLayout(ctx);
+        row.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(0, dp(4), 0, dp(4));
@@ -235,20 +267,22 @@ final class ProcSurface extends LinearLayout {
         l.setWidth(dp(34));
         row.addView(l);
 
-        FrameLayout fl = new FrameLayout(ctx);
-        fl.setBackground(UiKit.rounded(ctx, 0xFF161616, 0, 0f, 4f));
-        fl.setClipToOutline(true);
-        LinearLayout.LayoutParams flp = new LinearLayout.LayoutParams(0, dp(8), 1f);
-        flp.rightMargin = dp(10);
+        // Weighted fill + spacer — no post-layout callback, never renders empty.
+        LinearLayout track = new LinearLayout(ctx);
+        track.setOrientation(LinearLayout.HORIZONTAL);
+        track.setBackground(UiKit.rounded(ctx, 0xFF161616, 0, 0f, 4f));
+        UiKit.clipRounded(ctx, track, 4f);
+        LinearLayout.LayoutParams trackP = new LinearLayout.LayoutParams(0, dp(8), 1f);
+        trackP.rightMargin = dp(10);
         View fill = new View(ctx);
-        fill.setBackground(UiKit.rounded(ctx, fillColor, 0, 0f, 4f));
-        fl.addView(fill, new FrameLayout.LayoutParams(0, dp(8)));
-        row.addView(fl, flp);
-        fl.post(() -> {
-            FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) fill.getLayoutParams();
-            lp.width = (int) (fl.getWidth() * f);
-            fill.setLayoutParams(lp);
-        });
+        fill.setBackgroundColor(fillColor);
+        track.addView(fill, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, f));
+        if (f < 1f) {
+            View spacer = new View(ctx);
+            track.addView(spacer, new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.MATCH_PARENT, 1f - f));
+        }
+        row.addView(track, trackP);
 
         TextView pct = new TextView(ctx);
         pct.setText(Math.round(frac * 100) + "%");
@@ -329,10 +363,10 @@ final class ProcSurface extends LinearLayout {
 
     // --- table -----------------------------------------------------
 
-    private static final int[] COL_DP = {64, 56, 28, 64, 76};
-    private static final String[] COL_LABEL = {"PID", "CPU%", "ST", "MEM", "USER", "NAME"};
+    private static final int[] COL_DP = {64, 56, 28, 64};
+    private static final String[] COL_LABEL = {"PID", "CPU%", "ST", "MEM", "NAME"};
     private static final Sort[] COL_SORT =
-            {Sort.PID, Sort.CPU, Sort.STATE, Sort.MEM, Sort.USER, Sort.NAME};
+            {Sort.PID, Sort.CPU, Sort.STATE, Sort.MEM, Sort.NAME};
 
     private LinearLayout tableRow() {
         LinearLayout r = new LinearLayout(ctx);
@@ -352,7 +386,6 @@ final class ProcSurface extends LinearLayout {
             t.setTextSize(11);
             t.setTypeface(font);
             t.setSingleLine(true);
-            if (i < COL_DP.length) t.setWidth(dp(COL_DP[i]));
             final int idx = i;
             t.setOnClickListener(v -> {
                 if (sort == COL_SORT[idx]) {
@@ -364,17 +397,22 @@ final class ProcSurface extends LinearLayout {
                 renderHeader();
                 renderRows();
             });
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            lp.rightMargin = dp(14);
+            LinearLayout.LayoutParams lp = cellParams(i);
             headerRow.addView(t, lp);
         }
     }
 
+    /** Column layout: fixed widths for PID..USER, the rest for NAME. */
+    private LinearLayout.LayoutParams cellParams(int col) {
+        LinearLayout.LayoutParams lp = col < COL_DP.length
+                ? new LinearLayout.LayoutParams(dp(COL_DP[col]), ViewGroup.LayoutParams.WRAP_CONTENT)
+                : new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        lp.rightMargin = dp(14);
+        return lp;
+    }
+
     private void renderRows() {
-        int sx = hsv != null ? hsv.getScrollX() : 0;
-        int sy = vs != null ? vs.getScrollY() : 0;
-        rowsBox.removeAllViews();
+        listSpinner.setVisibility(View.GONE);
         List<Map<String, Object>> shown = new ArrayList<>();
         String q = query.toLowerCase(Locale.US);
         for (Map<String, Object> p : procs) {
@@ -384,17 +422,9 @@ final class ProcSurface extends LinearLayout {
             if (name.contains(q) || pid.contains(q)) shown.add(p);
         }
         shown.sort(this::compare);
-
-        if (shown.isEmpty()) {
-            emptyLabel.setText(procs.isEmpty() ? "No processes reported." : "No match.");
-            rowsBox.addView(emptyLabel);
-            return;
-        }
-        for (Map<String, Object> p : shown) rowsBox.addView(procRow(p));
-        rowsBox.post(() -> {
-            if (hsv != null) hsv.scrollTo(sx, 0);
-            if (vs != null) vs.scrollTo(0, sy);
-        });
+        adapter.setData(shown);
+        emptyLabel.setText(procs.isEmpty() ? "No processes reported." : "No match.");
+        emptyLabel.setVisibility(shown.isEmpty() ? View.VISIBLE : View.GONE);
     }
 
     private int compare(Map<String, Object> a, Map<String, Object> b) {
@@ -403,7 +433,6 @@ final class ProcSurface extends LinearLayout {
             case PID: c = Long.compare(DevProtocol.num(a, "pid", 0), DevProtocol.num(b, "pid", 0)); break;
             case MEM: c = Long.compare(DevProtocol.num(a, "mem_kb", 0), DevProtocol.num(b, "mem_kb", 0)); break;
             case STATE: c = str(a, "state").compareTo(str(b, "state")); break;
-            case USER: c = str(a, "user").compareToIgnoreCase(str(b, "user")); break;
             case NAME: c = str(a, "name").compareToIgnoreCase(str(b, "name")); break;
             case CPU:
             default: c = Double.compare(DevProtocol.dbl(a, "cpu", 0), DevProtocol.dbl(b, "cpu", 0));
@@ -411,52 +440,74 @@ final class ProcSurface extends LinearLayout {
         return descending ? -c : c;
     }
 
-    private View procRow(Map<String, Object> p) {
-        LinearLayout r = tableRow();
-        r.setPadding(dp(20), dp(9), dp(20), dp(9));
-        StateListDrawable bg = new StateListDrawable();
-        bg.addState(new int[]{android.R.attr.state_pressed}, new ColorDrawable(Color.DKGRAY));
-        bg.addState(new int[]{}, new ColorDrawable(Color.BLACK));
-        r.setBackground(bg);
-
+    private void signal(Map<String, Object> p) {
+        if (p == null || !(ctx instanceof Activity)) return;
         long pid = DevProtocol.num(p, "pid", 0);
         String name = str(p, "name");
-        if (name.isEmpty()) name = "?";
-        cell(r, String.valueOf(pid), COL_DP[0], Color.WHITE);
-        cell(r, String.format(Locale.US, "%.1f", DevProtocol.dbl(p, "cpu", 0)), COL_DP[1], Color.WHITE);
-        cell(r, str(p, "state"), COL_DP[2], 0xFF8B8B8B);
-        cell(r, mem(DevProtocol.num(p, "mem_kb", 0)), COL_DP[3], 0xFF8B8B8B);
-        cell(r, str(p, "user"), COL_DP[4], 0xFF8B8B8B);
-        cell(r, name, -1, Color.WHITE);
-
-        final String fname = name;
-        r.setOnClickListener(v -> {
-            if (!(ctx instanceof Activity)) return;
-            VaultUi.tasksDialog((Activity) ctx,
-                    "Signal " + fname + " (" + pid + ")?",
-                    new ArrayList<>(),
-                    new String[]{"SIGTERM", "SIGKILL", "Cancel"},
-                    new VaultUi.Choice[]{
-                            () -> kill(pid, "TERM"),
-                            () -> kill(pid, "KILL"),
-                            () -> {},
-                    });
-        });
-        return r;
+        final String fn = name.isEmpty() ? "?" : name;
+        VaultUi.tasksDialog((Activity) ctx, "Signal " + fn + " (" + pid + ")?",
+                new ArrayList<>(), new String[]{"SIGTERM", "SIGKILL", "Cancel"},
+                new VaultUi.Choice[]{
+                        () -> kill(pid, "TERM"),
+                        () -> kill(pid, "KILL"),
+                        () -> {},
+                });
     }
 
-    private void cell(LinearLayout row, String text, int widthDp, int color) {
-        TextView t = new TextView(ctx);
-        t.setText(text);
-        t.setTextColor(color);
-        t.setTextSize(13);
-        t.setTypeface(font);
-        t.setSingleLine(true);
-        if (widthDp > 0) t.setWidth(dp(widthDp));
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.rightMargin = dp(14);
-        row.addView(t, lp);
+    /** Recycling adapter for the process rows — the whole point of not rebuilding
+     *  hundreds of views every poll. */
+    private final class ProcAdapter extends android.widget.BaseAdapter {
+        private List<Map<String, Object>> data = new ArrayList<>();
+
+        void setData(List<Map<String, Object>> d) {
+            data = d;
+            notifyDataSetChanged();
+        }
+
+        Map<String, Object> at(int i) { return i >= 0 && i < data.size() ? data.get(i) : null; }
+
+        @Override public int getCount() { return data.size(); }
+        @Override public Object getItem(int i) { return at(i); }
+        @Override public long getItemId(int i) { return i; }
+
+        @Override
+        public View getView(int pos, View convert, ViewGroup parent) {
+            TextView[] cells;
+            LinearLayout row;
+            if (convert instanceof LinearLayout && convert.getTag() instanceof TextView[]) {
+                row = (LinearLayout) convert;
+                cells = (TextView[]) convert.getTag();
+            } else {
+                row = new LinearLayout(ctx);
+                row.setOrientation(LinearLayout.HORIZONTAL);
+                row.setPadding(dp(20), dp(9), dp(20), dp(9));
+                StateListDrawable bg = new StateListDrawable();
+                bg.addState(new int[]{android.R.attr.state_pressed}, new ColorDrawable(Color.DKGRAY));
+                bg.addState(new int[]{}, new ColorDrawable(Color.BLACK));
+                row.setBackground(bg);
+                cells = new TextView[COL_LABEL.length];
+                int[] colors = {Color.WHITE, Color.WHITE, 0xFF8B8B8B, 0xFF8B8B8B, Color.WHITE};
+                for (int i = 0; i < cells.length; i++) {
+                    TextView t = new TextView(ctx);
+                    t.setTextColor(colors[i]);
+                    t.setTextSize(13);
+                    t.setTypeface(font);
+                    t.setSingleLine(true);
+                    if (i == COL_LABEL.length - 1) t.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                    row.addView(t, cellParams(i));
+                    cells[i] = t;
+                }
+                row.setTag(cells);
+            }
+            Map<String, Object> p = data.get(pos);
+            String name = str(p, "name");
+            cells[0].setText(String.valueOf(DevProtocol.num(p, "pid", 0)));
+            cells[1].setText(String.format(Locale.US, "%.1f", DevProtocol.dbl(p, "cpu", 0)));
+            cells[2].setText(str(p, "state"));
+            cells[3].setText(mem(DevProtocol.num(p, "mem_kb", 0)));
+            cells[4].setText(name.isEmpty() ? "?" : name);
+            return row;
+        }
     }
 
     private void kill(long pid, String sig) {
