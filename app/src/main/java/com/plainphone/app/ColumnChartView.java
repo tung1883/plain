@@ -4,6 +4,8 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
+import android.graphics.Path;
+import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.view.View;
 
@@ -17,6 +19,8 @@ class ColumnChartView extends View {
     }
 
     private final float density;
+    private final Path barPath = new Path();
+    private final RectF barRect = new RectF();
     private final Paint bar = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint axis = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint grid = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -118,7 +122,13 @@ class ColumnChartView extends View {
         for (int i = 0; i < n; i++) {
             float cx = chartLeft + slot * (i + 0.5f);
             float h = (values[i] / (float) axisMax) * chartHeight;
-            canvas.drawRect(cx - barWidth / 2, chartBottom - h, cx + barWidth / 2, chartBottom, bar);
+            float rad = Math.min(barWidth / 4f, 3.5f * density);
+            if (h < rad) rad = Math.max(0, h);
+            barRect.set(cx - barWidth / 2, chartBottom - h, cx + barWidth / 2, chartBottom);
+            barPath.reset();
+            barPath.addRoundRect(barRect,
+                    new float[]{rad, rad, rad, rad, 0, 0, 0, 0}, Path.Direction.CW);
+            canvas.drawPath(barPath, bar);
             if (showLabel[i] && labels != null && i < labels.size()) {
                 if (i == 0) {
                     text.setTextAlign(Paint.Align.LEFT);
