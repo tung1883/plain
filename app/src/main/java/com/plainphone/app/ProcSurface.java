@@ -317,7 +317,7 @@ final class ProcSurface extends LinearLayout {
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(dp(16), dp(6), dp(12), dp(6));
-        row.setBackground(UiKit.rounded(ctx, 0xFF0E0E0E, 0xFF262626, 1f, UiKit.R_SM));
+        row.setBackground(UiKit.rounded(ctx, Color.BLACK, 0xFF262626, 1f, UiKit.R_SM));
         wrap.addView(row, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
