@@ -261,6 +261,18 @@ class UiKit {
             p.width = (int) (host.getResources().getDisplayMetrics().widthPixels * 0.85);
             dialog.getWindow().setAttributes(p);
         }
+        focusAndShowKeyboard(host, input);
+    }
+
+    /** Grab focus and pop the soft keyboard for a freshly-shown dialog's input field. */
+    static void focusAndShowKeyboard(android.app.Activity host, EditText input) {
+        input.requestFocus();
+        input.post(() -> {
+            android.view.inputmethod.InputMethodManager imm =
+                    (android.view.inputmethod.InputMethodManager)
+                            host.getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (imm != null) imm.showSoftInput(input, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);
+        });
     }
 
     private static android.widget.TextView promptRow(Context c, android.graphics.Typeface font,

@@ -72,6 +72,39 @@ final class VaultUi {
         }
     }
 
+    /** A plain option menu: title + one row per label, no message body. */
+    static void menu(Activity host, String title, String[] labels, Choice[] choices) {
+        Typeface font = Fonts.current(host);
+        LinearLayout box = new LinearLayout(host);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setBackground(UiKit.dialogBackground(host));
+        UiKit.clipRounded(host, box, UiKit.R_MD);
+        box.setPadding(2, 24, 2, UiKit.dp(host, UiKit.R_MD));
+
+        box.addView(titleRow(host, font, title));
+
+        AlertDialog dialog = new AlertDialog.Builder(host).setView(box).create();
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        }
+
+        for (int i = 0; i < labels.length; i++) {
+            Choice c = choices[i];
+            box.addView(option(host, font, labels[i], () -> {
+                dialog.dismiss();
+                if (c != null) c.run();
+            }));
+        }
+
+        dialog.show();
+        UiKit.unboxDialog(box);
+        if (dialog.getWindow() != null) {
+            WindowManager.LayoutParams params = dialog.getWindow().getAttributes();
+            params.width = (int) (host.getResources().getDisplayMetrics().widthPixels * 0.85);
+            dialog.getWindow().setAttributes(params);
+        }
+    }
+
     /**
      * "N task(s) still running" dialog: a scrollable list of {@code lines} (capped
      * at ~3 rows) above {@code labels.length} option buttons. Used by
