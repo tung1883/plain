@@ -418,7 +418,14 @@
             android:theme="@style/Theme.PlainPhone" />
 
         <activity
-            android:name=".DevProcActivity"
+            android:name=".DevPerfActivity"
+            android:exported="false"
+            android:taskAffinity="com.plainphone.app.dev"
+            android:autoRemoveFromRecents="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
+            android:name=".CloudPanelActivity"
             android:exported="false"
             android:taskAffinity="com.plainphone.app.dev"
             android:autoRemoveFromRecents="false"

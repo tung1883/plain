@@ -29,8 +29,8 @@ import java.util.Map;
 /**
  * The whole live process view — htop-style stats panel, name/pid filter, and a
  * sideways-scrolling sortable table with tap-to-signal — plus the {@code proc}
- * channel, as one reusable view. Shared by {@link DevProcActivity} and
- * {@link ProcPanel} so the two look identical.
+ * channel, as one reusable view. Used by {@link PerfPanel} and
+ * {@link DevPerfActivity}'s full-screen host so the two look identical.
  */
 @SuppressLint("ViewConstructor")
 final class ProcSurface extends LinearLayout {

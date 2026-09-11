@@ -48,8 +48,6 @@ final class PanelKind {
                     (c, h, x) -> new ShellPanel(devLabel(c, h), h, parseId(x))),
             new PanelKind("screen", "Screen", true,
                     (c, h, x) -> new ScreenPanel(devLabel(c, h), h)),
-            new PanelKind("proc", "Processes", true,
-                    (c, h, x) -> new ProcPanel(devLabel(c, h), h)),
             new PanelKind("notes", "Notes", false,
                     (c, h, x) -> new NotesPanel()),
             new PanelKind("todo", "To-do", false,
@@ -66,12 +64,8 @@ final class PanelKind {
                     (c, h, x) -> new VercelPanel(x)),
             new PanelKind("supabase", "Supabase", false, "supabase",
                     (c, h, x) -> new SupabasePanel(x)),
-            new PanelKind("stats", "Stats", true,
-                    (c, h, x) -> new StatsPanel2(devLabel(c, h), h)),
-            new PanelKind("net", "Network", true,
-                    (c, h, x) -> new NetworkPanel(devLabel(c, h), h)),
-            new PanelKind("disk", "Storage", true,
-                    (c, h, x) -> new StoragePanel(devLabel(c, h), h))
+            new PanelKind("perf", "Perf", true,
+                    (c, h, x) -> new PerfPanel(devLabel(c, h), h))
     );
 
     static PanelKind byId(String id) {
