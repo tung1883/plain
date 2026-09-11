@@ -113,8 +113,8 @@ public class DevHostActivity extends Activity implements DevService.StateListene
         root.addView(big("Screen", enabled,
                 v -> startActivity(new Intent(this, DevScreenActivity.class)
                         .putExtra(EXTRA_HOST_ID, hostId))));
-        root.addView(big("Processes", enabled,
-                v -> startActivity(new Intent(this, DevProcActivity.class)
+        root.addView(big("Perf", enabled,
+                v -> startActivity(new Intent(this, DevPerfActivity.class)
                         .putExtra(EXTRA_HOST_ID, hostId))));
         root.addView(divider());
         root.addView(action("Disconnect", 0xFFC88F87, v -> {

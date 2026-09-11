@@ -1,22 +1,25 @@
 package com.plainphone.app;
 
 import android.app.Activity;
+import android.app.ActivityManager;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
 import android.os.Bundle;
 import android.os.IBinder;
+import android.view.View;
 
 /**
- * A live process view over the {@code proc} channel: an htop-style stats panel,
- * a name/pid filter, and a table that scrolls sideways for long argv lines.
- * The UI is {@link ProcSurface}, shared with the {@link ProcPanel} window.
+ * Full-screen {@link PerfPanel} over a live host — processes / stats / network
+ * / storage behind one tab strip. Reached from {@link DevHostActivity}: bind
+ * {@link DevService}, connect the host, and push the live {@link DevConnection}
+ * into the panel as it comes and goes.
  */
-public class DevProcActivity extends Activity implements DevService.StateListener {
+public class DevPerfActivity extends Activity implements DevService.StateListener {
 
     private String hostId;
-    private ProcSurface surface;
+    private PerfPanel panel;
     private DevService service;
 
     private final ServiceConnection conn = new ServiceConnection() {
@@ -35,10 +38,11 @@ public class DevProcActivity extends Activity implements DevService.StateListene
         hostId = getIntent().getStringExtra(DevHostActivity.EXTRA_HOST_ID);
         DevHost host = DevHost.find(this, hostId);
         if (host == null) { finish(); return; }
-        setTaskDescription(new android.app.ActivityManager.TaskDescription(host.label + " · processes"));
 
-        surface = new ProcSurface(this);
-        UiKit.screen(this, host.label + " · processes", surface);
+        panel = new PerfPanel(host.label, hostId);
+        View body = panel.onCreate(this);
+        setTaskDescription(new ActivityManager.TaskDescription(panel.title()));
+        UiKit.screen(this, panel.title(), body);
     }
 
     @Override protected void onStart() {
@@ -50,21 +54,21 @@ public class DevProcActivity extends Activity implements DevService.StateListene
     @Override protected void onResume() {
         super.onResume();
         DevService.connect(this, hostId);
-        if (surface != null) surface.setShown(true);
+        panel.onShow();
         pushConnection();
     }
 
     @Override protected void onStop() {
         super.onStop();
         DevService.removeStateListener(this);
-        if (surface != null) surface.setShown(false);   // pause the poll; keep the channel for a quick resume
+        panel.onLeave();   // pause polling; keep the channels for a quick resume
         if (service != null) service.setActivityDetail(hostId, null);
         try { unbindService(conn); } catch (IllegalArgumentException ignored) {}
     }
 
     @Override protected void onDestroy() {
         super.onDestroy();
-        if (surface != null) surface.detach();
+        panel.onClose();
     }
 
     @Override
@@ -73,9 +77,9 @@ public class DevProcActivity extends Activity implements DevService.StateListene
     }
 
     private void pushConnection() {
-        if (surface == null) return;
+        if (panel == null) return;
         DevConnection live = (service != null && DevService.isConnected(hostId)) ? service.connection(hostId) : null;
-        surface.attach(live);
-        if (live != null && service != null) service.setActivityDetail(hostId, "processes");
+        panel.onConnection(live);
+        if (live != null && service != null) service.setActivityDetail(hostId, "perf");
     }
 }

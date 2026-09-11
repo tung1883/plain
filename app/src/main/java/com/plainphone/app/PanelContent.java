@@ -31,7 +31,7 @@ interface PanelContent {
 
     // --- persistence -------------------------------------------------
 
-    /** Stable kind tag for saving/restoring the workspace: "shell" / "screen" / "proc" / "web". */
+    /** Stable kind tag for saving/restoring the workspace: "shell" / "screen" / "perf" / "web". */
     default String kind() { return "?"; }
 
     /** One opaque token to restore this panel (a shell session id, a web URL, …). */

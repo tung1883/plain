@@ -1476,6 +1476,23 @@ public class MainActivity extends Activity implements SelectionHost {
 
         rows.add(new SearchResult(SearchResult.Kind.DEV, "+ Add device", null, -1,
                 () -> startActivity(new Intent(this, DevPairActivity.class))));
+
+        java.util.List<DevAccount> cloud = DevAccount.all(this);
+        if (!cloud.isEmpty()) {
+            rows.add(new SearchResult(SearchResult.Kind.DEV, "Cloud",
+                    cloud.size() == 1 ? "1 account" : cloud.size() + " accounts", -1, () -> {}));
+            for (DevAccount a : cloud) {
+                String label = (a.label == null || a.label.isEmpty())
+                        ? a.displayKind() : a.displayKind() + " · " + a.label;
+                rows.add(new SearchResult(SearchResult.Kind.DEV, label, "tap to open", -1, () ->
+                        startActivity(new Intent(this, CloudPanelActivity.class)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                .putExtra(CloudPanelActivity.EXTRA_KIND, a.kind)
+                                .putExtra(CloudPanelActivity.EXTRA_ACCOUNT_ID, a.id))));
+            }
+        }
+        rows.add(new SearchResult(SearchResult.Kind.DEV, "+ Add cloud account", null, -1,
+                () -> startActivity(new Intent(this, DevAccountsActivity.class))));
     }
 
     private static String formatVaultTimeout(int seconds) {

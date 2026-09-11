@@ -13,3 +13,7 @@ local.properties
 
 # design mockups / Claude Design canvases (not app code)
 design/
+
+# ccpit
+TODO.md
+PLAN.md
