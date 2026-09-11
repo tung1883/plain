@@ -7,6 +7,7 @@ import org.json.JSONObject;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -97,6 +98,41 @@ final class Github {
                     null, it.optString("html_url", null));
         }
         return sec;
+    }
+
+    /** One year of contribution counts, laid out like the github.com heatmap. */
+    static final class Contributions {
+        final int total;
+        final int[][] grid; // [week][weekday 0=Sun..6=Sat], -1 = no such day
+
+        Contributions(int total, int[][] grid) {
+            this.total = total;
+            this.grid = grid;
+        }
+    }
+
+    private static final String GRAPHQL_CONTRIBUTIONS = "query { viewer { contributionsCollection { "
+            + "contributionCalendar { totalContributions weeks { contributionDays { "
+            + "contributionCount weekday } } } } } }";
+
+    static Contributions contributions(String token) throws Exception {
+        JSONObject body = new JSONObject().put("query", GRAPHQL_CONTRIBUTIONS);
+        JSONObject resp = Http.postObject(API + "/graphql", token, HOSTS, body, headers());
+        JSONObject cal = resp.getJSONObject("data").getJSONObject("viewer")
+                .getJSONObject("contributionsCollection").getJSONObject("contributionCalendar");
+        JSONArray weeks = cal.getJSONArray("weeks");
+
+        int[][] grid = new int[weeks.length()][7];
+        for (int[] row : grid) Arrays.fill(row, -1);
+        for (int w = 0; w < weeks.length(); w++) {
+            JSONArray days = weeks.getJSONObject(w).getJSONArray("contributionDays");
+            for (int d = 0; d < days.length(); d++) {
+                JSONObject day = days.getJSONObject(d);
+                int weekday = day.optInt("weekday", -1);
+                if (weekday >= 0 && weekday < 7) grid[w][weekday] = day.optInt("contributionCount");
+            }
+        }
+        return new Contributions(cal.optInt("totalContributions"), grid);
     }
 
     private static String repoOf(String repositoryUrl) {

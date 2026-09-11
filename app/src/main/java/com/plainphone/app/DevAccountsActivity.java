@@ -1,7 +1,6 @@
 package com.plainphone.app;
 
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -72,7 +71,10 @@ public class DevAccountsActivity extends Activity {
                     connected ? Color.WHITE : Color.GRAY,
                     v -> { selectedId = a.id.equals(selectedId) ? null : a.id; render(); },
                     () -> confirmRemove(a)));
-            if (a.id.equals(selectedId)) renderWatching(a);
+            if (a.id.equals(selectedId)) {
+                renderWatching(a);
+                if (DevAccount.GITHUB.equals(a.kind)) renderContributions(a);
+            }
         }
 
         root.addView(sectionLabel("Section"));
@@ -156,15 +158,55 @@ public class DevAccountsActivity extends Activity {
         return r;
     }
 
+    // --- contributions ---------------------------------------------------
+
+    private void renderContributions(DevAccount a) {
+        root.addView(sectionLabel("Contributions"));
+        TextView loading = hint("Loading…");
+        root.addView(loading);
+        final String token = a.token(this);
+        NetIo.POOL.execute(() -> {
+            Github.Contributions data = null;
+            String err = null;
+            try {
+                data = Github.contributions(token);
+            } catch (Exception e) {
+                err = friendly(e);
+            }
+            final Github.Contributions fData = data;
+            final String error = err;
+            NetIo.MAIN.post(() -> {
+                if (isFinishing() || !a.id.equals(selectedId)) return;
+                int at = root.indexOfChild(loading);
+                if (at < 0) return;
+                root.removeView(loading);
+                if (error != null) { root.addView(hint(error), at); return; }
+                if (fData == null) { root.addView(hint("No data."), at); return; }
+                root.addView(hint(fData.total + " contributions in the last year"), at);
+
+                ContributionGraphView graph = new ContributionGraphView(this);
+                graph.setData(fData.grid);
+                LinearLayout pad = new LinearLayout(this);
+                pad.setPadding(48, 8, 48, 24);
+                pad.addView(graph);
+                android.widget.HorizontalScrollView hscroll = new android.widget.HorizontalScrollView(this);
+                hscroll.addView(pad);
+                root.addView(hscroll, at + 1, new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            });
+        });
+    }
+
     // --- add flow ------------------------------------------------------
 
     private void pickKind() {
         final String[] labels = {"GitHub", "Vercel", "Supabase"};
         final String[] kinds = {DevAccount.GITHUB, DevAccount.VERCEL, DevAccount.SUPABASE};
-        new AlertDialog.Builder(this)
-                .setTitle("Add account")
-                .setItems(labels, (d, which) -> promptToken(kinds[which]))
-                .show();
+        VaultUi.menu(this, "Add account", labels, new VaultUi.Choice[]{
+                () -> promptToken(kinds[0]),
+                () -> promptToken(kinds[1]),
+                () -> promptToken(kinds[2]),
+        });
     }
 
     private void promptToken(String kind) {

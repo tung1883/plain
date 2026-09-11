@@ -1127,10 +1127,7 @@ public class VaultActivity extends Activity {
         box.addView(option(font, okLabel, v -> go.run()));
         box.addView(option(font, "Cancel", v -> dialog.dismiss()));
         showPopup(dialog);
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setSoftInputMode(
-                    WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE);
-        }
+        UiKit.focusAndShowKeyboard(this, input);
     }
 
     private void confirm(String title, String message, String okLabel, Runnable onOk) {
