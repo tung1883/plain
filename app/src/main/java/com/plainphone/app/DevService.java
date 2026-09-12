@@ -5,6 +5,8 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
@@ -139,6 +141,7 @@ public class DevService extends Service {
         int backoff;
         boolean stopped;
         String detail;
+        Long clipCh;
 
         Link(DevHost host) { this.host = host; }
     }
@@ -239,6 +242,10 @@ public class DevService extends Service {
                         link.backoff = 0;
                         lastError = null;
                         link.state = State.CONNECTED;
+                        if (DevHost.CLIP_AUTO.equals(link.host.clipMode)
+                                && caps != null && caps.contains(DevProtocol.CAP_CLIP)) {
+                            startClipWatch(link);
+                        }
                         publish();
                     }
 
@@ -269,7 +276,136 @@ public class DevService extends Service {
         Link l = links.remove(hostId);
         if (l == null) return;
         l.stopped = true;
+        stopClipWatch(l);
         if (l.conn != null) l.conn.close();
+    }
+
+    /** Apply a live clipboard-mode change to an already-open link, if any —
+     *  takes effect immediately rather than waiting for the next reconnect. */
+    void setClipMode(String hostId, String mode) {
+        Link l = links.get(hostId);
+        if (l == null) return;
+        if (DevHost.CLIP_AUTO.equals(mode) && l.state == State.CONNECTED) startClipWatch(l);
+        else stopClipWatch(l);
+    }
+
+    /** Manual mode, one shot: pull the PC's current clipboard text into this phone's. */
+    void pullClipboardOnce(String hostId) {
+        Link l = links.get(hostId);
+        if (l == null || l.conn == null || l.state != State.CONNECTED) return;
+        final DevConnection conn = l.conn;
+        final long[] chHolder = new long[1];
+        chHolder[0] = conn.openChannel(msg -> {
+            String text = DevProtocol.str(msg, "text");
+            if (text != null) {
+                clipLastKnown = text;
+                ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                if (cm != null) cm.setPrimaryClip(ClipData.newPlainText("plaind", text));
+            }
+            conn.closeChannel(chHolder[0]);
+        });
+        conn.send(DevProtocol.clipGet(chHolder[0]));
+    }
+
+    /** Manual mode, one shot: push this phone's current clipboard text to the PC. */
+    void pushClipboardOnce(String hostId) {
+        Link l = links.get(hostId);
+        if (l == null || l.conn == null || l.state != State.CONNECTED) return;
+        ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        if (cm == null) return;
+        String text;
+        try {
+            if (!cm.hasPrimaryClip()) return;
+            ClipData clip = cm.getPrimaryClip();
+            if (clip == null || clip.getItemCount() == 0) return;
+            CharSequence t = clip.getItemAt(0).coerceToText(this);
+            text = t == null ? null : t.toString();
+        } catch (Exception e) {
+            return;
+        }
+        if (text == null) return;
+        clipLastKnown = text;
+        l.conn.send(DevProtocol.clipSet(0, text));
+    }
+
+    // --- clipboard sync --------------------------------------------------
+    //
+    // PC->phone: the daemon pushes over a long-lived `clip.watch` channel;
+    // writing the phone's clipboard has no restriction, so this works even
+    // while backgrounded.
+    //
+    // Phone->PC: Android 10+ only lets the app the user is currently looking
+    // at read the clipboard, so this direction is a poll gated on
+    // PlainApp.isForeground() rather than a change listener — a background
+    // service can't reliably read clipboard changes at all.
+
+    private static final long CLIP_POLL_MS = 1500;
+
+    private final Handler clipHandler = new Handler(Looper.getMainLooper());
+    private String clipLastKnown; // last text this phone's clipboard is believed to hold
+    private boolean clipPolling;
+
+    private void startClipWatch(Link link) {
+        if (link.clipCh != null || link.conn == null) return;
+        long ch = link.conn.openChannel(msg -> onClipMessage(msg));
+        link.clipCh = ch;
+        link.conn.send(DevProtocol.clipWatch(ch));
+        ensureClipPoll();
+    }
+
+    private void stopClipWatch(Link link) {
+        if (link.clipCh != null) {
+            if (link.conn != null) {
+                link.conn.send(DevProtocol.clipStop(link.clipCh));
+                link.conn.closeChannel(link.clipCh);
+            }
+            link.clipCh = null;
+        }
+    }
+
+    private void onClipMessage(Map<String, Object> msg) {
+        String text = DevProtocol.str(msg, "text");
+        if (text == null || text.equals(clipLastKnown)) return;
+        clipLastKnown = text;
+        ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        if (cm != null) cm.setPrimaryClip(ClipData.newPlainText("plaind", text));
+    }
+
+    private void ensureClipPoll() {
+        if (clipPolling) return;
+        clipPolling = true;
+        clipHandler.postDelayed(clipPollTick, CLIP_POLL_MS);
+    }
+
+    private final Runnable clipPollTick = new Runnable() {
+        @Override public void run() {
+            pollLocalClipboard();
+            boolean any = false;
+            for (Link l : links.values()) if (l.clipCh != null) { any = true; break; }
+            if (any) clipHandler.postDelayed(this, CLIP_POLL_MS);
+            else clipPolling = false;
+        }
+    };
+
+    private void pollLocalClipboard() {
+        if (!PlainApp.isForeground()) return; // background reads are unreliable/blocked anyway
+        ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        if (cm == null) return;
+        String text;
+        try {
+            if (!cm.hasPrimaryClip()) return;
+            ClipData clip = cm.getPrimaryClip();
+            if (clip == null || clip.getItemCount() == 0) return;
+            CharSequence t = clip.getItemAt(0).coerceToText(this);
+            text = t == null ? null : t.toString();
+        } catch (Exception e) {
+            return;
+        }
+        if (text == null || text.equals(clipLastKnown)) return;
+        clipLastKnown = text;
+        for (Link l : links.values()) {
+            if (l.clipCh != null && l.conn != null) l.conn.send(DevProtocol.clipSet(l.clipCh, text));
+        }
     }
 
     private void publish() {
@@ -299,6 +435,7 @@ public class DevService extends Service {
     public void onDestroy() {
         super.onDestroy();
         for (String k : new ArrayList<>(links.keySet())) stopLink(k);
+        clipHandler.removeCallbacks(clipPollTick);
         publish();
     }
 

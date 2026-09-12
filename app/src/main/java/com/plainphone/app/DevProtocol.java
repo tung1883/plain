@@ -72,12 +72,18 @@ final class DevProtocol {
     static final String T_NET = "net";
     static final String T_DISK_GET = "disk.get";
     static final String T_DISK = "disk";
+    static final String T_CLIP_WATCH = "clip.watch";
+    static final String T_CLIP_STOP = "clip.stop";
+    static final String T_CLIP_GET = "clip.get";
+    static final String T_CLIP_SET = "clip.set";
+    static final String T_CLIP = "clip";
 
     static final String CAP_PTY = "pty";
     static final String CAP_SCREEN = "screen";
     static final String CAP_INPUT = "input";
     static final String CAP_PROC = "proc";
     static final String CAP_METRICS = "metrics";
+    static final String CAP_CLIP = "clip";
 
     // ---- framing -------------------------------------------------------------
 
@@ -304,6 +310,34 @@ final class DevProtocol {
     static Map<String, Object> diskGet(long ch) {
         Map<String, Object> m = msg(T_DISK_GET);
         m.put("ch", ch);
+        return m;
+    }
+
+    /** Open a long-lived channel: the daemon replies once with the PC's current
+     *  clipboard text, then again whenever it changes. */
+    static Map<String, Object> clipWatch(long ch) {
+        Map<String, Object> m = msg(T_CLIP_WATCH);
+        m.put("ch", ch);
+        return m;
+    }
+
+    static Map<String, Object> clipStop(long ch) {
+        Map<String, Object> m = msg(T_CLIP_STOP);
+        m.put("ch", ch);
+        return m;
+    }
+
+    static Map<String, Object> clipGet(long ch) {
+        Map<String, Object> m = msg(T_CLIP_GET);
+        m.put("ch", ch);
+        return m;
+    }
+
+    /** Push this phone's clipboard text into the PC's. */
+    static Map<String, Object> clipSet(long ch, String text) {
+        Map<String, Object> m = msg(T_CLIP_SET);
+        m.put("ch", ch);
+        m.put("text", text);
         return m;
     }
 

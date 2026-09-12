@@ -117,10 +117,35 @@ public class DevHostActivity extends Activity implements DevService.StateListene
                 v -> startActivity(new Intent(this, DevPerfActivity.class)
                         .putExtra(EXTRA_HOST_ID, hostId))));
         root.addView(divider());
+        root.addView(action("Clipboard sync: " + clipModeLabel(host.clipMode), Color.WHITE, v -> {
+            host.clipMode = nextClipMode(host.clipMode);
+            host.save(this, null);
+            if (service != null) service.setClipMode(hostId, host.clipMode);
+            render();
+        }));
+        if (DevHost.CLIP_MANUAL.equals(host.clipMode)) {
+            root.addView(big("Get clipboard from PC", live,
+                    v -> { if (service != null) service.pullClipboardOnce(hostId); }));
+            root.addView(big("Send clipboard to PC", live,
+                    v -> { if (service != null) service.pushClipboardOnce(hostId); }));
+        }
+        root.addView(divider());
         root.addView(action("Disconnect", 0xFFC88F87, v -> {
             DevService.disconnect(this, hostId);
             render();
         }));
+    }
+
+    private static String clipModeLabel(String mode) {
+        if (DevHost.CLIP_MANUAL.equals(mode)) return "Manual";
+        if (DevHost.CLIP_OFF.equals(mode)) return "Off";
+        return "Auto";
+    }
+
+    private static String nextClipMode(String mode) {
+        if (DevHost.CLIP_AUTO.equals(mode)) return DevHost.CLIP_MANUAL;
+        if (DevHost.CLIP_MANUAL.equals(mode)) return DevHost.CLIP_OFF;
+        return DevHost.CLIP_AUTO;
     }
 
     private TextView status(String text) {

@@ -1,6 +1,7 @@
 package com.plainphone.app;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayDeque;
 
 /**
  * A practical VT100 / xterm screen model — enough of the escape grammar for
@@ -18,6 +19,8 @@ final class TerminalEmulator {
     static final int DEFAULT = -1;
     static final int FLAG_BOLD = 1;
     static final int FLAG_INVERSE = 2;
+    /** Cell holds a guessed-not-confirmed keystroke (predictive local echo). */
+    static final int FLAG_PREDICTED = 4;
 
     static final int SCROLLBACK_MAX = 2000;
 
@@ -81,12 +84,26 @@ final class TerminalEmulator {
     private int utf8Remaining;
     private int utf8Value;
 
+    // predictive local echo (see predict()/expireStalePredictions())
+    private static final class Prediction {
+        final int y, x;
+        final char expected;
+        final long atMillis;
+
+        Prediction(int y, int x, char expected, long atMillis) {
+            this.y = y; this.x = x; this.expected = expected; this.atMillis = atMillis;
+        }
+    }
+    private final ArrayDeque<Prediction> predictions = new ArrayDeque<>();
+    private static final long PREDICTION_TIMEOUT_MS = 800;
+
     TerminalEmulator(int cols, int rows, Output output) {
         this.output = output;
         resize(cols, rows);
     }
 
     synchronized void resize(int newCols, int newRows) {
+        predictions.clear();
         newCols = Math.max(2, newCols);
         newRows = Math.max(2, newRows);
         char[][] g = blankGlyph(newCols, newRows);
@@ -99,7 +116,9 @@ final class TerminalEmulator {
                     g[y][x] = glyph[y][x];
                     f[y][x] = fg[y][x];
                     b[y][x] = bg[y][x];
-                    fl[y][x] = flags[y][x];
+                    // mask out a predicted-but-unconfirmed bit — cell coordinates
+                    // may now mean something entirely different post-resize.
+                    fl[y][x] = flags[y][x] & ~FLAG_PREDICTED;
                 }
             }
         }
@@ -142,7 +161,7 @@ final class TerminalEmulator {
         if (parseState == GROUND && utf8Remaining > 0) {
             if ((b & 0xc0) == 0x80) {
                 utf8Value = (utf8Value << 6) | (b & 0x3f);
-                if (--utf8Remaining == 0) putCodePoint(utf8Value);
+                if (--utf8Remaining == 0) putCodePoint(utf8Value, false);
                 return;
             }
             utf8Remaining = 0; // malformed — fall through
@@ -171,7 +190,7 @@ final class TerminalEmulator {
             default:
                 if (b < 0x20) return;
                 if (b < 0x80) {
-                    putCodePoint(b);
+                    putCodePoint(b, false);
                 } else if ((b & 0xe0) == 0xc0) {
                     utf8Remaining = 1; utf8Value = b & 0x1f;
                 } else if ((b & 0xf0) == 0xe0) {
@@ -204,7 +223,11 @@ final class TerminalEmulator {
     }
 
     private void csiByte(int b) {
-        if ((b >= '0' && b <= '9') || b == ';' || b == '?' || b == ' ' || b == '>') {
+        // ':' is the ITU T.416 sub-parameter separator some programs use for
+        // truecolor SGR (e.g. "38:2::R:G:Bm" instead of "38;2;R;G;Bm") — treat
+        // it like ';' rather than letting it prematurely terminate the sequence
+        // and dump the rest of the escape as garbage onto the screen.
+        if ((b >= '0' && b <= '9') || b == ';' || b == ':' || b == '?' || b == ' ' || b == '>') {
             csi.append((char) b);
             return;
         }
@@ -259,8 +282,20 @@ final class TerminalEmulator {
             case 's': savedX = cursorX; savedY = cursorY; break;
             case 'u': cursorX = savedX; cursorY = savedY; break;
             case 'n':
-                if (p0 == 6 && output != null) {
+                if (output == null) break;
+                if (p0 == 6) {
                     output.write(("[" + (cursorY + 1) + ";" + (cursorX + 1) + "R")
+                            .getBytes(StandardCharsets.US_ASCII));
+                } else if (p0 == 5) {
+                    output.write("[0n".getBytes(StandardCharsets.US_ASCII));
+                }
+                break;
+            case 'c':
+                // Capability queries: Zellij/tmux probe this on startup and
+                // misbehave without a plausible answer.
+                if (output != null) {
+                    boolean secondary = csi.length() > 0 && csi.charAt(0) == '>';
+                    output.write((secondary ? "[>0;95;0c" : "[?1;2c")
                             .getBytes(StandardCharsets.US_ASCII));
                 }
                 break;
@@ -284,21 +319,91 @@ final class TerminalEmulator {
 
     // --- screen ops -------------------------------------------------
 
-    private void putCodePoint(int cp) {
+    private void putCodePoint(int cp, boolean speculative) {
         if (wrapPending && autowrap) {
             cursorX = 0;
             lineFeed();
             wrapPending = false;
         }
+        int width = (!speculative && isWide(cp)) ? 2 : 1;
+        if (width == 2 && cursorX == cols - 1) {
+            // doesn't fit in the last column — wrap first, like autowrap does
+            // for a normal char; with autowrap off there's nowhere to put the
+            // second half, so degrade to narrow rather than overflow the row.
+            if (autowrap) {
+                cursorX = 0;
+                lineFeed();
+            } else {
+                width = 1;
+            }
+        }
         char c = cp > 0xffff ? '?' : (char) cp;
         glyph[cursorY][cursorX] = c;
         fg[cursorY][cursorX] = curFg;
         bg[cursorY][cursorX] = curBg;
-        flags[cursorY][cursorX] = curFlags;
-        if (cursorX == cols - 1) {
+        // A real write always lands the true SGR state and clears any stale
+        // predicted-bit — that's the entire reconciliation mechanism: right or
+        // wrong, the next real echo unconditionally overwrites the guess.
+        flags[cursorY][cursorX] = curFlags | (speculative ? FLAG_PREDICTED : 0);
+        if (speculative) {
+            predictions.add(new Prediction(cursorY, cursorX, c, android.os.SystemClock.uptimeMillis()));
+        }
+        if (width == 2) {
+            // Continuation cell: glyph 0 is TerminalView's "don't draw" sentinel,
+            // but its bg still paints so the wide glyph's background stays solid.
+            glyph[cursorY][cursorX + 1] = 0;
+            fg[cursorY][cursorX + 1] = curFg;
+            bg[cursorY][cursorX + 1] = curBg;
+            flags[cursorY][cursorX + 1] = curFlags;
+        }
+        if (cursorX + width >= cols) {
+            cursorX = cols - 1;
             wrapPending = true;
         } else {
-            cursorX++;
+            cursorX += width;
+        }
+    }
+
+    /** Coarse East-Asian "Wide"/"Fullwidth" ranges, plus common emoji blocks —
+     *  not a complete Unicode width table, but enough that CJK text and emoji
+     *  in prompts/status bars (Zellij's, tmux's) don't desync column counts. */
+    private static boolean isWide(int cp) {
+        return (cp >= 0x1100 && cp <= 0x115F)     // Hangul Jamo
+                || (cp >= 0x2E80 && cp <= 0xA4CF && cp != 0x303F) // CJK / Kana / etc.
+                || (cp >= 0xAC00 && cp <= 0xD7A3)  // Hangul syllables
+                || (cp >= 0xF900 && cp <= 0xFAFF)  // CJK compatibility ideographs
+                || (cp >= 0xFF00 && cp <= 0xFF60)  // Fullwidth forms
+                || (cp >= 0xFFE0 && cp <= 0xFFE6)
+                || (cp >= 0x1F300 && cp <= 0x1FAFF) // emoji blocks
+                || (cp >= 0x20000 && cp <= 0x3FFFD); // CJK extension planes
+    }
+
+    // --- predictive local echo ---------------------------------------
+
+    /** Speculatively draw a plain keystroke before its real echo arrives.
+     *  Conservative on purpose: refuses anywhere a guess is likely wrong or
+     *  ambiguous. Returns false (no-op) when it declines to predict. */
+    synchronized boolean predict(int codePoint) {
+        if (onAlt || wrapPending || isWide(codePoint)) return false;
+        putCodePoint(codePoint, true);
+        return true;
+    }
+
+    synchronized boolean hasPendingPredictions() {
+        return !predictions.isEmpty();
+    }
+
+    /** Revert any prediction older than {@link #PREDICTION_TIMEOUT_MS} that
+     *  was never confirmed (e.g. a password prompt with echo off) back to a
+     *  blank cell — a guess must never sit on screen looking real forever. */
+    synchronized void expireStalePredictions() {
+        long now = android.os.SystemClock.uptimeMillis();
+        while (!predictions.isEmpty() && now - predictions.peek().atMillis >= PREDICTION_TIMEOUT_MS) {
+            Prediction p = predictions.poll();
+            if (p.y < glyph.length && p.x < glyph[p.y].length
+                    && (flags[p.y][p.x] & FLAG_PREDICTED) != 0 && glyph[p.y][p.x] == p.expected) {
+                blankCell(p.y, p.x);
+            }
         }
     }
 
@@ -321,6 +426,11 @@ final class TerminalEmulator {
     private void scrollUp(int n) {
         for (int k = 0; k < n; k++) {
             if (!onAlt && scrollTop == 0) {
+                // A line leaving the live grid will never receive its real echo
+                // at these coordinates again — expireStalePredictions() only
+                // ever inspects the live grid, so an unconfirmed predicted bit
+                // copied into scrollback as-is would stay underlined forever.
+                for (int x = 0; x < flags[0].length; x++) flags[0][x] &= ~FLAG_PREDICTED;
                 scrollback.add(new Line(glyph[0], fg[0], bg[0], flags[0]));
                 if (scrollback.size() > SCROLLBACK_MAX) scrollback.remove(0);
             }
@@ -435,6 +545,7 @@ final class TerminalEmulator {
 
     private void switchAlt(boolean on) {
         if (on == onAlt) return;
+        predictions.clear();
         if (on) {
             altGlyph = glyph; altFg = fg; altBg = bg; altFlags = flags;
             glyph = blankGlyph(cols, rows);
@@ -455,6 +566,7 @@ final class TerminalEmulator {
 
     /** Wipe the screen, scrollback and parser — for reattaching to a session. */
     synchronized void reset() {
+        predictions.clear();
         onAlt = false;
         scrollback.clear();
         glyph = blankGlyph(cols, rows);
@@ -478,7 +590,7 @@ final class TerminalEmulator {
 
     private int[] params(String body) {
         if (body.isEmpty()) return new int[0];
-        String[] parts = body.split(";", -1);
+        String[] parts = body.split("[;:]", -1);
         int[] out = new int[parts.length];
         for (int i = 0; i < parts.length; i++) {
             try {
