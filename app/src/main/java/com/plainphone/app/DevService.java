@@ -285,6 +285,7 @@ public class DevService extends Service {
     void setClipMode(String hostId, String mode) {
         Link l = links.get(hostId);
         if (l == null) return;
+        l.host.clipMode = mode;
         if (DevHost.CLIP_AUTO.equals(mode) && l.state == State.CONNECTED) startClipWatch(l);
         else stopClipWatch(l);
     }
