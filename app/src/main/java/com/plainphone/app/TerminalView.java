@@ -45,6 +45,8 @@ final class TerminalView extends View {
     OnInput onInput;
     OnResize onResize;
     private boolean ctrlArmed, altArmed, shiftArmed;
+    /** True while the IME is mid-composition (suggestion strip up, nothing committed yet). */
+    private boolean composing;
     /** Fired when the sticky modifiers auto-clear after a keystroke. */
     Runnable onModsCleared;
 
@@ -56,7 +58,7 @@ final class TerminalView extends View {
 
     private final float density;
     private float fontSp;
-    private static final float FONT_MIN = 7f, FONT_MAX = 26f, FONT_DEFAULT = 16f;
+    private static final float FONT_MIN = 4f, FONT_MAX = 26f, FONT_DEFAULT = 16f;
     private final ScaleGestureDetector scaleDetector;
 
     TerminalView(Context context) {
@@ -81,8 +83,14 @@ final class TerminalView extends View {
                         if (Math.abs(next - fontSp) < 0.1f) return false;
                         fontSp = next;
                         applyFont();
-                        remeasure();
                         invalidate();
+                        // Only the paint scale updates live; the grid reflow (and the
+                        // pty.resize it sends) waits until the pinch settles, same as
+                        // onSizeChanged — a resize per tick floods the remote shell with
+                        // dozens of different sizes and corrupts anything that redraws
+                        // its own layout on resize (e.g. a TUI status/divider line).
+                        removeCallbacks(settle);
+                        postDelayed(settle, 180);
                         return true;
                     }
                 });
@@ -115,12 +123,15 @@ final class TerminalView extends View {
     void reset() {
         term.reset();
         scrollLines = 0;
+        removeCallbacks(expirySweep);
+        predictionPolling = false;
         postInvalidate();
     }
 
     void feed(byte[] data, int len) {
         int before = term.scrollbackSize();
         term.feed(data, len);
+        term.expireStalePredictions(); // real output is also a chance to sweep stale guesses
         if (scrollLines > 0) {
             // keep the same history visible as new lines push in
             scrollLines = Math.min(term.scrollbackSize(), scrollLines + term.scrollbackSize() - before);
@@ -238,6 +249,7 @@ final class TerminalView extends View {
                 int cflags = flRow[x];
                 boolean inverse = (cflags & TerminalEmulator.FLAG_INVERSE) != 0;
                 boolean bold = (cflags & TerminalEmulator.FLAG_BOLD) != 0;
+                boolean predicted = (cflags & TerminalEmulator.FLAG_PREDICTED) != 0;
                 int fgc = resolve(fRow[x], true, bold);
                 int bgc = resolve(bRow[x], false, false);
                 if (inverse) {
@@ -259,6 +271,15 @@ final class TerminalView extends View {
                     text.setColor(fgc);
                     text.setFakeBoldText(bold);
                     canvas.drawText(String.valueOf(g), left + x * charW, top + baseline, text);
+                }
+                if (predicted) {
+                    // Unconfirmed keystroke (predictive local echo) — underline in
+                    // the cell's own resolved colour so it reads right under
+                    // inverse/cursor swaps too, with zero extra branching above.
+                    fill.setColor(fgc);
+                    float lineY = top + baseline + charH * 0.08f;
+                    canvas.drawRect(left + x * charW, lineY,
+                            left + (x + 1) * charW, lineY + Math.max(1f, density), fill);
                 }
             }
         }
@@ -328,8 +349,21 @@ final class TerminalView extends View {
         return new BaseInputConnection(this, false) {
             @Override
             public boolean commitText(CharSequence textIn, int newCursorPosition) {
+                composing = false;
                 type(textIn.toString());
                 return true;
+            }
+
+            @Override
+            public boolean setComposingText(CharSequence textIn, int newCursorPosition) {
+                composing = textIn != null && textIn.length() > 0;
+                return super.setComposingText(textIn, newCursorPosition);
+            }
+
+            @Override
+            public boolean finishComposingText() {
+                composing = false;
+                return super.finishComposingText();
             }
 
             @Override
@@ -353,6 +387,7 @@ final class TerminalView extends View {
     }
 
     private void type(String s) {
+        maybePredict(s);
         byte[] body = (ctrlArmed && s.length() == 1)
                 ? new byte[]{control(s.charAt(0))}
                 : s.getBytes(StandardCharsets.UTF_8);
@@ -365,6 +400,52 @@ final class TerminalView extends View {
         sendBytes(body);
         clearMods();
     }
+
+    /** Predictive local echo: draw a plausible-looking keystroke immediately
+     *  (underlined, unconfirmed) rather than waiting a full round trip. Very
+     *  conservative — only a single plain printable char, no armed modifier,
+     *  not mid-IME-composition; {@link TerminalEmulator#predict} adds its own
+     *  grid-level checks (alt-screen, wrap boundary, wide chars) on top.
+     *
+     *  <p>Deliberately does NOT predict multi-codepoint commits. Those aren't
+     *  reliably "the user typed several characters in a row" — an IME's most
+     *  common reason to commit more than one codepoint at once is autocorrect
+     *  replacing an earlier word via deleteSurroundingText + a fresh commit,
+     *  and this code has no visibility into that delete. Predicting the
+     *  replacement text on top of a guess that was never un-predicted just
+     *  draws overlapping garbage. Single-char commits are never corrections. */
+    private void maybePredict(String s) {
+        if (ctrlArmed || altArmed || composing) return;
+        if (s.codePointCount(0, s.length()) != 1) return;
+        int cp = s.codePointAt(0);
+        if (cp < 0x20 || cp == 0x7f) return;
+        if (!term.predict(cp)) return;
+        invalidate();
+        if (!predictionPolling) {
+            predictionPolling = true;
+            postDelayed(expirySweep, PREDICTION_SWEEP_MS);
+        }
+    }
+
+    private boolean predictionPolling;
+    private static final long PREDICTION_SWEEP_MS = 850; // > TerminalEmulator's own timeout
+
+    /** Self-rescheduling safety net: a prediction can go unconfirmed forever if
+     *  the shell never echoes at all (a password prompt) — {@link #feed} sweeps
+     *  stale ones on every real byte, but with no output at all this is the
+     *  only thing that ever clears one. Stops rescheduling itself once nothing
+     *  is pending, so idle typing costs zero timers. */
+    private final Runnable expirySweep = new Runnable() {
+        @Override public void run() {
+            term.expireStalePredictions();
+            if (term.hasPendingPredictions()) {
+                postDelayed(this, PREDICTION_SWEEP_MS);
+            } else {
+                predictionPolling = false;
+            }
+            postInvalidate();
+        }
+    };
 
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {

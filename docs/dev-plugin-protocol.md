@@ -20,7 +20,7 @@
 | D→C | `{t:"welcome", proto:2, host, os:"linux\|macos\|windows", caps}` |
 | D→C | `{t:"error", code:"auth", msg}` then close — bad token |
 
-- `caps` ⊆ `["pty","session","proc","screen","input"]` (`screen`/`input` are build-time).
+- `caps` ⊆ `["pty","session","proc","metrics","clip","screen","input"]` (`screen`/`input` are build-time).
 - Client pings `{t:"ping"}` every 15 s → `{t:"pong"}`. 20 s silence = dead.
 
 ## Channels
@@ -101,21 +101,42 @@ tasks:{total,running,sleeping,stopped,zombie,other}}` (`load` is zeros on Window
 
 ### metrics — stats / net / disk
 
-Advertised as the `metrics` capability (implies all three). Poll-response like
-`proc.list`; additive, so `PROTO` stays `2`.
+Advertised as the `metrics` capability; it implies the three requests below.
+All poll-response, like `proc.list`: the phone asks on a timer and stops while
+its panel is hidden. `PROTO` stays `2` — these are additive, so an older phone
+simply never sends them.
 
 | dir | message |
 |---|---|
 | C→D | `{t:"stats.get", ch}` |
-| D→C | `{t:"stats", ch, cpu, cpu_count, per_cpu:[…], mem_used_kb, mem_total_kb, swap_used_kb, swap_total_kb, cpu_hist:[…], mem_hist:[…], load:[1m,5m,15m], uptime_s, boot_s}` |
+| D→C | `{t:"stats", ch, cpu (0–100), cpu_count, per_cpu:[0–100…], mem_used_kb, mem_total_kb, swap_used_kb, swap_total_kb, cpu_hist:[…], mem_hist:[…], load:[1m,5m,15m], uptime_s, boot_s}` |
 | C→D | `{t:"net.get", ch}` |
-| D→C | `{t:"net", ch, ifaces:[{name, rx_bps, tx_bps, rx_total, tx_total, mac, mtu, addrs:[…]}], rx_total, tx_total, ports:[{proto, addr, port, pids:[…]}]}` |
+| D→C | `{t:"net", ch, ifaces:[{name, rx_bps, tx_bps, rx_total, tx_total, mac, mtu, addrs:["ip/prefix"…]}], rx_total, tx_total, ports:[{proto:"tcp\|udp", addr, port, pids:[…]}]}` |
 | C→D | `{t:"disk.get", ch}` |
 | D→C | `{t:"disk", ch, disks:[{mount, name, fs, kind, total, avail, used, read_bps, write_bps, read_total, write_total}]}` |
 
-`cpu_hist` / `mem_hist` are newest-last percent ring buffers (≤120), per
-connection, reset on reconnect. Bytes throughout; `*_bps` = bytes since the
-previous poll.
+`cpu_hist` / `mem_hist` are newest-last percent ring buffers (≤120 samples) kept
+per connection — a reconnect restarts them. All byte counts are bytes; `*_bps`
+is bytes since the previous poll for that channel. `load` is zeros on Windows.
+Listening ports come from `netstat2` (TCP in `LISTEN` plus all UDP).
+
+### clipboard
+
+Advertised as the `clip` capability. `ch` here is a long-lived "watch" channel,
+not a request/response pair like `metrics` — open it once and it stays live.
+
+| dir | message |
+|---|---|
+| C→D | `{t:"clip.watch", ch}` — daemon replies once with the clipboard's current text, then pushes `clip` again whenever the **PC's** clipboard changes |
+| D→C | `{t:"clip", ch, text}` |
+| C→D | `{t:"clip.stop", ch}` — stop watching |
+| C→D | `{t:"clip.get", ch}` — one-shot read (used for a fallback poll if a push might have been missed) |
+| C→D | `{t:"clip.set", ch, text}` — write the phone's clipboard into the PC's |
+
+A `clip.set` updates the daemon's own change-baseline so it doesn't immediately
+echo the same text back out through `clip.watch` as if the PC had changed it.
+The watcher polls every 800 ms (no OS-level clipboard-changed hook is used, to
+stay cross-platform) — so PC→phone updates land within ~1 s, not instantly.
 
 ## Errors
 

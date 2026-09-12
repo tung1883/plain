@@ -18,10 +18,15 @@ import java.util.List;
  */
 final class DevHost {
 
+    static final String CLIP_AUTO = "auto";     // synced automatically both ways
+    static final String CLIP_MANUAL = "manual"; // only via an explicit button
+    static final String CLIP_OFF = "off";
+
     final String id;
     String label;
     String host;
     int port;
+    String clipMode = CLIP_AUTO;
 
     DevHost(String id, String label, String host, int port) {
         this.id = id;
@@ -69,8 +74,15 @@ final class DevHost {
             JSONArray arr = new JSONArray(Config.getDevHostsJson(context));
             for (int i = 0; i < arr.length(); i++) {
                 JSONObject o = arr.getJSONObject(i);
-                out.add(new DevHost(o.getString("id"), o.getString("label"),
-                        o.getString("host"), o.optInt("port", DevProtocol.DEFAULT_PORT)));
+                DevHost h = new DevHost(o.getString("id"), o.getString("label"),
+                        o.getString("host"), o.optInt("port", DevProtocol.DEFAULT_PORT));
+                if (o.has("clip_mode")) {
+                    h.clipMode = o.optString("clip_mode", CLIP_AUTO);
+                } else {
+                    // migrate the old boolean toggle
+                    h.clipMode = o.optBoolean("clip_sync", true) ? CLIP_AUTO : CLIP_OFF;
+                }
+                out.add(h);
             }
         } catch (JSONException ignored) {
         }
@@ -125,6 +137,7 @@ final class DevHost {
                 o.put("label", h.label);
                 o.put("host", h.host);
                 o.put("port", h.port);
+                o.put("clip_mode", h.clipMode);
                 arr.put(o);
             }
         } catch (JSONException ignored) {
