@@ -10,10 +10,12 @@ import android.view.View;
  *  the familiar green scale on the app's black background. */
 class ContributionGraphView extends View {
 
-    private static final float CELL_DP = 10f;
+    private static final float CELL_DP = 9f;
     private static final float GAP_DP = 3f;
 
     private final float density;
+    private final int cellPx;
+    private final int gapPx;
     private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF rect = new RectF();
     private int[][] grid; // [week][weekday], -1 = no such day
@@ -21,7 +23,16 @@ class ContributionGraphView extends View {
     ContributionGraphView(Context context) {
         super(context);
         density = context.getResources().getDisplayMetrics().density;
+        cellPx = Math.round(CELL_DP * density);
+        gapPx = Math.round(GAP_DP * density);
     }
+
+    /** Pixel width of one week column including its trailing gap — the grid's
+     *  natural scroll-snap unit. */
+    int stepPx() { return cellPx + gapPx; }
+
+    /** Pixel width of a single day cell, excluding its trailing gap. */
+    int cellPx() { return cellPx; }
 
     void setData(int[][] grid) {
         this.grid = grid;
@@ -31,19 +42,17 @@ class ContributionGraphView extends View {
 
     @Override
     protected void onMeasure(int widthSpec, int heightSpec) {
-        int cell = Math.round(CELL_DP * density);
-        int gap = Math.round(GAP_DP * density);
         int weeks = grid == null ? 0 : grid.length;
-        int w = weeks == 0 ? 0 : weeks * cell + (weeks - 1) * gap;
-        int h = 7 * cell + 6 * gap;
+        int w = weeks == 0 ? 0 : weeks * cellPx + (weeks - 1) * gapPx;
+        int h = 7 * cellPx + 6 * gapPx;
         setMeasuredDimension(w, h);
     }
 
     @Override
     protected void onDraw(Canvas canvas) {
         if (grid == null || grid.length == 0) return;
-        int cell = Math.round(CELL_DP * density);
-        int gap = Math.round(GAP_DP * density);
+        int cell = cellPx;
+        int gap = gapPx;
         float corner = 2 * density;
 
         int max = 1;
