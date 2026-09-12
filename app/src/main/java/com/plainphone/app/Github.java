@@ -11,6 +11,10 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 /** GitHub REST calls for {@link GithubPanel} and {@link DevAccountsActivity}. */
 final class Github {
@@ -39,47 +43,87 @@ final class Github {
         return out;
     }
 
+    /** Runs the 3 search queries and the per-watched-repo Actions lookups concurrently —
+     *  serially these could be dozens of round trips (one per watched repo) and take
+     *  tens of seconds; fanned out, wall time is roughly one round trip. */
     static List<ServiceData.Section> sections(Context ctx, DevAccount a, String token) throws Exception {
         String login = a.label;
-        List<ServiceData.Section> out = new ArrayList<>();
+        String oneYearAgo = java.time.LocalDate.now(java.time.ZoneOffset.UTC).minusYears(1).toString();
+        ExecutorService pool = Executors.newFixedThreadPool(
+                Math.max(1, Math.min(3 + a.watch.size(), 8)));
+        try {
+            Future<ServiceData.Section> prs = pool.submit(() -> searchSection("My open PRs",
+                    "is:open is:pr author:" + login + " created:>=" + oneYearAgo, token));
+            Future<ServiceData.Section> reviews = pool.submit(() -> searchSection("Review requested",
+                    "is:open is:pr review-requested:" + login, token));
+            Future<ServiceData.Section> assigned = pool.submit(() -> searchSection("Assigned issues",
+                    "is:open is:issue assignee:" + login, token));
 
-        out.add(searchSection("My open PRs",
-                "is:open is:pr author:" + login, token));
-        out.add(searchSection("Review requested",
-                "is:open is:pr review-requested:" + login, token));
-        out.add(searchSection("Assigned issues",
-                "is:open is:issue assignee:" + login, token));
+            List<Future<String[]>> actionFutures = new ArrayList<>();
+            for (String repo : a.watch) actionFutures.add(pool.submit(() -> actionRow(repo, token)));
 
-        if (!a.watch.isEmpty()) {
-            ServiceData.Section actions = new ServiceData.Section("Actions");
-            for (String repo : a.watch) {
-                try {
-                    JSONObject o = Http.getObject(
-                            API + "/repos/" + repo + "/actions/runs?per_page=1",
-                            token, HOSTS, headers());
-                    JSONArray runs = o.optJSONArray("workflow_runs");
-                    if (runs == null || runs.length() == 0) {
-                        actions.add(repo, "no runs");
-                        continue;
+            List<ServiceData.Section> out = new ArrayList<>();
+            out.add(get(prs));
+            out.add(get(reviews));
+            out.add(get(assigned));
+
+            if (!a.watch.isEmpty()) {
+                ServiceData.Section actions = new ServiceData.Section("Actions");
+                for (int i = 0; i < a.watch.size(); i++) {
+                    String repo = a.watch.get(i);
+                    String[] row;
+                    try {
+                        row = actionFutures.get(i).get();
+                    } catch (Exception e) {
+                        row = new String[]{"unavailable", null, null};
                     }
-                    JSONObject run = runs.getJSONObject(0);
-                    String status = run.optString("status");
-                    String concl = run.optString("conclusion", "");
-                    boolean done = "completed".equals(status);
-                    boolean ok = "success".equals(concl);
-                    String state = done ? concl : status;
-                    actions.add(repo,
-                            run.optString("name", "run") + " · " + state + " · "
-                                    + Fmt.age(millis(run.optString("updated_at"))),
-                            done ? ok : null,
-                            run.optString("html_url", null));
-                } catch (Exception e) {
-                    actions.add(repo, "unavailable");
+                    Boolean ok = row[1] == null ? null : Boolean.valueOf(row[1]);
+                    actions.add(repo, row[0], ok, row[2]);
                 }
+                out.add(actions);
             }
-            out.add(actions);
+            return out;
+        } finally {
+            pool.shutdown();
         }
-        return out;
+    }
+
+    /** Unwrap a {@link Future} back to its checked exception so callers keep seeing
+     *  the original {@link Http.HttpException} etc., not {@link ExecutionException}. */
+    private static <T> T get(Future<T> f) throws Exception {
+        try {
+            return f.get();
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof Exception) throw (Exception) cause;
+            throw e;
+        }
+    }
+
+    /** One Actions row: {@code {subtitle, ok ("true"/"false"/null), url}}. */
+    private static String[] actionRow(String repo, String token) {
+        try {
+            JSONObject o = Http.getObject(
+                    API + "/repos/" + repo + "/actions/runs?per_page=1",
+                    token, HOSTS, headers());
+            JSONArray runs = o.optJSONArray("workflow_runs");
+            if (runs == null || runs.length() == 0) {
+                return new String[]{"no runs", null, null};
+            }
+            JSONObject run = runs.getJSONObject(0);
+            String status = run.optString("status");
+            String concl = run.optString("conclusion", "");
+            boolean done = "completed".equals(status);
+            boolean ok = "success".equals(concl);
+            String state = done ? concl : status;
+            return new String[]{
+                    run.optString("name", "run") + " · " + state + " · "
+                            + Fmt.age(millis(run.optString("updated_at"))),
+                    done ? String.valueOf(ok) : null,
+                    run.optString("html_url", null)};
+        } catch (Exception e) {
+            return new String[]{"unavailable", null, null};
+        }
     }
 
     private static ServiceData.Section searchSection(String header, String q, String token)

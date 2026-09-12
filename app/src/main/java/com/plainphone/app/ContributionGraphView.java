@@ -2,13 +2,12 @@ package com.plainphone.app;
 
 import android.content.Context;
 import android.graphics.Canvas;
-import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.RectF;
 import android.view.View;
 
 /** GitHub-style contribution heatmap: one column per week, one row per weekday (Sun..Sat),
- *  monochrome to match the app's other charts (see {@link ColumnChartView}). */
+ *  the familiar green scale on the app's black background. */
 class ContributionGraphView extends View {
 
     private static final float CELL_DP = 10f;
@@ -66,14 +65,14 @@ class ContributionGraphView extends View {
     }
 
     private static int colorFor(int count, int max) {
-        if (count <= 0) return 0xFF262626;
+        if (count <= 0) return 0xFF1B1B1B;
         int level = (int) Math.ceil(count * 4.0 / max);
         level = Math.max(1, Math.min(4, level));
         switch (level) {
-            case 1: return 0xFF585858;
-            case 2: return 0xFF8A8A8A;
-            case 3: return 0xFFC4C4C4;
-            default: return Color.WHITE;
+            case 1: return 0xFF0E4429;
+            case 2: return 0xFF006D32;
+            case 3: return 0xFF26A641;
+            default: return 0xFF39D353;
         }
     }
 }

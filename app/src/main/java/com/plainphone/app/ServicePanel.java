@@ -3,12 +3,16 @@ package com.plainphone.app;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
+import android.graphics.Typeface;
+import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.StateListDrawable;
 import android.net.Uri;
 import android.os.Handler;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import java.util.List;
@@ -71,6 +75,9 @@ abstract class ServicePanel implements PanelContent {
     @Override public String hostId() { return null; }
     @Override public void setTitleListener(Runnable r) { this.onTitleChanged = r; }
 
+    /** Optional view pinned above the row list (e.g. GitHub's contribution graph). */
+    protected View header(Context ctx) { return null; }
+
     @Override
     public View onCreate(Context ctx) {
         this.ctx = ctx;
@@ -78,7 +85,19 @@ abstract class ServicePanel implements PanelContent {
 
         list = new SectionListView(ctx);
         list.setProvider(this::fillRows);
-        root.addView(list, mm());
+
+        View header = header(ctx);
+        if (header != null) {
+            LinearLayout body = new LinearLayout(ctx);
+            body.setOrientation(LinearLayout.VERTICAL);
+            body.addView(header, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            body.addView(list, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+            root.addView(body, mm());
+        } else {
+            root.addView(list, mm());
+        }
 
         error = new TextView(ctx);
         error.setTextColor(0xFFC88F87);
@@ -204,17 +223,52 @@ abstract class ServicePanel implements PanelContent {
         return "✗ offline";
     }
 
+    /** False for a panel (GitHub) that hoists the settings row into its own
+     *  {@link #header} instead, e.g. to place it above other header content. */
+    protected boolean showSettingsRowInList() { return true; }
+
+    /** A settings-affordance row identical in look to a normal DEV search result
+     *  row — normally placed in the list by {@link #fillRows}, but usable directly
+     *  by a subclass's {@link #header} when it needs to sit above other content. */
+    protected final View settingsRow(Context ctx) {
+        Typeface font = Fonts.current(ctx);
+        LinearLayout row = new LinearLayout(ctx);
+        row.setOrientation(LinearLayout.VERTICAL);
+        row.setPadding(dp(18), dp(14), dp(18), dp(14));
+        StateListDrawable bg = new StateListDrawable();
+        bg.addState(new int[]{android.R.attr.state_pressed}, new ColorDrawable(Color.DKGRAY));
+        bg.addState(new int[]{}, new ColorDrawable(Color.BLACK));
+        row.setBackground(bg);
+        row.setOnClickListener(v -> ctx.startActivity(new Intent(ctx, DevAccountsActivity.class)));
+
+        TextView title = new TextView(ctx);
+        title.setText("▸ " + serviceName() + " settings");
+        title.setTextColor(Color.WHITE);
+        title.setTextSize(20);
+        title.setTypeface(font);
+        row.addView(title);
+
+        TextView subtitle = new TextView(ctx);
+        subtitle.setText("accounts · watched");
+        subtitle.setTextColor(Color.GRAY);
+        subtitle.setTextSize(14);
+        subtitle.setTypeface(font);
+        row.addView(subtitle);
+        return row;
+    }
+
     // --- row building ------------------------------------------------
 
     private void fillRows(List<Object> rows) {
-        rows.add(new SearchResult(SearchResult.Kind.DEV, "▸ " + serviceName() + " settings",
-                "accounts · watched", -1,
-                () -> ctx.startActivity(new Intent(ctx, DevAccountsActivity.class))));
+        if (showSettingsRowInList()) {
+            rows.add(new SearchResult(SearchResult.Kind.DEV, "▸ " + serviceName() + " settings",
+                    "accounts · watched", -1,
+                    () -> ctx.startActivity(new Intent(ctx, DevAccountsActivity.class))));
+        }
         if (data == null) return;
         for (ServiceData.Section sec : data) {
             if (sec.rows.isEmpty()) continue;
-            rows.add(new SearchResult(SearchResult.Kind.DEV, sec.header,
-                    sec.rows.size() == 1 ? "1 item" : sec.rows.size() + " items", -1, () -> {}));
+            rows.add(new SearchResultsAdapter.Header(sec.header));
             for (ServiceData.Row r : sec.rows) {
                 String sub = r.subtitle;
                 if (Boolean.FALSE.equals(r.ok)) sub = "✗ " + (sub == null ? "" : sub);
