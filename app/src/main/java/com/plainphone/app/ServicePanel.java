@@ -3,9 +3,6 @@ package com.plainphone.app;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
-import android.graphics.Typeface;
-import android.graphics.drawable.ColorDrawable;
-import android.graphics.drawable.StateListDrawable;
 import android.net.Uri;
 import android.os.Handler;
 import android.view.Gravity;
@@ -133,9 +130,9 @@ abstract class ServicePanel implements PanelContent {
     @Override
     public View[] titleButtons(Context c) {
         TextView r = new TextView(c);
-        r.setText("↻"); // ↻
-        r.setTextColor(0xFFC88F87);
-        r.setTextSize(16);
+        r.setText("↻");
+        r.setTextColor(Color.WHITE);
+        r.setTextSize(18);
         r.setTypeface(Fonts.current(c));
         r.setGravity(Gravity.CENTER);
         r.setPadding(dp(12), dp(2), dp(12), dp(4));
@@ -216,65 +213,23 @@ abstract class ServicePanel implements PanelContent {
     static String friendly(Exception e) {
         if (e instanceof Http.HttpException) {
             int s = ((Http.HttpException) e).status;
-            if (s == 401 || s == 403) return "✗ token rejected (" + s + ")";
-            if (s == 429) return "✗ rate limited";
-            return "✗ service error " + s;
+            if (s == 401 || s == 403) return "Token rejected (" + s + ").";
+            if (s == 429) return "Rate limited — try again shortly.";
+            return "Service error " + s + ".";
         }
-        return "✗ offline";
-    }
-
-    /** False for a panel (GitHub) that hoists the settings row into its own
-     *  {@link #header} instead, e.g. to place it above other header content. */
-    protected boolean showSettingsRowInList() { return true; }
-
-    /** A settings-affordance row identical in look to a normal DEV search result
-     *  row — normally placed in the list by {@link #fillRows}, but usable directly
-     *  by a subclass's {@link #header} when it needs to sit above other content. */
-    protected final View settingsRow(Context ctx) {
-        Typeface font = Fonts.current(ctx);
-        LinearLayout row = new LinearLayout(ctx);
-        row.setOrientation(LinearLayout.VERTICAL);
-        row.setPadding(dp(18), dp(14), dp(18), dp(14));
-        StateListDrawable bg = new StateListDrawable();
-        bg.addState(new int[]{android.R.attr.state_pressed}, new ColorDrawable(Color.DKGRAY));
-        bg.addState(new int[]{}, new ColorDrawable(Color.BLACK));
-        row.setBackground(bg);
-        row.setOnClickListener(v -> ctx.startActivity(new Intent(ctx, DevAccountsActivity.class)));
-
-        TextView title = new TextView(ctx);
-        title.setText("▸ " + serviceName() + " settings");
-        title.setTextColor(Color.WHITE);
-        title.setTextSize(20);
-        title.setTypeface(font);
-        row.addView(title);
-
-        TextView subtitle = new TextView(ctx);
-        subtitle.setText("accounts · watched");
-        subtitle.setTextColor(Color.GRAY);
-        subtitle.setTextSize(14);
-        subtitle.setTypeface(font);
-        row.addView(subtitle);
-        return row;
+        return "Network error.";
     }
 
     // --- row building ------------------------------------------------
 
     private void fillRows(List<Object> rows) {
-        if (showSettingsRowInList()) {
-            rows.add(new SearchResult(SearchResult.Kind.DEV, "▸ " + serviceName() + " settings",
-                    "accounts · watched", -1,
-                    () -> ctx.startActivity(new Intent(ctx, DevAccountsActivity.class))));
-        }
         if (data == null) return;
         for (ServiceData.Section sec : data) {
             if (sec.rows.isEmpty()) continue;
             rows.add(new SearchResultsAdapter.Header(sec.header));
             for (ServiceData.Row r : sec.rows) {
-                String sub = r.subtitle;
-                if (Boolean.FALSE.equals(r.ok)) sub = "✗ " + (sub == null ? "" : sub);
-                else if (Boolean.TRUE.equals(r.ok)) sub = "✓ " + (sub == null ? "" : sub);
                 final String url = r.url;
-                rows.add(new SearchResult(SearchResult.Kind.DEV, r.title, sub, -1,
+                rows.add(new SearchResult(SearchResult.Kind.DEV, r.title, r.subtitle, -1,
                         () -> { if (url != null) openUrl(url); }));
             }
         }

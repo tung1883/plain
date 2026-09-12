@@ -5,6 +5,7 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewTreeObserver;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -18,6 +19,7 @@ final class GithubPanel extends ServicePanel {
     private TextView contribLabel;
     private ContributionGraphView contribGraph;
     private HorizontalScrollView contribScroll;
+    private int contribBaseRightPad;
 
     GithubPanel(String accountId) { super(accountId); }
 
@@ -31,8 +33,6 @@ final class GithubPanel extends ServicePanel {
         return Github.sections(ctx, account, token);
     }
 
-    @Override protected boolean showSettingsRowInList() { return false; }
-
     @Override
     protected View header(Context ctx) {
         Typeface font = Fonts.current(ctx);
@@ -41,7 +41,6 @@ final class GithubPanel extends ServicePanel {
 
         LinearLayout box = new LinearLayout(ctx);
         box.setOrientation(LinearLayout.VERTICAL);
-        box.addView(settingsRow(ctx));
 
         contribLabel = new TextView(ctx);
         contribLabel.setText("Contributions…");
@@ -52,12 +51,14 @@ final class GithubPanel extends ServicePanel {
         box.addView(contribLabel);
 
         contribGraph = new ContributionGraphView(ctx);
-        LinearLayout pad = new LinearLayout(ctx);
-        pad.setPadding(inset, 0, inset, gap);
-        pad.addView(contribGraph);
         contribScroll = new HorizontalScrollView(ctx);
         contribScroll.setHorizontalScrollBarEnabled(false);
-        contribScroll.addView(pad);
+        // Padding on the scroll view itself (not the scrolled content) so the
+        // margin stays put as a viewport gutter no matter where it's scrolled to.
+        contribBaseRightPad = inset;
+        contribScroll.setPadding(inset, 0, inset, gap);
+        contribScroll.setClipToPadding(true);
+        contribScroll.addView(contribGraph);
         box.addView(contribScroll, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
@@ -86,9 +87,39 @@ final class GithubPanel extends ServicePanel {
                 }
                 contribLabel.setText(fData.total + " contributions in the last year");
                 contribGraph.setData(fData.grid);
-                // Show the most recent weeks (right edge) by default, not the oldest.
-                if (contribScroll != null) contribScroll.post(() -> contribScroll.fullScroll(View.FOCUS_RIGHT));
+                scrollToEnd();
             });
+        });
+    }
+
+    /** Scroll to the right edge (most recent week) so every column is whole
+     *  except the leftmost visible one, which always shows exactly half —
+     *  waits for the just-changed grid to actually finish laying out before
+     *  computing the target, instead of scrolling against the stale width. */
+    private void scrollToEnd() {
+        if (contribScroll == null || contribGraph == null) return;
+        contribScroll.getViewTreeObserver().addOnGlobalLayoutListener(new ViewTreeObserver.OnGlobalLayoutListener() {
+            @Override public void onGlobalLayout() {
+                contribScroll.getViewTreeObserver().removeOnGlobalLayoutListener(this);
+                int step = contribGraph.stepPx();
+                int half = contribGraph.cellPx() / 2;
+                int contentW = contribGraph.getWidth();
+                int viewportW = contribScroll.getWidth()
+                        - contribScroll.getPaddingLeft() - contribBaseRightPad;
+                if (step <= 0 || contentW <= 0 || viewportW <= 0) return;
+                // contentW mod step == cellPx (the grid ends flush after a cell, no
+                // trailing gap), so this solves for the viewport width that leaves
+                // exactly `half` px of the leftmost column showing at max scroll.
+                int extraRightPad = ((viewportW - half) % step + step) % step;
+                contribScroll.setPadding(contribScroll.getPaddingLeft(), contribScroll.getPaddingTop(),
+                        contribBaseRightPad + extraRightPad, contribScroll.getPaddingBottom());
+                // Padding change needs its own layout pass before the new scroll range applies.
+                contribScroll.post(() -> {
+                    int vw = contribScroll.getWidth()
+                            - contribScroll.getPaddingLeft() - contribScroll.getPaddingRight();
+                    contribScroll.scrollTo(Math.max(0, contentW - vw), 0);
+                });
+            }
         });
     }
 }
