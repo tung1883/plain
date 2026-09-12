@@ -21,15 +21,26 @@ class SearchResultsAdapter extends BaseAdapter {
     private static final int TYPE_RESULT = 1;
 
     static class Header {
-        final SearchResult.Kind kind;
+        final SearchResult.Kind kind; // null when label is set directly (no collapse toggle)
+        final String label;
         final boolean collapsed;
 
         final int hiddenCount;
 
         Header(SearchResult.Kind kind, boolean collapsed, int hiddenCount) {
             this.kind = kind;
+            this.label = null;
             this.collapsed = collapsed;
             this.hiddenCount = hiddenCount;
+        }
+
+        /** A plain, non-collapsible section header — e.g. a {@link ServicePanel}'s
+         *  "My open PRs" / "Actions" groupings. */
+        Header(String label) {
+            this.kind = null;
+            this.label = label;
+            this.collapsed = false;
+            this.hiddenCount = 0;
         }
     }
 
@@ -101,13 +112,14 @@ class SearchResultsAdapter extends BaseAdapter {
         TextView label = (TextView) view.getChildAt(0);
         TextView toggle = (TextView) view.getChildAt(1);
 
-        String text = header.kind.header.toUpperCase();
+        String text = (header.label != null ? header.label : header.kind.header).toUpperCase();
         if (header.collapsed && header.hiddenCount > 0) {
             text = text + "  (" + header.hiddenCount + ")";
         }
         label.setText(text);
         label.setTypeface(typeface);
 
+        toggle.setVisibility(header.kind == null ? View.GONE : View.VISIBLE);
         toggle.setText(header.collapsed ? "+" : "−");
         toggle.setTypeface(typeface);
         return view;

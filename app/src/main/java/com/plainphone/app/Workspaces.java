@@ -76,13 +76,14 @@ final class Workspaces {
         writeAll(c, all, currentId(c));
     }
 
+    /** Deleting the last workspace is allowed — {@link #list} recreates a fresh
+     *  default one next time it's read. */
     static void delete(Context c, String id) {
         List<Meta> all = list(c);
-        if (all.size() <= 1) return; // keep at least one
+        String cur = currentId(c);
         all.removeIf(m -> m.id.equals(id));
         WorkspaceStore.deleteFile(c, id);
-        String cur = currentId(c);
-        writeAll(c, all, cur.equals(id) ? all.get(0).id : cur);
+        writeAll(c, all, all.isEmpty() ? "" : cur.equals(id) ? all.get(0).id : cur);
     }
 
     // --- io ---------------------------------------------------------

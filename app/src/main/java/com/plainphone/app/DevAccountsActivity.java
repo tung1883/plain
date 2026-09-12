@@ -51,29 +51,28 @@ public class DevAccountsActivity extends Activity {
         render();
     }
 
+    private static final String[] KINDS = {DevAccount.GITHUB, DevAccount.VERCEL, DevAccount.SUPABASE};
+
     private void render() {
         font = Fonts.current(this);
         root.removeAllViews();
 
-        root.addView(row("+ Add account", "GitHub · Vercel · Supabase", Color.GRAY,
-                v -> pickKind(), null));
+        root.addView(row("+ Add account", null, Color.GRAY, v -> pickKind(), null));
 
         List<DevAccount> accounts = DevAccount.all(this);
         if (accounts.isEmpty()) {
             root.addView(hint("No accounts yet. Paste a Personal Access Token to connect a service."));
-            return;
-        }
-
-        for (DevAccount a : accounts) {
-            boolean connected = a.label != null && !a.label.isEmpty();
-            root.addView(row(a.displayKind(),
-                    connected ? "connected as " + a.label : "not connected",
-                    connected ? Color.WHITE : Color.GRAY,
-                    v -> { selectedId = a.id.equals(selectedId) ? null : a.id; render(); },
-                    () -> confirmRemove(a)));
-            if (a.id.equals(selectedId)) {
-                renderWatching(a);
-                if (DevAccount.GITHUB.equals(a.kind)) renderContributions(a);
+        } else {
+            for (String kind : KINDS) {
+                List<DevAccount> ofKind = DevAccount.ofKind(this, kind);
+                if (ofKind.isEmpty()) continue;
+                root.addView(sectionLabel(ofKind.get(0).displayKind()));
+                for (DevAccount a : ofKind) {
+                    root.addView(row(a.label, null, Color.WHITE,
+                            v -> { selectedId = a.id.equals(selectedId) ? null : a.id; render(); },
+                            () -> confirmRemove(a)));
+                    if (a.id.equals(selectedId)) renderWatching(a);
+                }
             }
         }
 
@@ -156,45 +155,6 @@ public class DevAccountsActivity extends Activity {
             mark.setTextColor(now ? Color.WHITE : 0xFF484848);
         });
         return r;
-    }
-
-    // --- contributions ---------------------------------------------------
-
-    private void renderContributions(DevAccount a) {
-        root.addView(sectionLabel("Contributions"));
-        TextView loading = hint("Loading…");
-        root.addView(loading);
-        final String token = a.token(this);
-        NetIo.POOL.execute(() -> {
-            Github.Contributions data = null;
-            String err = null;
-            try {
-                data = Github.contributions(token);
-            } catch (Exception e) {
-                err = friendly(e);
-            }
-            final Github.Contributions fData = data;
-            final String error = err;
-            NetIo.MAIN.post(() -> {
-                if (isFinishing() || !a.id.equals(selectedId)) return;
-                int at = root.indexOfChild(loading);
-                if (at < 0) return;
-                root.removeView(loading);
-                if (error != null) { root.addView(hint(error), at); return; }
-                if (fData == null) { root.addView(hint("No data."), at); return; }
-                root.addView(hint(fData.total + " contributions in the last year"), at);
-
-                ContributionGraphView graph = new ContributionGraphView(this);
-                graph.setData(fData.grid);
-                LinearLayout pad = new LinearLayout(this);
-                pad.setPadding(48, 8, 48, 24);
-                pad.addView(graph);
-                android.widget.HorizontalScrollView hscroll = new android.widget.HorizontalScrollView(this);
-                hscroll.addView(pad);
-                root.addView(hscroll, at + 1, new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-            });
-        });
     }
 
     // --- add flow ------------------------------------------------------
