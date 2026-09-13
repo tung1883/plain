@@ -1151,6 +1151,8 @@ public class MainActivity extends Activity implements SelectionHost {
                 renderTodoSection();
             } else if (homeMode == HomeMode.RECORDER) {
                 renderRecorderSection();
+            } else if (homeMode == HomeMode.CHESS) {
+                ChessSection.render(this, rows);
             } else if (homeMode == HomeMode.VAULT) {
                 renderVaultSection();
             } else if (homeMode == HomeMode.DEV) {
@@ -1195,6 +1197,7 @@ public class MainActivity extends Activity implements SelectionHost {
             case NOTE: return noteResults(needle);
             case TODO: return todoResults(needle);
             case RECORDING: return recordingResults(needle);
+            case CHESS: return ChessSection.search(this, needle);
             case PLAIN: return SearchTargets.plain(this, currentSearch);
             case SYSTEM: return SearchTargets.system(this, currentSearch);
             case WEB: return webResults();
@@ -2168,4 +2171,3 @@ public class MainActivity extends Activity implements SelectionHost {
         return info.activityInfo.applicationInfo.loadLabel(pm);
     }
 }
-

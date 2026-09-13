@@ -441,6 +441,12 @@
             android:theme="@style/Theme.PlainPhone" />
 
         <activity
+            android:name=".ChessActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
             android:name=".DevSettingsActivity"
             android:exported="false"
             android:theme="@style/Theme.PlainPhone" />

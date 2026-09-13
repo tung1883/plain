@@ -8,6 +8,7 @@ class SearchResult {
         NOTE("Notes"),
         TODO("To-do"),
         RECORDING("Recordings"),
+        CHESS("Chess"),
         PLAIN("Plain"),
         SYSTEM("Phone settings"),
         WEB("Web"),

@@ -6,6 +6,7 @@ enum HomeMode {
     TODOS("To-do"),
     STATS("Stats"),
     RECORDER("Rec"),
+    CHESS("Chess"),
     VAULT("Vault"),
     DEV("Dev"),
     WORKSPACE("Workspace");
