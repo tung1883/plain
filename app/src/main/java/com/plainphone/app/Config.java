@@ -790,6 +790,10 @@ class Config {
         for (HomeMode mode : HomeMode.values()) {
             if (!order.contains(mode)) order.add(mode);
         }
+        // Chess is a launcher header, fixed beside the two related sections.
+        order.remove(HomeMode.CHESS);
+        int workspace = order.indexOf(HomeMode.WORKSPACE);
+        order.add(workspace < 0 ? order.size() : workspace, HomeMode.CHESS);
         if (isVaultHiddenFromHome(context)) order.remove(HomeMode.VAULT);
         if (isDevHiddenFromHome(context)) order.remove(HomeMode.DEV);
         return order;

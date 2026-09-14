@@ -8,6 +8,7 @@ enum HomeMode {
     RECORDER("Rec"),
     VAULT("Vault"),
     DEV("Dev"),
+    CHESS("Chess"),
     WORKSPACE("Workspace");
 
     final String label;

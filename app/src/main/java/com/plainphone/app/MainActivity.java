@@ -102,6 +102,9 @@ public class MainActivity extends Activity implements SelectionHost {
 
     private StatsPanel statsPanel;
     private boolean statsPanelShown;
+    private View chessPanel;
+    private ChessActivity.ChessBoardView chessBoard;
+    private TextView chessTurnLine, chessMoveLine, chessMovesLine;
 
     private static final int REQUEST_NOTES_UNLOCK = 4301;
     private static final int REQUEST_PICK_NOTES_FOLDER = 4302;
@@ -764,11 +767,15 @@ public class MainActivity extends Activity implements SelectionHost {
 
         statsPanel = new StatsPanel(this);
         statsPanel.view().setVisibility(View.GONE);
+        chessPanel = buildChessPanel();
+        chessPanel.setVisibility(View.GONE);
 
         FrameLayout swipeContent = new FrameLayout(this);
         swipeContent.addView(listView, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         swipeContent.addView(statsPanel.view(), new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        swipeContent.addView(chessPanel, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
         swipeSwitcher = new SwipeSwitcher(this);
@@ -1090,6 +1097,82 @@ public class MainActivity extends Activity implements SelectionHost {
         });
     }
 
+    private View buildChessPanel() {
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setGravity(Gravity.CENTER_HORIZONTAL);
+        panel.setBackgroundColor(Color.BLACK);
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(0, UiKit.dp(this, 8), 0, 0);
+        panel.addView(content, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        chessBoard = new ChessActivity.ChessBoardView(this, this::updateChessHomeUi);
+        chessBoard.setPieceTheme("neo");
+        // Keep the entire study in the Home viewport: no vertical scroll container may steal a drag.
+        content.addView(chessBoard, new LinearLayout.LayoutParams(
+                UiKit.dp(this, 200), ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        LinearLayout status = new LinearLayout(this);
+        status.setGravity(Gravity.CENTER_VERTICAL);
+        status.setPadding(0, UiKit.dp(this, 16), 0, UiKit.dp(this, 12));
+        chessTurnLine = chessText("White to move", 17, Color.WHITE);
+        status.addView(chessTurnLine, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        chessMoveLine = chessText("Move 0 / 0", 15, 0xFFDDDDDD);
+        status.addView(chessMoveLine, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        content.addView(status);
+        content.addView(chessRule(), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1));
+
+        LinearLayout transport = new LinearLayout(this);
+        transport.setGravity(Gravity.CENTER);
+        transport.setPadding(0, UiKit.dp(this, 12), 0, UiKit.dp(this, 12));
+        String[] labels = {"|‹", "‹", "›", "›|"};
+        for (int i = 0; i < labels.length; i++) {
+            final int action = i;
+            TextView button = chessText(labels[i], 25, Color.WHITE);
+            button.setGravity(Gravity.CENTER);
+            button.setOnClickListener(v -> {
+                if (action == 0) chessBoard.first();
+                else if (action == 1) chessBoard.previous();
+                else if (action == 2) chessBoard.next();
+                else chessBoard.last();
+            });
+            transport.addView(button, new LinearLayout.LayoutParams(0, UiKit.dp(this, 42), 1f));
+        }
+        content.addView(transport);
+        chessMovesLine = chessText("Tap a piece, then a marked square", 14, 0xFFDADADA);
+        chessMovesLine.setSingleLine(true);
+        chessMovesLine.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
+        chessMovesLine.setPadding(UiKit.dp(this, 4), UiKit.dp(this, 12), UiKit.dp(this, 4), UiKit.dp(this, 12));
+        content.addView(chessMovesLine);
+        return panel;
+    }
+
+    private TextView chessText(String value, float size, int color) {
+        TextView view = new TextView(this);
+        view.setText(value);
+        view.setTextSize(size);
+        view.setTextColor(color);
+        view.setTypeface(Fonts.current(this));
+        view.setIncludeFontPadding(false);
+        return view;
+    }
+
+    private View chessRule() {
+        View rule = new View(this);
+        rule.setBackgroundColor(0xFF303030);
+        return rule;
+    }
+
+    private void updateChessHomeUi() {
+        if (chessBoard == null || chessTurnLine == null) return;
+        chessTurnLine.setText(chessBoard.whiteToMove() ? "White to move" : "Black to move");
+        chessMoveLine.setText("Move " + chessBoard.cursor() + " / " + chessBoard.totalMoves());
+        String moves = chessBoard.moveText();
+        chessMovesLine.setText(moves.length() == 0 ? "Tap a piece, then a marked square" : moves);
+    }
+
     private void renderRows() {
         rows.clear();
         String needle = currentQuery;
@@ -1118,9 +1201,11 @@ public class MainActivity extends Activity implements SelectionHost {
         // Stats sits behind the app-list lock — same PIN, same grace window.
         boolean statsLocked = homeMode == HomeMode.STATS && Lock.APPS.gateActive(this);
         boolean showStats = homeMode == HomeMode.STATS && needle.isEmpty() && !statsLocked;
+        boolean showChess = homeMode == HomeMode.CHESS && needle.isEmpty() && !selecting;
         if (statsPanel != null) {
             statsPanel.view().setVisibility(showStats ? View.VISIBLE : View.GONE);
-            listView.setVisibility(showStats ? View.GONE : View.VISIBLE);
+            if (chessPanel != null) chessPanel.setVisibility(showChess ? View.VISIBLE : View.GONE);
+            listView.setVisibility(showStats || showChess ? View.GONE : View.VISIBLE);
             if (showStats && !statsPanelShown) {
                 statsPanelShown = true;
                 statsPanel.render();
@@ -1130,6 +1215,12 @@ public class MainActivity extends Activity implements SelectionHost {
         }
         if (showStats) {
             if (Lock.APPS.isLocked(this)) Lock.APPS.keepUnlocked(this);
+            syncHeaderCollapse();
+            adapter.notifyDataSetChanged();
+            return;
+        }
+        if (showChess) {
+            updateChessHomeUi();
             syncHeaderCollapse();
             adapter.notifyDataSetChanged();
             return;
