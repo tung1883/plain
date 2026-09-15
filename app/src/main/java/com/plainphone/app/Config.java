@@ -857,6 +857,33 @@ class Config {
         return prefs(context).getString("dev_last_host", null);
     }
 
+    /** How many plies deep the background analysis (eval + variations) searches. */
+    static int getChessEngineDepth(Context context) {
+        return prefs(context).getInt("chess_engine_depth", 12);
+    }
+
+    static void setChessEngineDepth(Context context, int depth) {
+        prefs(context).edit().putInt("chess_engine_depth", Math.max(4, Math.min(24, depth))).apply();
+    }
+
+    /** How many candidate lines (MultiPV) the analysis panel shows. */
+    static int getChessAnalysisLines(Context context) {
+        return prefs(context).getInt("chess_analysis_lines", 3);
+    }
+
+    static void setChessAnalysisLines(Context context, int lines) {
+        prefs(context).edit().putInt("chess_analysis_lines", Math.max(1, Math.min(5, lines))).apply();
+    }
+
+    /** Whether the board draws its a-h / 1-8 edge labels. */
+    static boolean getChessShowCoords(Context context) {
+        return prefs(context).getBoolean("chess_show_coords", true);
+    }
+
+    static void setChessShowCoords(Context context, boolean show) {
+        prefs(context).edit().putBoolean("chess_show_coords", show).apply();
+    }
+
     static void setDevLastHostId(Context context, String id) {
         prefs(context).edit().putString("dev_last_host", id).apply();
     }

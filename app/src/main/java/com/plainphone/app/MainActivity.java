@@ -109,7 +109,9 @@ public class MainActivity extends Activity implements SelectionHost {
     private boolean statsPanelShown;
     private View chessPanel;
     private ChessBoardView chessBoard;
-    private TextView chessTurnLine, chessMoveLine, chessThemeLine;
+    private LinearLayout chessContent;
+    private ScrollView chessScroll;
+    private TextView chessTurnLine;
     private TextView[] chessEngineLines;
     private MovesGrid chessMovesGrid;
     private String chessSelectedBoard = "Slate Study";
@@ -997,6 +999,7 @@ public class MainActivity extends Activity implements SelectionHost {
             lp.height = Math.max(0, Math.round(headerFullH - headerOffset));
         }
         headerZone.setLayoutParams(lp);
+        resizeChessBoardIfNeeded();
     }
 
     private float snapForStage(int stage) {
@@ -1135,20 +1138,30 @@ public class MainActivity extends Activity implements SelectionHost {
         status.setPadding(48, UiKit.dp(this, 16), 48, UiKit.dp(this, 12));
         chessTurnLine = chessText("White to move", 17, Color.WHITE);
         status.addView(chessTurnLine, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        chessMoveLine = chessText("Move 0 / 0", 15, 0xFFDDDDDD);
-        status.addView(chessMoveLine, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        android.widget.ImageView chessSettingsIcon = new android.widget.ImageView(this);
+        chessSettingsIcon.setImageDrawable(getResources().getDrawable(R.drawable.ic_chess_settings, getTheme()));
+        chessSettingsIcon.setScaleType(android.widget.ImageView.ScaleType.CENTER_INSIDE);
+        chessSettingsIcon.setContentDescription("Chess settings");
+        chessSettingsIcon.setOnClickListener(v -> chessOpenSettings());
+        status.addView(chessSettingsIcon, new LinearLayout.LayoutParams(UiKit.dp(this, 36), UiKit.dp(this, 36)));
         content.addView(status);
 
-        chessEngineLines = new TextView[3];
+        chessEngineLines = new TextView[5]; // pool sized for the max "Variations shown" setting
         for (int i = 0; i < chessEngineLines.length; i++) {
             TextView line = chessText("", 13, 0xFF8FBF8F);
-            line.setPadding(48, 0, 48, i == chessEngineLines.length - 1 ? UiKit.dp(this, 10) : 0);
+            line.setPadding(48, 0, 48, 0);
             line.setSingleLine(true);
             line.setEllipsize(android.text.TextUtils.TruncateAt.END);
             line.setVisibility(View.GONE);
             chessEngineLines[i] = line;
             content.addView(line);
         }
+        // Fixed gap below the analysis block, regardless of how many lines are actually
+        // visible — padding tied to a specific pool slot broke once "Variations shown"
+        // could be less than the pool size.
+        View chessEngineGap = new View(this);
+        content.addView(chessEngineGap, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, UiKit.dp(this, 10)));
 
         content.addView(chessRule(), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1));
 
@@ -1185,32 +1198,152 @@ public class MainActivity extends Activity implements SelectionHost {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         content.addView(chessRule(), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1));
 
-        LinearLayout actions = new LinearLayout(this);
-        actions.setGravity(Gravity.CENTER_VERTICAL);
-        actions.setPadding(0, UiKit.dp(this, 12), 0, 0);
-        TextView settings = chessText("⚙", 22, Color.WHITE);
-        settings.setGravity(Gravity.CENTER);
-        settings.setContentDescription("Chess settings");
-        settings.setOnClickListener(v -> chessOpenSettings());
-        actions.addView(settings, new LinearLayout.LayoutParams(UiKit.dp(this, 44), UiKit.dp(this, 44)));
-        content.addView(actions);
-
-        chessThemeLine = chessText(chessSelectedBoard + " · " + ChessBoardView.pretty(chessSelectedPieces), 12, 0xFFAAAAAA);
-        chessThemeLine.setGravity(Gravity.RIGHT);
-        chessThemeLine.setPadding(0, UiKit.dp(this, 2), UiKit.dp(this, 6), 0);
-        content.addView(chessThemeLine);
+        chessContent = content;
+        chessScroll = panel;
         return panel;
     }
 
+    /** Shrinks/grows the square board to whatever's left of the header's own numbers once
+     *  every other row (status, engine lines, transport, moves grid) is accounted for.
+     *  Piggybacks on {@link #applyHeaderOffset} so it re-runs on every header drag/animation
+     *  frame. Uses {@code headerFullH}/{@code headerOffset} directly rather than re-reading
+     *  the header's own {@code getHeight()} — that view's layout pass hasn't happened yet
+     *  this frame, so reading it back here would always be one frame stale and the board
+     *  would visibly lag a step behind the header instead of moving with it. */
+    private void resizeChessBoardIfNeeded() {
+        if (chessBoard == null || chessContent == null || chessScroll == null) return;
+        if (chessPanel == null || chessPanel.getVisibility() != View.VISIBLE) return;
+        if (homeFocusSink == null || homeFocusSink.getHeight() <= 0) return;
+        int boardH = chessBoard.getHeight();
+        int contentH = chessContent.getHeight();
+        if (boardH <= 0 || contentH <= 0) return;
+        int otherRowsH = contentH - boardH; // status + engine lines + transport + moves grid
+        float headerNow = headerOffset <= 0f ? headerFullH : Math.max(0f, headerFullH - headerOffset);
+        int viewportH = homeFocusSink.getHeight() - Math.round(headerNow);
+        int available = viewportH - otherRowsH;
+        // The fully-open header (menu swiped down) leaves the tightest fit — nudge the
+        // board a little larger there since the ScrollView can absorb a few extra px.
+        if (headerOffset <= 0f) available += UiKit.dp(this, 28);
+        int screenW = getResources().getDisplayMetrics().widthPixels;
+        int target = Math.min(screenW, available);
+        target = Math.max(UiKit.dp(this, 160), Math.min(screenW, target));
+        LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) chessBoard.getLayoutParams();
+        if (lp.width != target || lp.gravity != Gravity.CENTER_HORIZONTAL) {
+            lp.width = target;
+            lp.gravity = Gravity.CENTER_HORIZONTAL; // don't rely on inheriting content's gravity
+            chessBoard.setLayoutParams(lp);
+        }
+    }
+
     private void chessOpenSettings() {
-        new AlertDialog.Builder(this)
-                .setTitle("Chess")
-                .setItems(new String[]{"Import PGN", "Export PGN", "Board theme", "Piece theme"}, (d, which) -> {
-                    if (which == 0) chessImportPgn();
-                    else if (which == 1) chessExportPgn();
-                    else if (which == 2) chessChooseBoard();
-                    else chessChoosePieces();
-                }).show();
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackground(UiKit.dialogBackground(this));
+        UiKit.clipRounded(this, root, UiKit.R_MD);
+        root.setPadding(2, 32, 2, UiKit.dp(this, UiKit.R_MD));
+        root.addView(UiKit.dialogTitle(this, "Chess"));
+
+        LinearLayout rows = new LinearLayout(this);
+        rows.setOrientation(LinearLayout.VERTICAL);
+        ScrollView scroller = new ScrollView(this);
+        scroller.addView(rows, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        root.addView(scroller);
+
+        AlertDialog dialog = new AlertDialog.Builder(this).setView(root).create();
+        UiKit.clearDialogChrome(dialog);
+        renderChessSettingsRows(rows, dialog);
+        root.addView(chessSettingsRow("Close", v -> dialog.dismiss()));
+        dialog.show();
+        UiKit.unboxDialog(root);
+        if (dialog.getWindow() != null) {
+            android.view.WindowManager.LayoutParams p = dialog.getWindow().getAttributes();
+            p.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.85);
+            dialog.getWindow().setAttributes(p);
+        }
+    }
+
+    private void renderChessSettingsRows(LinearLayout rows, AlertDialog dialog) {
+        rows.removeAllViews();
+        rows.addView(chessSettingsRow("Import PGN", v -> { dialog.dismiss(); chessImportPgn(); }));
+        rows.addView(chessSettingsRow("Export PGN", v -> { dialog.dismiss(); chessExportPgn(); }));
+        rows.addView(chessSettingsRow("Board theme: " + chessSelectedBoard,
+                v -> { dialog.dismiss(); chessChooseBoard(); }));
+        rows.addView(chessSettingsRow("Piece theme: " + ChessBoardView.pretty(chessSelectedPieces),
+                v -> { dialog.dismiss(); chessChoosePieces(); }));
+        rows.addView(UiKit.dialogTitle(this, "Engine"));
+        int depth = Config.getChessEngineDepth(this);
+        rows.addView(chessSettingsRow("Engine depth: " + depth, v -> {
+            Config.setChessEngineDepth(this, nextChessDepth(depth));
+            chessBoard.requestAnalysis();
+            renderChessSettingsRows(rows, dialog);
+        }));
+        int lines = Config.getChessAnalysisLines(this);
+        rows.addView(chessSettingsRow("Variations shown: " + lines, v -> {
+            Config.setChessAnalysisLines(this, lines >= 5 ? 1 : lines + 1);
+            chessBoard.requestAnalysis();
+            renderChessSettingsRows(rows, dialog);
+        }));
+        boolean coords = Config.getChessShowCoords(this);
+        rows.addView(chessSettingsRow("Board coordinates: " + (coords ? "On" : "Off"), v -> {
+            Config.setChessShowCoords(this, !coords);
+            chessBoard.invalidate();
+            renderChessSettingsRows(rows, dialog);
+        }));
+    }
+
+    private static final int[] CHESS_DEPTH_STEPS = {8, 10, 12, 15, 18, 20, 24};
+
+    private int nextChessDepth(int current) {
+        for (int i = 0; i < CHESS_DEPTH_STEPS.length; i++) {
+            if (CHESS_DEPTH_STEPS[i] == current) return CHESS_DEPTH_STEPS[(i + 1) % CHESS_DEPTH_STEPS.length];
+        }
+        return CHESS_DEPTH_STEPS[0];
+    }
+
+    /** Matches {@code UiKit.promptRow}'s look — the app's one standard popup-row style. */
+    private TextView chessSettingsRow(String label, View.OnClickListener listener) {
+        TextView row = chessText(label, 20, Color.WHITE);
+        row.setPadding(48, 32, 48, 32);
+        StateListDrawable bg = new StateListDrawable();
+        bg.addState(new int[]{android.R.attr.state_pressed}, new ColorDrawable(Color.DKGRAY));
+        bg.addState(new int[]{}, new ColorDrawable(Color.BLACK));
+        row.setBackground(bg);
+        row.setOnClickListener(listener);
+        return row;
+    }
+
+    /** Same rounded-sheet chrome as {@link #chessOpenSettings}, for a plain pick-one list. */
+    private void chessOptionSheet(String title, String[] labels, java.util.function.IntConsumer onPick) {
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackground(UiKit.dialogBackground(this));
+        UiKit.clipRounded(this, root, UiKit.R_MD);
+        root.setPadding(2, 32, 2, UiKit.dp(this, UiKit.R_MD));
+        root.addView(UiKit.dialogTitle(this, title));
+
+        LinearLayout rows = new LinearLayout(this);
+        rows.setOrientation(LinearLayout.VERTICAL);
+        ScrollView scroller = new ScrollView(this);
+        scroller.addView(rows, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        root.addView(scroller);
+
+        AlertDialog dialog = new AlertDialog.Builder(this).setView(root).create();
+        UiKit.clearDialogChrome(dialog);
+        for (int i = 0; i < labels.length; i++) {
+            final int index = i;
+            rows.addView(chessSettingsRow(labels[i], v -> { dialog.dismiss(); onPick.accept(index); }));
+        }
+        dialog.show();
+        UiKit.unboxDialog(root);
+        if (dialog.getWindow() != null) {
+            android.view.WindowManager.LayoutParams p = dialog.getWindow().getAttributes();
+            p.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.85);
+            android.view.WindowManager.LayoutParams attrs = p;
+            attrs.height = (int) (getResources().getDisplayMetrics().heightPixels * 0.7);
+            dialog.getWindow().setAttributes(attrs);
+        }
     }
 
     private void chessChooseBoard() {
@@ -1226,12 +1359,10 @@ public class MainActivity extends Activity implements SelectionHost {
         options.add(0, new String[]{"default", "Slate Study"});
         String[] labels = new String[options.size()];
         for (int i = 0; i < labels.length; i++) labels[i] = options.get(i)[1];
-        new AlertDialog.Builder(this).setTitle("Board theme")
-                .setItems(labels, (d, which) -> {
-                    chessSelectedBoard = options.get(which)[1];
-                    chessBoard.setBoardTheme(options.get(which)[0]);
-                    chessUpdateThemeLine();
-                }).show();
+        chessOptionSheet("Board theme", labels, which -> {
+            chessSelectedBoard = options.get(which)[1];
+            chessBoard.setBoardTheme(options.get(which)[0]);
+        });
     }
 
     private void chessChoosePieces() {
@@ -1240,16 +1371,10 @@ public class MainActivity extends Activity implements SelectionHost {
         Collections.sort(folders);
         String[] labels = new String[folders.size()];
         for (int i = 0; i < labels.length; i++) labels[i] = ChessBoardView.pretty(folders.get(i));
-        new AlertDialog.Builder(this).setTitle("Piece theme")
-                .setItems(labels, (d, which) -> {
-                    chessSelectedPieces = folders.get(which);
-                    chessBoard.setPieceTheme(chessSelectedPieces);
-                    chessUpdateThemeLine();
-                }).show();
-    }
-
-    private void chessUpdateThemeLine() {
-        chessThemeLine.setText(chessSelectedBoard + " · " + ChessBoardView.pretty(chessSelectedPieces));
+        chessOptionSheet("Piece theme", labels, which -> {
+            chessSelectedPieces = folders.get(which);
+            chessBoard.setPieceTheme(chessSelectedPieces);
+        });
     }
 
     private void chessImportPgn() {
@@ -1332,7 +1457,6 @@ public class MainActivity extends Activity implements SelectionHost {
         if (chessBoard == null || chessTurnLine == null) return;
         String gameOver = chessBoard.gameOverText();
         chessTurnLine.setText(gameOver != null ? gameOver : chessBoard.whiteToMove() ? "White to move" : "Black to move");
-        chessMoveLine.setText("Move " + chessBoard.cursor() + " / " + chessBoard.totalMoves());
         List<String> engineLines = chessBoard.engineSummary();
         for (int i = 0; i < chessEngineLines.length; i++) {
             boolean has = i < engineLines.size();

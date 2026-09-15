@@ -95,14 +95,16 @@ final class StockfishEngine {
     /** The top {@code lines} candidate moves (not just the single best one), each with its own
      *  evaluation and principal variation, ranked best-first — this is what an engine panel
      *  actually shows, as opposed to {@link #bestOf} which only ever needs the single winner
-     *  among a restricted set of squares. */
-    synchronized List<Analysis> analyzeMultiPv(String fen, int movetimeMs, int lines) throws IOException {
+     *  among a restricted set of squares. A depth limit (not a time budget) since this is the
+     *  user-facing "engine depth" setting — Stockfish's own iterative deepening stops itself
+     *  once it completes that depth, so there's no runaway search to guard against. */
+    synchronized List<Analysis> analyzeMultiPv(String fen, int targetDepth, int lines) throws IOException {
         if (lines != lastMultiPv) {
             send("setoption name MultiPV value " + lines);
             lastMultiPv = lines;
         }
         send("position fen " + fen);
-        send("go movetime " + movetimeMs);
+        send("go depth " + targetDepth);
         // Index 0 unused; UCI's multipv numbering starts at 1, and keeping the same numbering
         // here avoids an off-by-one every time a line is read back out of this array.
         Analysis[] slots = new Analysis[lines + 1];

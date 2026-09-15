@@ -128,14 +128,24 @@ final class ChessBoardView extends View {
         setMeasuredDimension(width, width);
     }
 
+    /** Gutter reserved for the a-h / 1-8 edge labels, on all four sides equally so the
+     *  checkerboard itself stays a centered square inside this (also square) view instead of
+     *  hugging one corner — zero when coordinates are hidden, so the board then fills the
+     *  whole view with no dead space at all. */
+    private float margin() {
+        return Config.getChessShowCoords(host) ? UiKit.dp(host, 20) : 0f;
+    }
+
+    private float cellSize() {
+        return (getWidth() - 2 * margin()) / 8f;
+    }
+
     @Override protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
-        float marginLeft = UiKit.dp(host, 20);
-        float side = getWidth() - marginLeft;
-        float cell = side / 8f;
-        float top = 0;
+        float margin = margin();
+        float cell = cellSize();
         for (int row = 0; row < 8; row++) for (int col = 0; col < 8; col++) {
-            float l = marginLeft + col * cell, t = top + row * cell;
+            float l = margin + col * cell, t = margin + row * cell;
             boolean isLight = ((row + col) & 1) == 0;
             if (boardLightTile != null) {
                 Bitmap tile = isLight ? boardLightTile : boardDarkTile;
@@ -145,22 +155,24 @@ final class ChessBoardView extends View {
                 canvas.drawRect(l, t, l + cell, t + cell, paint);
             }
         }
-        drawHints(canvas, marginLeft, top, cell);
+        drawHints(canvas, margin, margin, cell);
         for (int row = 0; row < 8; row++) for (int col = 0; col < 8; col++) {
             if (position[row][col] != 0 && !(draggingPiece && row == dragRow && col == dragCol)) {
-                drawPiece(canvas, position[row][col], marginLeft + col * cell, top + row * cell, cell);
+                drawPiece(canvas, position[row][col], margin + col * cell, margin + row * cell, cell);
             }
         }
         if (draggingPiece && in(dragRow, dragCol) && position[dragRow][dragCol] != 0) {
             // Hold the piece slightly above the finger, like chess.com, so its destination stays visible.
             drawPiece(canvas, position[dragRow][dragCol], dragX - cell / 2f, dragY - cell * .70f, cell);
         }
-        coordPaint.setTextSize(UiKit.dp(host, 13));
-        coordPaint.setColor(0xFFBDBDBD);
-        coordPaint.setTextAlign(Paint.Align.CENTER);
-        for (int col = 0; col < 8; col++) canvas.drawText(String.valueOf((char)('a' + col)), marginLeft + (col + .5f) * cell, side + UiKit.dp(host, 15), coordPaint);
-        coordPaint.setTextAlign(Paint.Align.RIGHT);
-        for (int row = 0; row < 8; row++) canvas.drawText(String.valueOf(8 - row), marginLeft - UiKit.dp(host, 7), top + (row + .62f) * cell, coordPaint);
+        if (Config.getChessShowCoords(host)) {
+            coordPaint.setTextSize(UiKit.dp(host, 13));
+            coordPaint.setColor(0xFFBDBDBD);
+            coordPaint.setTextAlign(Paint.Align.CENTER);
+            for (int col = 0; col < 8; col++) canvas.drawText(String.valueOf((char)('a' + col)), margin + (col + .5f) * cell, margin + 8 * cell + UiKit.dp(host, 15), coordPaint);
+            coordPaint.setTextAlign(Paint.Align.RIGHT);
+            for (int row = 0; row < 8; row++) canvas.drawText(String.valueOf(8 - row), margin - UiKit.dp(host, 7), margin + (row + .62f) * cell, coordPaint);
+        }
     }
 
     private void drawHints(Canvas c, float left, float top, float cell) {
@@ -209,11 +221,11 @@ final class ChessBoardView extends View {
     }
 
     @Override public boolean onTouchEvent(android.view.MotionEvent event) {
-        float left = UiKit.dp(host, 20), cell = (getWidth() - left) / 8f;
+        float margin = margin(), cell = cellSize();
         doubleTap.onTouchEvent(event);
         if (event.getAction() == android.view.MotionEvent.ACTION_DOWN) {
             downX = event.getX(); downY = event.getY();
-            dragCol = (int) ((downX - left) / cell); dragRow = (int) (downY / cell);
+            dragCol = (int) ((downX - margin) / cell); dragRow = (int) ((downY - margin) / cell);
             boolean grabbedPiece = gameOverText == null && in(dragRow, dragCol) && position[dragRow][dragCol] != 0
                     && Character.isUpperCase(position[dragRow][dragCol]) == whiteTurn;
             if (grabbedPiece) {
@@ -237,7 +249,7 @@ final class ChessBoardView extends View {
             return true;
         }
         if (event.getAction() != android.view.MotionEvent.ACTION_UP) return true;
-        int col = (int) ((event.getX() - left) / cell), row = (int) (event.getY() / cell);
+        int col = (int) ((event.getX() - margin) / cell), row = (int) ((event.getY() - margin) / cell);
         if (!in(row, col)) {
             dragRow = dragCol = -1;
             draggingPiece = false;
@@ -317,8 +329,8 @@ final class ChessBoardView extends View {
      *  local material-only search only ever runs as a fallback if the engine can't answer. */
     private boolean handleDoubleTap(android.view.MotionEvent e) {
         if (gameOverText != null || thinkingAboutDoubleTap) return false;
-        float left = UiKit.dp(host, 20), cell = (getWidth() - left) / 8f;
-        int col = (int) ((e.getX() - left) / cell), row = (int) (e.getY() / cell);
+        float margin = margin(), cell = cellSize();
+        int col = (int) ((e.getX() - margin) / cell), row = (int) ((e.getY() - margin) / cell);
         if (!in(row, col)) return false;
         char occupant = position[row][col];
         if (occupant != 0 && Character.isUpperCase(occupant) == whiteTurn) return false;
@@ -394,25 +406,24 @@ final class ChessBoardView extends View {
         return coordinate(fromRow, fromCol) + coordinate(toRow, toCol) + (promotes ? "q" : "");
     }
 
-    // Longer than the double-tap's own search budget since nothing is waiting on this —
-    // it just needs to land before the *next* move, not before the current gesture ends.
-    private static final int ANALYSIS_MOVETIME_MS = 700;
-    private static final int ANALYSIS_LINES = 3;
     private static final int ANALYSIS_PLIES = 10;
 
     /** Kicks off a background evaluation of the position now on screen and, once it lands,
      *  updates {@link #engineSummary} and re-runs {@code onChanged} so the host redraws its
      *  status line — unless the position has since moved on again, in which case this
-     *  generation's result is simply dropped rather than showing stale analysis. */
-    private void requestAnalysis() {
+     *  generation's result is simply dropped rather than showing stale analysis. Depth and
+     *  line count come from {@link Config} so the settings screen can change them live. */
+    void requestAnalysis() {
         int generation = ++analysisGeneration;
         String fen = toFen();
+        int depth = Config.getChessEngineDepth(host);
+        int lines = Config.getChessAnalysisLines(host);
         new Thread(() -> {
             List<String> summary;
             try {
-                List<StockfishEngine.Analysis> lines =
-                        StockfishEngine.get(host).analyzeMultiPv(fen, ANALYSIS_MOVETIME_MS, ANALYSIS_LINES);
-                summary = formatAnalysis(lines);
+                List<StockfishEngine.Analysis> pvLines =
+                        StockfishEngine.get(host).analyzeMultiPv(fen, depth, lines);
+                summary = formatAnalysis(pvLines);
             } catch (Exception e) {
                 summary = new ArrayList<>();
             }

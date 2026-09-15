@@ -35,15 +35,7 @@ final class MovesGrid extends LinearLayout {
         Activity host = (Activity) getContext();
         removeAllViews();
         List<String> moves = board.movesList();
-        if (moves.isEmpty()) {
-            TextView empty = new TextView(host);
-            empty.setText("Tap a piece, then a marked square");
-            empty.setTypeface(Fonts.current(host));
-            empty.setTextSize(TEXT_SP);
-            empty.setTextColor(0xFFDADADA);
-            addView(empty);
-            return;
-        }
+        if (moves.isEmpty()) return;
         // One text-line's own rendered height stands in for "1 unit" of space, so
         // gaps scale with whatever font size/scale the device is actually using.
         android.graphics.Paint metrics = new android.graphics.Paint();
