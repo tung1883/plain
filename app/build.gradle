@@ -12,6 +12,18 @@ android {
         targetSdk 34
         versionCode 1
         versionName "0.1"
+        ndk {
+            // Bundled Stockfish binary (jniLibs/arm64-v8a/libstockfish.so) is arm64 only —
+            // don't let the build claim ABIs we haven't compiled a copy for.
+            abiFilters "arm64-v8a"
+        }
+    }
+
+    // Stockfish must land on disk as a real executable file, not stay zipped inside the
+    // APK the way an actual .so normally would — Process.exec() can't run a compressed
+    // entry, and the packager only decompresses jniLibs when this is set.
+    packagingOptions {
+        jniLibs { useLegacyPackaging true }
     }
 
     buildTypes {

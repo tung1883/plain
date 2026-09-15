@@ -50,6 +50,8 @@ final class PanelKind {
                     (c, h, x) -> new ScreenPanel(devLabel(c, h), h)),
             new PanelKind("notes", "Notes", false,
                     (c, h, x) -> new NotesPanel()),
+            new PanelKind("chess", "Chess", false,
+                    (c, h, x) -> new ChessPanel()),
             new PanelKind("todo", "To-do", false,
                     (c, h, x) -> new TodoPanel()),
             new PanelKind("recorder", "Recorder", false,

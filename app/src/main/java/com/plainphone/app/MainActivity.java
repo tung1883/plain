@@ -107,9 +107,10 @@ public class MainActivity extends Activity implements SelectionHost {
     private StatsPanel statsPanel;
     private boolean statsPanelShown;
     private View chessPanel;
-    private ChessActivity.ChessBoardView chessBoard;
+    private ChessBoardView chessBoard;
     private TextView chessTurnLine, chessMoveLine, chessThemeLine;
-    private ChessActivity.MovesGrid chessMovesGrid;
+    private TextView[] chessEngineLines;
+    private MovesGrid chessMovesGrid;
     private String chessSelectedBoard = "Slate Study";
     private String chessSelectedPieces = "neo";
 
@@ -1122,7 +1123,7 @@ public class MainActivity extends Activity implements SelectionHost {
         panel.addView(content, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        chessBoard = new ChessActivity.ChessBoardView(this, this::updateChessHomeUi);
+        chessBoard = new ChessBoardView(this, this::updateChessHomeUi);
         chessBoard.setPieceTheme("neo");
         // Keep the entire study in the Home viewport: no vertical scroll container may steal a drag.
         content.addView(chessBoard, new LinearLayout.LayoutParams(
@@ -1136,6 +1137,18 @@ public class MainActivity extends Activity implements SelectionHost {
         chessMoveLine = chessText("Move 0 / 0", 15, 0xFFDDDDDD);
         status.addView(chessMoveLine, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         content.addView(status);
+
+        chessEngineLines = new TextView[3];
+        for (int i = 0; i < chessEngineLines.length; i++) {
+            TextView line = chessText("", 13, 0xFF8FBF8F);
+            line.setPadding(48, 0, 48, i == chessEngineLines.length - 1 ? UiKit.dp(this, 10) : 0);
+            line.setSingleLine(true);
+            line.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            line.setVisibility(View.GONE);
+            chessEngineLines[i] = line;
+            content.addView(line);
+        }
+
         content.addView(chessRule(), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1));
 
         LinearLayout transport = new LinearLayout(this);
@@ -1165,7 +1178,7 @@ public class MainActivity extends Activity implements SelectionHost {
             transport.addView(button, new LinearLayout.LayoutParams(0, UiKit.dp(this, 42), 1f));
         }
         content.addView(transport);
-        chessMovesGrid = new ChessActivity.MovesGrid(this, chessBoard, this::updateChessHomeUi);
+        chessMovesGrid = new MovesGrid(this, chessBoard, this::updateChessHomeUi);
         chessMovesGrid.setPadding(48, UiKit.dp(this, 12), 48, UiKit.dp(this, 12));
         content.addView(chessMovesGrid, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -1181,7 +1194,7 @@ public class MainActivity extends Activity implements SelectionHost {
         actions.addView(settings, new LinearLayout.LayoutParams(UiKit.dp(this, 44), UiKit.dp(this, 44)));
         content.addView(actions);
 
-        chessThemeLine = chessText(chessSelectedBoard + " · " + ChessActivity.pretty(chessSelectedPieces), 12, 0xFFAAAAAA);
+        chessThemeLine = chessText(chessSelectedBoard + " · " + ChessBoardView.pretty(chessSelectedPieces), 12, 0xFFAAAAAA);
         chessThemeLine.setGravity(Gravity.RIGHT);
         chessThemeLine.setPadding(0, UiKit.dp(this, 2), UiKit.dp(this, 6), 0);
         content.addView(chessThemeLine);
@@ -1205,7 +1218,7 @@ public class MainActivity extends Activity implements SelectionHost {
             for (String name : getAssets().list("chess_theme/board")) {
                 if (!name.endsWith(".png")) continue;
                 String slug = name.substring(6, name.length() - 4);
-                options.add(new String[]{slug, ChessActivity.pretty(slug)});
+                options.add(new String[]{slug, ChessBoardView.pretty(slug)});
             }
         } catch (Exception ignored) { }
         Collections.sort(options, (a, b) -> a[1].compareTo(b[1]));
@@ -1225,7 +1238,7 @@ public class MainActivity extends Activity implements SelectionHost {
         try { folders.addAll(Arrays.asList(getAssets().list("chess_theme/pieces"))); } catch (Exception ignored) { }
         Collections.sort(folders);
         String[] labels = new String[folders.size()];
-        for (int i = 0; i < labels.length; i++) labels[i] = ChessActivity.pretty(folders.get(i));
+        for (int i = 0; i < labels.length; i++) labels[i] = ChessBoardView.pretty(folders.get(i));
         new AlertDialog.Builder(this).setTitle("Piece theme")
                 .setItems(labels, (d, which) -> {
                     chessSelectedPieces = folders.get(which);
@@ -1235,7 +1248,7 @@ public class MainActivity extends Activity implements SelectionHost {
     }
 
     private void chessUpdateThemeLine() {
-        chessThemeLine.setText(chessSelectedBoard + " · " + ChessActivity.pretty(chessSelectedPieces));
+        chessThemeLine.setText(chessSelectedBoard + " · " + ChessBoardView.pretty(chessSelectedPieces));
     }
 
     private void chessImportPgn() {
@@ -1319,6 +1332,12 @@ public class MainActivity extends Activity implements SelectionHost {
         String gameOver = chessBoard.gameOverText();
         chessTurnLine.setText(gameOver != null ? gameOver : chessBoard.whiteToMove() ? "White to move" : "Black to move");
         chessMoveLine.setText("Move " + chessBoard.cursor() + " / " + chessBoard.totalMoves());
+        List<String> engineLines = chessBoard.engineSummary();
+        for (int i = 0; i < chessEngineLines.length; i++) {
+            boolean has = i < engineLines.size();
+            chessEngineLines[i].setVisibility(has ? View.VISIBLE : View.GONE);
+            if (has) chessEngineLines[i].setText(engineLines.get(i));
+        }
         chessMovesGrid.refresh();
     }
 
