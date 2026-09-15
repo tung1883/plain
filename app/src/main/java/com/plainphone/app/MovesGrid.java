@@ -219,12 +219,17 @@ final class MovesGrid extends LinearLayout {
     }
 
     /** "(2...Nf6)" or "(3.Nc3 Bc5)" — a dimmed, indented, parenthesized flattening of a
-     *  variation's own moves, tappable to jump straight to its tip. If the board is
-     *  currently showing a position inside this exact variation, that one move (and only
-     *  that one) turns white — the row itself never moves or changes position for it. */
+     *  variation's own moves. Every move in it is its own tap target (jumps straight to
+     *  that exact ply, not just the line's tip) via a {@link android.text.style.ClickableSpan}
+     *  per move; long-press maps the touch position back to whichever move it landed on for
+     *  its own delete/promote menu. If the board is currently showing a position inside this
+     *  exact variation, that one move (and only that one) turns white — the row itself
+     *  never moves or changes position for it. */
     private View buildVariationRow(Activity host, ChessBoardView.DisplayLine line, ChessBoardView.MoveNode currentNode) {
         TextView text = new TextView(host);
         text.setText(formatVariation(line, currentNode));
+        text.setMovementMethod(android.text.method.LinkMovementMethod.getInstance());
+        text.setHighlightColor(Color.TRANSPARENT); // no link-press flash — matches the plain cells
         text.setTypeface(Fonts.current(host));
         text.setTextSize(VARIATION_SP);
         text.setTextColor(0xFF4A4A4A);
@@ -232,15 +237,46 @@ final class MovesGrid extends LinearLayout {
         int pad = UiKit.dp(host, 18);
         text.setPadding(pad, UiKit.dp(host, 4), 0, UiKit.dp(host, 4));
         if (line.nodes.contains(currentNode)) currentCellView = text;
-        text.setOnClickListener(v -> {
-            board.jumpToNode(line.nodes.get(line.nodes.size() - 1));
-            if (afterJump != null) afterJump.run();
+
+        android.view.GestureDetector longPress = new android.view.GestureDetector(host,
+                new android.view.GestureDetector.SimpleOnGestureListener() {
+            @Override public void onLongPress(android.view.MotionEvent e) {
+                int offset = text.getOffsetForPosition(e.getX(), e.getY());
+                ChessBoardView.MoveNode node = nodeAtOffset(text, offset);
+                showMoveMenu(host, node != null ? node : line.nodes.get(0), true);
+            }
         });
-        text.setOnLongClickListener(v -> {
-            showMoveMenu(host, line.nodes.get(0), true);
-            return true;
+        text.setOnTouchListener((v, e) -> {
+            longPress.onTouchEvent(e);
+            return false; // ClickableSpan taps still go through LinkMovementMethod normally
         });
         return text;
+    }
+
+    /** Which move's {@link MoveSpan} (if any) covers a character offset — used to turn a
+     *  long-press's raw touch coordinates into "the move the finger landed on". */
+    private ChessBoardView.MoveNode nodeAtOffset(TextView text, int offset) {
+        CharSequence cs = text.getText();
+        if (!(cs instanceof android.text.Spanned)) return null;
+        android.text.Spanned spanned = (android.text.Spanned) cs;
+        for (MoveSpan span : spanned.getSpans(offset, offset, MoveSpan.class)) return span.node;
+        return null;
+    }
+
+    /** A tap on exactly this move's text jumps the board straight to it — one span per move
+     *  in a variation, so unlike the row's old single whole-string tap target, tapping move
+     *  2 of a 3-move sideline lands on move 2, not the sideline's tip. */
+    private final class MoveSpan extends android.text.style.ClickableSpan {
+        final ChessBoardView.MoveNode node;
+        MoveSpan(ChessBoardView.MoveNode node) { this.node = node; }
+        @Override public void onClick(View widget) {
+            board.jumpToNode(node);
+            if (afterJump != null) afterJump.run();
+        }
+        @Override public void updateDrawState(android.text.TextPaint ds) {
+            // Leave color/underline alone — formatVariation's own ForegroundColorSpan (and
+            // the surrounding dimmed italic style) already says everything this needs to.
+        }
     }
 
     private CharSequence formatVariation(ChessBoardView.DisplayLine line, ChessBoardView.MoveNode currentNode) {
@@ -260,9 +296,11 @@ final class MovesGrid extends LinearLayout {
             }
             int start = sb.length();
             sb.append(node.san);
+            int end = sb.length();
+            sb.setSpan(new MoveSpan(node), start, end, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             if (node == currentNode) {
                 sb.setSpan(new android.text.style.ForegroundColorSpan(Color.WHITE),
-                        start, sb.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                        start, end, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             }
             ply++;
         }
