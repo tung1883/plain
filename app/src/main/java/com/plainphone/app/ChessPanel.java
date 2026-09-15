@@ -8,6 +8,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 
 import java.util.ArrayList;
@@ -121,7 +122,12 @@ final class ChessPanel implements PanelContent {
             try { StockfishEngine.get(host); } catch (Exception ignored) { }
         }).start();
 
-        return content;
+        ScrollView scroll = new ScrollView(host);
+        scroll.setFillViewport(true);
+        scroll.setBackgroundColor(Color.BLACK);
+        scroll.addView(content, new ScrollView.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        return scroll;
     }
 
     private LinearLayout.LayoutParams matchWrap() {

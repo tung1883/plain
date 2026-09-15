@@ -38,6 +38,7 @@ import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.ProgressBar;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -1113,19 +1114,19 @@ public class MainActivity extends Activity implements SelectionHost {
     }
 
     private View buildChessPanel() {
-        LinearLayout panel = new LinearLayout(this);
-        panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setGravity(Gravity.CENTER_HORIZONTAL);
+        ScrollView panel = new ScrollView(this);
+        panel.setFillViewport(true);
         panel.setBackgroundColor(Color.BLACK);
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
+        content.setGravity(Gravity.CENTER_HORIZONTAL);
         content.setPadding(0, UiKit.dp(this, 8), 0, 0);
-        panel.addView(content, new LinearLayout.LayoutParams(
+        panel.addView(content, new ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         chessBoard = new ChessBoardView(this, this::updateChessHomeUi);
         chessBoard.setPieceTheme("neo");
-        // Keep the entire study in the Home viewport: no vertical scroll container may steal a drag.
+        // Moves are made by double-tap, not drag, so the ScrollView above can't steal a gesture.
         content.addView(chessBoard, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 

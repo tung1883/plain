@@ -214,14 +214,16 @@ final class ChessBoardView extends View {
         if (event.getAction() == android.view.MotionEvent.ACTION_DOWN) {
             downX = event.getX(); downY = event.getY();
             dragCol = (int) ((downX - left) / cell); dragRow = (int) (downY / cell);
-            if (gameOverText == null && in(dragRow, dragCol) && position[dragRow][dragCol] != 0
-                    && Character.isUpperCase(position[dragRow][dragCol]) == whiteTurn) {
+            boolean grabbedPiece = gameOverText == null && in(dragRow, dragCol) && position[dragRow][dragCol] != 0
+                    && Character.isUpperCase(position[dragRow][dragCol]) == whiteTurn;
+            if (grabbedPiece) {
                 selectedRow = dragRow; selectedCol = dragCol;
                 invalidate(); // Selection never tints pieces; it only reveals move dots.
             }
-            // The board owns every gesture that starts on it — picking up a piece,
-            // tapping a destination, whatever — never let the section swiper steal it.
-            getParent().requestDisallowInterceptTouchEvent(true);
+            // Only steal the gesture from the enclosing scroll/swiper when there's an actual
+            // piece to drag — a plain tap (destination square, empty square) stays small
+            // enough that neither ScrollView nor the section swiper would intercept it anyway.
+            if (grabbedPiece) getParent().requestDisallowInterceptTouchEvent(true);
             return true;
         }
         if (event.getAction() == android.view.MotionEvent.ACTION_MOVE) {
