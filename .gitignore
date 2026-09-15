@@ -17,3 +17,6 @@ design/
 # ccpit
 TODO.md
 PLAN.md
+
+# fetched by app/build.gradle:fetchStockfish, not tracked (100MB binary)
+app/src/main/jniLibs/arm64-v8a/libstockfish.so
