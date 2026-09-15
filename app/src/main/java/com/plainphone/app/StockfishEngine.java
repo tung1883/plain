@@ -112,12 +112,24 @@ final class StockfishEngine {
     // reaches targetDepth first.
     private static final int ANALYSIS_MOVETIME_CAP_MS = 1500;
 
+    /** Fed a growing snapshot of the current best lines as the search goes deeper, so a
+     *  caller can show shallow results immediately instead of waiting for the whole search
+     *  to finish — see {@link #analyzeMultiPv}. */
+    interface AnalysisListener {
+        void onUpdate(List<Analysis> partial);
+    }
+
     /** The top {@code lines} candidate moves (not just the single best one), each with its own
      *  evaluation and principal variation, ranked best-first — this is what an engine panel
      *  actually shows, as opposed to {@link #bestOf} which only ever needs the single winner
      *  among a restricted set of squares. Depth is the user-facing "engine depth" setting;
-     *  see {@link #ANALYSIS_MOVETIME_CAP_MS} for why it's still paired with a time cap. */
-    synchronized List<Analysis> analyzeMultiPv(String fen, int targetDepth, int lines) throws IOException {
+     *  see {@link #ANALYSIS_MOVETIME_CAP_MS} for why it's still paired with a time cap.
+     *  {@code listener}, if given, is called on THIS thread every time any line's result
+     *  changes — Stockfish's iterative deepening reports depth 1, then 2, then 3... each a
+     *  little slower than the last, so the caller can paint something within a fraction of a
+     *  second and let it keep sharpening while the position is still the one on screen,
+     *  rather than showing nothing until the full budget (or {@code targetDepth}) is spent. */
+    synchronized List<Analysis> analyzeMultiPv(String fen, int targetDepth, int lines, AnalysisListener listener) throws IOException {
         if (lines != lastMultiPv) {
             send("setoption name MultiPV value " + lines);
             lastMultiPv = lines;
@@ -154,8 +166,13 @@ final class StockfishEngine {
             // slot's deepest completed result.
             if (pv != null && !pv.isEmpty() && multipv >= 1 && multipv < slots.length) {
                 slots[multipv] = new Analysis(cp, mate, depth, pv);
+                if (listener != null) listener.onUpdate(snapshot(slots));
             }
         }
+        return snapshot(slots);
+    }
+
+    private List<Analysis> snapshot(Analysis[] slots) {
         List<Analysis> result = new ArrayList<>();
         for (int i = 1; i < slots.length; i++) if (slots[i] != null) result.add(slots[i]);
         return result;

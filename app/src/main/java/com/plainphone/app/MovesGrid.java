@@ -68,8 +68,18 @@ final class MovesGrid extends LinearLayout {
             post(() -> {
                 if (!(getParent() instanceof android.widget.ScrollView)) return;
                 android.widget.ScrollView scroll = (android.widget.ScrollView) getParent();
+                // post() delays this to the next frame — with analysis streaming several
+                // refresh() calls a second, a newer one can removeAllViews() (detaching
+                // `target` from the tree entirely) before this runs. Walking up would then
+                // hit a null parent and NPE on getTop(); bail instead if that's happened.
                 int y = 0;
-                for (View v = target; v != this; v = (View) v.getParent()) y += v.getTop();
+                View v = target;
+                while (v != null && v != this) {
+                    y += v.getTop();
+                    Object p = v.getParent();
+                    v = (p instanceof View) ? (View) p : null;
+                }
+                if (v != this) return;
                 // Bottom-align: shows the new move plus whatever context fits above it,
                 // rather than pinning it right at the top edge of the small window.
                 int dest = Math.max(0, y - scroll.getHeight() + target.getHeight());

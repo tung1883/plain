@@ -148,38 +148,50 @@ final class ChessBoardView extends View {
         return (getWidth() - 2 * margin()) / 8f;
     }
 
+    // The board's own position/castleRights normally only change on the UI thread — but
+    // the background analysis thread's pvToSan (formatting an engine line for display) and
+    // the double-tap fallback search both temporarily mutate `position` in place and undo
+    // it a moment later, same as legalMoves()'s own check-safety probe does live during a
+    // draw. Streamed analysis now calls that several times a second, so onDraw's read of
+    // `position` racing one of those temporary mutations is what could make a piece flash
+    // as missing or misplaced for a frame — this lock keeps a draw and a mutate-then-undo
+    // from ever interleaving.
+    private final Object positionLock = new Object();
+
     @Override protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
-        float margin = margin();
-        float cell = cellSize();
-        for (int row = 0; row < 8; row++) for (int col = 0; col < 8; col++) {
-            float l = margin + col * cell, t = margin + row * cell;
-            boolean isLight = ((row + col) & 1) == 0;
-            if (boardLightTile != null) {
-                Bitmap tile = isLight ? boardLightTile : boardDarkTile;
-                canvas.drawBitmap(tile, null, new RectF(l, t, l + cell, t + cell), piecePaint);
-            } else {
-                paint.setColor(isLight ? light : dark);
-                canvas.drawRect(l, t, l + cell, t + cell, paint);
+        synchronized (positionLock) {
+            float margin = margin();
+            float cell = cellSize();
+            for (int row = 0; row < 8; row++) for (int col = 0; col < 8; col++) {
+                float l = margin + col * cell, t = margin + row * cell;
+                boolean isLight = ((row + col) & 1) == 0;
+                if (boardLightTile != null) {
+                    Bitmap tile = isLight ? boardLightTile : boardDarkTile;
+                    canvas.drawBitmap(tile, null, new RectF(l, t, l + cell, t + cell), piecePaint);
+                } else {
+                    paint.setColor(isLight ? light : dark);
+                    canvas.drawRect(l, t, l + cell, t + cell, paint);
+                }
             }
-        }
-        drawHints(canvas, margin, margin, cell);
-        for (int row = 0; row < 8; row++) for (int col = 0; col < 8; col++) {
-            if (position[row][col] != 0 && !(draggingPiece && row == dragRow && col == dragCol)) {
-                drawPiece(canvas, position[row][col], margin + col * cell, margin + row * cell, cell);
+            drawHints(canvas, margin, margin, cell);
+            for (int row = 0; row < 8; row++) for (int col = 0; col < 8; col++) {
+                if (position[row][col] != 0 && !(draggingPiece && row == dragRow && col == dragCol)) {
+                    drawPiece(canvas, position[row][col], margin + col * cell, margin + row * cell, cell);
+                }
             }
-        }
-        if (draggingPiece && in(dragRow, dragCol) && position[dragRow][dragCol] != 0) {
-            // Hold the piece slightly above the finger, like chess.com, so its destination stays visible.
-            drawPiece(canvas, position[dragRow][dragCol], dragX - cell / 2f, dragY - cell * .70f, cell);
-        }
-        if (Config.getChessShowCoords(host)) {
-            coordPaint.setTextSize(UiKit.dp(host, 13));
-            coordPaint.setColor(0xFFBDBDBD);
-            coordPaint.setTextAlign(Paint.Align.CENTER);
-            for (int col = 0; col < 8; col++) canvas.drawText(String.valueOf((char)('a' + col)), margin + (col + .5f) * cell, margin + 8 * cell + UiKit.dp(host, 15), coordPaint);
-            coordPaint.setTextAlign(Paint.Align.RIGHT);
-            for (int row = 0; row < 8; row++) canvas.drawText(String.valueOf(8 - row), margin - UiKit.dp(host, 7), margin + (row + .62f) * cell, coordPaint);
+            if (draggingPiece && in(dragRow, dragCol) && position[dragRow][dragCol] != 0) {
+                // Hold the piece slightly above the finger, like chess.com, so its destination stays visible.
+                drawPiece(canvas, position[dragRow][dragCol], dragX - cell / 2f, dragY - cell * .70f, cell);
+            }
+            if (Config.getChessShowCoords(host)) {
+                coordPaint.setTextSize(UiKit.dp(host, 13));
+                coordPaint.setColor(0xFFBDBDBD);
+                coordPaint.setTextAlign(Paint.Align.CENTER);
+                for (int col = 0; col < 8; col++) canvas.drawText(String.valueOf((char)('a' + col)), margin + (col + .5f) * cell, margin + 8 * cell + UiKit.dp(host, 15), coordPaint);
+                coordPaint.setTextAlign(Paint.Align.RIGHT);
+                for (int row = 0; row < 8; row++) canvas.drawText(String.valueOf(8 - row), margin - UiKit.dp(host, 7), margin + (row + .62f) * cell, coordPaint);
+            }
         }
     }
 
@@ -467,7 +479,16 @@ final class ChessBoardView extends View {
                 // No engine available (process failed to start, wrong ABI, etc.) — the
                 // local heuristic below still gives a real, defensible answer.
             }
-            int[] fallback = chosen != null ? chosen : heumasPick(candidates, toRow, toCol);
+            // heumasPick's negamax search temporarily mutates the live position same as
+            // pvToSan does — same lock, same reason (only reached when Stockfish itself
+            // couldn't be asked).
+            int[] picked = chosen;
+            if (picked == null) {
+                synchronized (positionLock) {
+                    picked = heumasPick(candidates, toRow, toCol);
+                }
+            }
+            int[] fallback = picked;
             host.runOnUiThread(() -> {
                 thinkingAboutDoubleTap = false;
                 selectedRow = selectedCol = -1;
@@ -510,32 +531,46 @@ final class ChessBoardView extends View {
 
     private static final int ANALYSIS_PLIES = 10;
 
-    /** Kicks off a background evaluation of the position now on screen and, once it lands,
-     *  updates {@link #engineSummary} and re-runs {@code onChanged} so the host redraws its
-     *  status line — unless the position has since moved on again, in which case this
-     *  generation's result is simply dropped rather than showing stale analysis. Depth and
-     *  line count come from {@link Config} so the settings screen can change them live. */
+    /** Kicks off a background evaluation of the position now on screen and updates
+     *  {@link #engineSummary} (re-running {@code onChanged} so the host redraws its status
+     *  line) every time the search reports a deeper result, not just once at the very end —
+     *  Stockfish's iterative deepening reports depth 1, then 2, then 3 and so on, so this
+     *  paints something within a fraction of a second and keeps sharpening it for as long
+     *  as the position stays on screen, rather than showing nothing for the whole 1-2s
+     *  budget. Stale updates — the position has since moved on again — are simply dropped.
+     *  Depth and line count come from {@link Config} so the settings screen can change them
+     *  live. */
     void requestAnalysis() {
         int generation = ++analysisGeneration;
         String fen = toFen();
         int depth = Config.getChessEngineDepth(host);
         int lines = Config.getChessAnalysisLines(host);
         new Thread(() -> {
-            List<String> summary;
             try {
-                List<StockfishEngine.Analysis> pvLines =
-                        StockfishEngine.getAnalysis(host).analyzeMultiPv(fen, depth, lines);
-                summary = formatAnalysis(pvLines);
-            } catch (Exception e) {
-                summary = new ArrayList<>();
+                List<StockfishEngine.Analysis> result =
+                        StockfishEngine.getAnalysis(host).analyzeMultiPv(fen, depth, lines,
+                                partial -> paintAnalysis(generation, partial, lines));
+                paintAnalysis(generation, result, lines);
+            } catch (Exception ignored) {
+                // No engine available — engineSummary just stays whatever it last was
+                // (empty on a fresh position), same as before.
             }
-            List<String> finalSummary = summary;
-            host.runOnUiThread(() -> {
-                if (generation != analysisGeneration) return;
-                engineSummary = finalSummary;
-                onChanged.run();
-            });
         }).start();
+    }
+
+    private void paintAnalysis(int generation, List<StockfishEngine.Analysis> analysis, int lines) {
+        List<String> summary = formatAnalysis(analysis);
+        // Padded to exactly `lines` rows (blank ones for candidates the search hasn't found
+        // yet at this depth) so the engine-line block's height never fluctuates as they fill
+        // in — an early depth showing only line 1 would otherwise collapse the still-empty
+        // rows, which shrinks the fixed-rows block, which resizes the board: a visible
+        // horizontal jump every time a variation count changed.
+        while (summary.size() < lines) summary.add("");
+        host.runOnUiThread(() -> {
+            if (generation != analysisGeneration) return;
+            engineSummary = summary;
+            onChanged.run();
+        });
     }
 
     private List<String> formatAnalysis(List<StockfishEngine.Analysis> lines) {
@@ -554,7 +589,10 @@ final class ChessBoardView extends View {
             } else {
                 continue;
             }
-            out.add(evalText + " d" + a.depth + "  " + pvToSan(a.pvUci));
+            // Depth padded to a fixed width — "d2" is a character narrower than "d12", so
+            // without it the move sequence after it visibly shifts left/right as the
+            // (progressively streamed) search goes from single- to double-digit depth.
+            out.add(evalText + " d" + String.format("%-2d", a.depth) + "  " + pvToSan(a.pvUci));
         }
         return out;
     }
@@ -566,47 +604,52 @@ final class ChessBoardView extends View {
      *  affected by a line that was only ever meant to be read, not played. Capped at
      *  {@link #ANALYSIS_PLIES}; Stockfish's mainline can run far longer than that. */
     private String pvToSan(List<String> pvUci) {
-        List<UndoInfo> undos = new ArrayList<>();
-        List<int[]> squares = new ArrayList<>();
-        StringBuilder sb = new StringBuilder();
-        int plies = Math.min(pvUci.size(), ANALYSIS_PLIES);
-        int ply = current.ply() + 1; // the PV picks up right after the position on screen
-        for (int i = 0; i < plies; i++) {
-            String mv = pvUci.get(i);
-            if (mv.length() < 4) break;
-            int fromCol = mv.charAt(0) - 'a', fromRow = 8 - (mv.charAt(1) - '0');
-            int toCol = mv.charAt(2) - 'a', toRow = 8 - (mv.charAt(3) - '0');
-            if (!in(fromRow, fromCol) || !in(toRow, toCol)) break;
-            char moving = position[fromRow][fromCol];
-            if (moving == 0) break;
-            char captured = position[toRow][toCol];
-            boolean castle = Character.toUpperCase(moving) == 'K' && Math.abs(toCol - fromCol) == 2;
-            boolean promotes = Character.toUpperCase(moving) == 'P' && (toRow == 0 || toRow == 7);
-            String san = castle ? (toCol > fromCol ? "O-O" : "O-O-O")
-                    : sanFor(moving, fromRow, fromCol, toRow, toCol, captured != 0, promotes);
-            // Numbered the same way the move list is ("1. e4 e5 2. Nf3 Nc6"), continuing
-            // from whatever move number the displayed position is actually at rather than
-            // always restarting at 1 — this is a continuation from here, not a new game.
-            boolean whiteMove = (ply % 2) == 1;
-            int moveNum = (ply + 1) / 2;
-            if (whiteMove) {
-                if (i > 0) sb.append(' ');
-                sb.append(moveNum).append('.');
-            } else if (i == 0) {
-                sb.append(moveNum).append("...");
-            } else {
-                sb.append(' ');
+        // Called from the background analysis thread — everything here temporarily mutates
+        // the live `position`/`castleRights` fields (via rawApply/rawUndo and sanFor's own
+        // legalMoves probing), so it has to hold the same lock onDraw does.
+        synchronized (positionLock) {
+            List<UndoInfo> undos = new ArrayList<>();
+            List<int[]> squares = new ArrayList<>();
+            StringBuilder sb = new StringBuilder();
+            int plies = Math.min(pvUci.size(), ANALYSIS_PLIES);
+            int ply = current.ply() + 1; // the PV picks up right after the position on screen
+            for (int i = 0; i < plies; i++) {
+                String mv = pvUci.get(i);
+                if (mv.length() < 4) break;
+                int fromCol = mv.charAt(0) - 'a', fromRow = 8 - (mv.charAt(1) - '0');
+                int toCol = mv.charAt(2) - 'a', toRow = 8 - (mv.charAt(3) - '0');
+                if (!in(fromRow, fromCol) || !in(toRow, toCol)) break;
+                char moving = position[fromRow][fromCol];
+                if (moving == 0) break;
+                char captured = position[toRow][toCol];
+                boolean castle = Character.toUpperCase(moving) == 'K' && Math.abs(toCol - fromCol) == 2;
+                boolean promotes = Character.toUpperCase(moving) == 'P' && (toRow == 0 || toRow == 7);
+                String san = castle ? (toCol > fromCol ? "O-O" : "O-O-O")
+                        : sanFor(moving, fromRow, fromCol, toRow, toCol, captured != 0, promotes);
+                // Numbered the same way the move list is ("1. e4 e5 2. Nf3 Nc6"), continuing
+                // from whatever move number the displayed position is actually at rather than
+                // always restarting at 1 — this is a continuation from here, not a new game.
+                boolean whiteMove = (ply % 2) == 1;
+                int moveNum = (ply + 1) / 2;
+                if (whiteMove) {
+                    if (i > 0) sb.append(' ');
+                    sb.append(moveNum).append('.');
+                } else if (i == 0) {
+                    sb.append(moveNum).append("...");
+                } else {
+                    sb.append(' ');
+                }
+                sb.append(san);
+                undos.add(rawApply(fromRow, fromCol, toRow, toCol));
+                squares.add(new int[]{fromRow, fromCol, toRow, toCol});
+                ply++;
             }
-            sb.append(san);
-            undos.add(rawApply(fromRow, fromCol, toRow, toCol));
-            squares.add(new int[]{fromRow, fromCol, toRow, toCol});
-            ply++;
+            for (int i = undos.size() - 1; i >= 0; i--) {
+                int[] sq = squares.get(i);
+                rawUndo(sq[0], sq[1], sq[2], sq[3], undos.get(i));
+            }
+            return sb.toString();
         }
-        for (int i = undos.size() - 1; i >= 0; i--) {
-            int[] sq = squares.get(i);
-            rawUndo(sq[0], sq[1], sq[2], sq[3], undos.get(i));
-        }
-        return sb.toString();
     }
 
     /** How many plies deep a candidate is actually searched before picking a winner — our
