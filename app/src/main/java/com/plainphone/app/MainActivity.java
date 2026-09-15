@@ -109,8 +109,10 @@ public class MainActivity extends Activity implements SelectionHost {
     private boolean statsPanelShown;
     private View chessPanel;
     private ChessBoardView chessBoard;
-    private LinearLayout chessContent;
-    private ScrollView chessScroll;
+    // Everything above the moves grid (status, engine lines, transport) — its own measured
+    // height is what resizeChessBoardIfNeeded subtracts to size the board; the moves grid
+    // itself scrolls independently below it now, so its height must never factor in.
+    private LinearLayout chessFixedRows;
     private TextView chessTurnLine;
     private TextView[] chessEngineLines;
     private MovesGrid chessMovesGrid;
@@ -1116,6 +1118,11 @@ public class MainActivity extends Activity implements SelectionHost {
         });
     }
 
+    // Fixed height for the moves grid's own nested ScrollView — content's height must be
+    // WRAP_CONTENT to sit inside the outer panel ScrollView, so the grid can't use
+    // weight/0dp to flexibly fill leftover space the way it did without an outer scroll.
+    private static final int CHESS_MOVES_GRID_HEIGHT_DP = 140;
+
     private View buildChessPanel() {
         ScrollView panel = new ScrollView(this);
         panel.setFillViewport(true);
@@ -1129,8 +1136,12 @@ public class MainActivity extends Activity implements SelectionHost {
 
         chessBoard = new ChessBoardView(this, this::updateChessHomeUi);
         chessBoard.setPieceTheme("neo");
-        // Moves are made by double-tap, not drag, so the ScrollView above can't steal a gesture.
         content.addView(chessBoard, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        chessFixedRows = new LinearLayout(this);
+        chessFixedRows.setOrientation(LinearLayout.VERTICAL);
+        content.addView(chessFixedRows, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         LinearLayout status = new LinearLayout(this);
@@ -1144,7 +1155,7 @@ public class MainActivity extends Activity implements SelectionHost {
         chessSettingsIcon.setContentDescription("Chess settings");
         chessSettingsIcon.setOnClickListener(v -> chessOpenSettings());
         status.addView(chessSettingsIcon, new LinearLayout.LayoutParams(UiKit.dp(this, 36), UiKit.dp(this, 36)));
-        content.addView(status);
+        chessFixedRows.addView(status);
 
         chessEngineLines = new TextView[5]; // pool sized for the max "Variations shown" setting
         for (int i = 0; i < chessEngineLines.length; i++) {
@@ -1154,16 +1165,16 @@ public class MainActivity extends Activity implements SelectionHost {
             line.setEllipsize(android.text.TextUtils.TruncateAt.END);
             line.setVisibility(View.GONE);
             chessEngineLines[i] = line;
-            content.addView(line);
+            chessFixedRows.addView(line);
         }
         // Fixed gap below the analysis block, regardless of how many lines are actually
         // visible — padding tied to a specific pool slot broke once "Variations shown"
         // could be less than the pool size.
         View chessEngineGap = new View(this);
-        content.addView(chessEngineGap, new LinearLayout.LayoutParams(
+        chessFixedRows.addView(chessEngineGap, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, UiKit.dp(this, 10)));
 
-        content.addView(chessRule(), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1));
+        chessFixedRows.addView(chessRule(), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1));
 
         LinearLayout transport = new LinearLayout(this);
         transport.setGravity(Gravity.CENTER);
@@ -1191,38 +1202,54 @@ public class MainActivity extends Activity implements SelectionHost {
             });
             transport.addView(button, new LinearLayout.LayoutParams(0, UiKit.dp(this, 42), 1f));
         }
-        content.addView(transport);
+        chessFixedRows.addView(transport);
+        chessFixedRows.addView(chessRule(), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1));
+
         chessMovesGrid = new MovesGrid(this, chessBoard, this::updateChessHomeUi);
         chessMovesGrid.setPadding(48, UiKit.dp(this, 12), 48, UiKit.dp(this, 12));
-        content.addView(chessMovesGrid, new LinearLayout.LayoutParams(
+        // A plain ScrollView nested in another one doesn't claim drags on its own — and
+        // setOnTouchListener doesn't fix it: the move cells are clickable, so they consume
+        // ACTION_DOWN before it ever reaches this ScrollView's own touch handling, and the
+        // listener never fires. onInterceptTouchEvent is the one hook the framework calls
+        // on every ancestor for every event regardless of what a child does with it, so
+        // that's where the claim has to happen — on the outer panel specifically (not on
+        // this ScrollView itself, which needs its normal drag-to-scroll intact).
+        ScrollView movesScroll = new ScrollView(this) {
+            @Override
+            public boolean onInterceptTouchEvent(android.view.MotionEvent ev) {
+                if (ev.getActionMasked() == android.view.MotionEvent.ACTION_DOWN && getParent() != null) {
+                    getParent().requestDisallowInterceptTouchEvent(true);
+                }
+                return super.onInterceptTouchEvent(ev);
+            }
+        };
+        movesScroll.addView(chessMovesGrid, new ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        content.addView(movesScroll, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, UiKit.dp(this, CHESS_MOVES_GRID_HEIGHT_DP)));
         content.addView(chessRule(), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1));
-
-        chessContent = content;
-        chessScroll = panel;
         return panel;
     }
 
     /** Shrinks/grows the square board to whatever's left of the header's own numbers once
-     *  every other row (status, engine lines, transport, moves grid) is accounted for.
-     *  Piggybacks on {@link #applyHeaderOffset} so it re-runs on every header drag/animation
-     *  frame. Uses {@code headerFullH}/{@code headerOffset} directly rather than re-reading
-     *  the header's own {@code getHeight()} — that view's layout pass hasn't happened yet
-     *  this frame, so reading it back here would always be one frame stale and the board
-     *  would visibly lag a step behind the header instead of moving with it. */
+     *  the fixed rows above the moves grid (status, engine lines, transport) and the moves
+     *  grid's own reserved height are both accounted for. Piggybacks on
+     *  {@link #applyHeaderOffset} so it re-runs on every header drag/animation frame. Uses
+     *  {@code headerFullH}/{@code headerOffset} directly rather than re-reading the
+     *  header's own {@code getHeight()} — that view's layout pass hasn't happened yet this
+     *  frame, so reading it back here would always be one frame stale and the board would
+     *  visibly lag a step behind the header instead of moving with it. */
     private void resizeChessBoardIfNeeded() {
-        if (chessBoard == null || chessContent == null || chessScroll == null) return;
+        if (chessBoard == null || chessFixedRows == null) return;
         if (chessPanel == null || chessPanel.getVisibility() != View.VISIBLE) return;
         if (homeFocusSink == null || homeFocusSink.getHeight() <= 0) return;
-        int boardH = chessBoard.getHeight();
-        int contentH = chessContent.getHeight();
-        if (boardH <= 0 || contentH <= 0) return;
-        int otherRowsH = contentH - boardH; // status + engine lines + transport + moves grid
+        if (chessFixedRows.getHeight() <= 0) return;
+        int otherRowsH = chessFixedRows.getHeight() + UiKit.dp(this, CHESS_MOVES_GRID_HEIGHT_DP);
         float headerNow = headerOffset <= 0f ? headerFullH : Math.max(0f, headerFullH - headerOffset);
         int viewportH = homeFocusSink.getHeight() - Math.round(headerNow);
         int available = viewportH - otherRowsH;
         // The fully-open header (menu swiped down) leaves the tightest fit — nudge the
-        // board a little larger there since the ScrollView can absorb a few extra px.
+        // board a little larger there; the outer panel ScrollView absorbs the rest.
         if (headerOffset <= 0f) available += UiKit.dp(this, 28);
         int screenW = getResources().getDisplayMetrics().widthPixels;
         int target = Math.min(screenW, available);

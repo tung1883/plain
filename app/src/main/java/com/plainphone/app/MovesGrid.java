@@ -17,12 +17,23 @@ import java.util.List;
  *  halves of one move is a small fixed margin, the gap before the next move a clearly
  *  bigger one, both sized off the text's own line height rather than a raw dp constant.
  *  Current ply highlighted white, the rest greyed out; tap any half-move to jump the
- *  board there. Shared by the Home chess panel and the Workspace chess panel. */
+ *  board there. Below the grid, any recorded variation at a ply on this line gets its
+ *  own dimmed row (tap to jump into it). Long-press a move for delete / promote-to-mainline.
+ *  Shared by the Home chess panel and the Workspace chess panel. */
 final class MovesGrid extends LinearLayout {
     private static final float TEXT_SP = 14f;
+    private static final float VARIATION_SP = 13f;
 
     private final ChessBoardView board;
     private final Runnable afterJump;
+    // Set by whichever cell/row turns out to be the current one, mid-refresh(), so the
+    // caller can scroll it into view once the whole grid is (re)built.
+    private View currentCellView;
+    // Which node the grid last auto-scrolled to — background analysis finishing calls
+    // refresh() too (same position, new eval text), and re-scrolling every one of those
+    // fights any manual scroll the user is mid-gesture on. Only actually moving to a
+    // different move re-triggers the scroll.
+    private ChessBoardView.MoveNode lastAutoScrolledNode;
 
     MovesGrid(Activity host, ChessBoardView board, Runnable afterJump) {
         super(host);
@@ -34,8 +45,40 @@ final class MovesGrid extends LinearLayout {
     void refresh() {
         Activity host = (Activity) getContext();
         removeAllViews();
-        List<String> moves = board.movesList();
-        if (moves.isEmpty()) return;
+        currentCellView = null;
+        List<ChessBoardView.DisplayLine> lines = board.displayLines();
+        if (lines.isEmpty()) return;
+
+        ChessBoardView.MoveNode currentNode = board.currentNode();
+        ChessBoardView.DisplayLine mainLine = lines.get(0);
+        addMainLineGrid(host, mainLine.nodes, currentNode);
+
+        for (int i = 1; i < lines.size(); i++) {
+            addView(buildVariationRow(host, lines.get(i), currentNode));
+        }
+
+        // Scrolls only this grid's own immediate ScrollView — never the panel around it.
+        // requestRectangleOnScreen looked like the obvious tool here, but it walks and
+        // scrolls *every* scrollable ancestor, not just the nearest one, so a new move was
+        // also dragging the whole panel around; that's what made scrolling back up by hand
+        // feel like it kept getting fought.
+        if (currentCellView != null && currentNode != lastAutoScrolledNode) {
+            lastAutoScrolledNode = currentNode;
+            View target = currentCellView;
+            post(() -> {
+                if (!(getParent() instanceof android.widget.ScrollView)) return;
+                android.widget.ScrollView scroll = (android.widget.ScrollView) getParent();
+                int y = 0;
+                for (View v = target; v != this; v = (View) v.getParent()) y += v.getTop();
+                // Bottom-align: shows the new move plus whatever context fits above it,
+                // rather than pinning it right at the top edge of the small window.
+                int dest = Math.max(0, y - scroll.getHeight() + target.getHeight());
+                scroll.smoothScrollTo(0, dest);
+            });
+        }
+    }
+
+    private void addMainLineGrid(Activity host, List<ChessBoardView.MoveNode> nodes, ChessBoardView.MoveNode currentNode) {
         // One text-line's own rendered height stands in for "1 unit" of space, so
         // gaps scale with whatever font size/scale the device is actually using.
         android.graphics.Paint metrics = new android.graphics.Paint();
@@ -76,8 +119,7 @@ final class MovesGrid extends LinearLayout {
         int pairWidth = numW + moveW + tightGap + moveW;
         int movesPerRow = Math.max(1, (availWidth + moveGap) / (pairWidth + moveGap));
 
-        int fullMoves = (moves.size() + 1) / 2;
-        int currentPly = board.cursor();
+        int fullMoves = (nodes.size() + 1) / 2;
         LinearLayout row = null;
         int posInRow = 0;
         int rowMoveGap = moveGap;
@@ -95,9 +137,9 @@ final class MovesGrid extends LinearLayout {
                 posInRow = 0;
             }
             int i0 = m * 2, i1 = m * 2 + 1;
-            boolean hasBlack = i1 < moves.size();
-            View whiteCell = buildCell(host, moves, i0, currentPly, moveW);
-            View blackCell = hasBlack ? buildCell(host, moves, i1, currentPly, moveW) : null;
+            boolean hasBlack = i1 < nodes.size();
+            View whiteCell = buildCell(host, nodes.get(i0), nodes.get(i0) == currentNode, moveW, numW);
+            View blackCell = hasBlack ? buildCell(host, nodes.get(i1), nodes.get(i1) == currentNode, moveW, numW) : null;
             whiteCell.setPadding(0, vPad, 0, vPad);
 
             LinearLayout.LayoutParams wlp = new LinearLayout.LayoutParams(
@@ -113,14 +155,17 @@ final class MovesGrid extends LinearLayout {
         }
     }
 
-    private View buildCell(Activity host, List<String> moves, int i, int currentPly, int moveW) {
-        boolean white = (i % 2) == 0;
-        boolean current = i == currentPly - 1;
+    private View buildCell(Activity host, ChessBoardView.MoveNode node, boolean current, int moveW, int numW) {
         int textColor = current ? Color.WHITE : 0xFF6E6E6E;
-        final int ply = i + 1;
+        int ply = node.ply();
+        boolean white = (ply % 2) == 1;
         View.OnClickListener jump = v -> {
-            board.jumpTo(ply);
+            board.jumpToNode(node);
             if (afterJump != null) afterJump.run();
+        };
+        View.OnLongClickListener menu = v -> {
+            showMoveMenu(host, node, false);
+            return true;
         };
 
         View cell;
@@ -128,24 +173,27 @@ final class MovesGrid extends LinearLayout {
             LinearLayout box = new LinearLayout(host);
             box.setOrientation(HORIZONTAL);
             TextView num = new TextView(host);
-            num.setText(((i / 2) + 1) + ".");
+            num.setText(((ply + 1) / 2) + ".");
             num.setTypeface(Fonts.current(host));
             num.setTextSize(TEXT_SP);
             num.setSingleLine(true);
             num.setTextColor(textColor);
             TextView move = new TextView(host);
-            move.setText(moves.get(i));
+            move.setText(node.san);
             move.setTypeface(Fonts.current(host));
             move.setTextSize(TEXT_SP);
             move.setSingleLine(true);
             move.setGravity(Gravity.END);
             move.setTextColor(textColor);
-            box.addView(num);
+            // Fixed width, same as the packing math assumed — otherwise a 1-digit move
+            // number ("8.") sits narrower than a 2-digit one ("18.") once that many moves
+            // are on the board, and every column after it in the row drifts out of line.
+            box.addView(num, new LinearLayout.LayoutParams(numW, ViewGroup.LayoutParams.WRAP_CONTENT));
             box.addView(move, new LinearLayout.LayoutParams(moveW, ViewGroup.LayoutParams.WRAP_CONTENT));
             cell = box;
         } else {
             TextView move = new TextView(host);
-            move.setText(moves.get(i));
+            move.setText(node.san);
             move.setTypeface(Fonts.current(host));
             move.setTextSize(TEXT_SP);
             move.setSingleLine(true);
@@ -155,6 +203,112 @@ final class MovesGrid extends LinearLayout {
             cell = move;
         }
         cell.setOnClickListener(jump);
+        cell.setOnLongClickListener(menu);
+        if (current) currentCellView = cell;
         return cell;
     }
+
+    /** "(2...Nf6)" or "(3.Nc3 Bc5)" — a dimmed, indented, parenthesized flattening of a
+     *  variation's own moves, tappable to jump straight to its tip. If the board is
+     *  currently showing a position inside this exact variation, that one move (and only
+     *  that one) turns white — the row itself never moves or changes position for it. */
+    private View buildVariationRow(Activity host, ChessBoardView.DisplayLine line, ChessBoardView.MoveNode currentNode) {
+        TextView text = new TextView(host);
+        text.setText(formatVariation(line, currentNode));
+        text.setTypeface(Fonts.current(host));
+        text.setTextSize(VARIATION_SP);
+        text.setTextColor(0xFF4A4A4A);
+        text.setTypeface(text.getTypeface(), android.graphics.Typeface.ITALIC);
+        int pad = UiKit.dp(host, 18);
+        text.setPadding(pad, UiKit.dp(host, 4), 0, UiKit.dp(host, 4));
+        if (line.nodes.contains(currentNode)) currentCellView = text;
+        text.setOnClickListener(v -> {
+            board.jumpToNode(line.nodes.get(line.nodes.size() - 1));
+            if (afterJump != null) afterJump.run();
+        });
+        text.setOnLongClickListener(v -> {
+            showMoveMenu(host, line.nodes.get(0), true);
+            return true;
+        });
+        return text;
+    }
+
+    private CharSequence formatVariation(ChessBoardView.DisplayLine line, ChessBoardView.MoveNode currentNode) {
+        android.text.SpannableStringBuilder sb = new android.text.SpannableStringBuilder("(");
+        int ply = line.startPly;
+        for (int i = 0; i < line.nodes.size(); i++) {
+            ChessBoardView.MoveNode node = line.nodes.get(i);
+            boolean whiteMove = (ply % 2) == 1;
+            int moveNum = (ply + 1) / 2;
+            if (whiteMove) {
+                if (i > 0) sb.append(' ');
+                sb.append(String.valueOf(moveNum)).append('.');
+            } else if (i == 0) {
+                sb.append(String.valueOf(moveNum)).append("...");
+            } else {
+                sb.append(' ');
+            }
+            int start = sb.length();
+            sb.append(node.san);
+            if (node == currentNode) {
+                sb.setSpan(new android.text.style.ForegroundColorSpan(Color.WHITE),
+                        start, sb.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+            ply++;
+        }
+        sb.append(')');
+        return sb;
+    }
+
+    /** Standard rounded plainphone popup — same chrome as the chess settings sheet — with
+     *  "Promote to mainline" (variations only) and "Delete this move". */
+    private void showMoveMenu(Activity host, ChessBoardView.MoveNode node, boolean allowPromote) {
+        LinearLayout root = new LinearLayout(host);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackground(UiKit.dialogBackground(host));
+        UiKit.clipRounded(host, root, UiKit.R_MD);
+        root.setPadding(2, 32, 2, UiKit.dp(host, UiKit.R_MD));
+        root.addView(UiKit.dialogTitle(host, node.san));
+
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(host).setView(root).create();
+        UiKit.clearDialogChrome(dialog);
+        // Both already trigger the board's own onChanged callback (updateChessHomeUi, which
+        // calls this.refresh() itself), so nothing further is needed here.
+        if (allowPromote) {
+            root.addView(menuRow(host, "Promote to mainline", v -> {
+                dialog.dismiss();
+                board.promoteToMainline(node);
+            }));
+        }
+        root.addView(menuRow(host, "Delete this move", v -> {
+            dialog.dismiss();
+            board.deleteNode(node);
+        }));
+        root.addView(menuRow(host, "Cancel", v -> dialog.dismiss()));
+
+        dialog.show();
+        UiKit.unboxDialog(root);
+        if (dialog.getWindow() != null) {
+            android.view.WindowManager.LayoutParams p = dialog.getWindow().getAttributes();
+            p.width = (int) (host.getResources().getDisplayMetrics().widthPixels * 0.85);
+            dialog.getWindow().setAttributes(p);
+        }
+    }
+
+    private TextView menuRow(Activity host, String label, View.OnClickListener listener) {
+        TextView row = new TextView(host);
+        row.setText(label);
+        row.setTextColor(Color.WHITE);
+        row.setTextSize(20);
+        row.setTypeface(Fonts.current(host));
+        row.setPadding(48, 32, 48, 32);
+        android.graphics.drawable.StateListDrawable bg = new android.graphics.drawable.StateListDrawable();
+        bg.addState(new int[]{android.R.attr.state_pressed},
+                new android.graphics.drawable.ColorDrawable(Color.DKGRAY));
+        bg.addState(new int[]{}, new android.graphics.drawable.ColorDrawable(Color.BLACK));
+        row.setBackground(bg);
+        row.setOnClickListener(listener);
+        return row;
+    }
+
 }

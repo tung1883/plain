@@ -34,10 +34,17 @@ final class ChessBoardView extends View {
             {'P','P','P','P','P','P','P','P'},
             {'R','N','B','Q','K','B','N','R'} };
     private final Map<String, Bitmap> images = new HashMap<>();
-    private final List<GameState> history = new ArrayList<>();
-    private final List<String> moves = new ArrayList<>();
+    // Every played move is a node in a tree, not an entry truncated away on going back and
+    // playing something else — root is the start position, `current` is whatever position
+    // is on screen right now. The "highlighted" line the moves grid shows bold is simply the
+    // path from root to `current`; any sibling branch off that path (recorded by going back
+    // and playing a different move there) renders dimmed below it, exactly reversible by
+    // navigating into it — no separate "promote" step, no truncation, ever. Built in the
+    // constructor, not here: it needs whiteTurn/castleRights already at their real starting
+    // values, not the defaults a field initializer would see this early.
+    final MoveNode root;
+    private MoveNode current;
     private boolean whiteTurn = true;
-    private int historyCursor;
     // WK, WQ, BK, BQ castling rights; they are saved with every history state.
     private int castleRights = 1 | 2 | 4 | 8;
     private int dragRow = -1, dragCol = -1;
@@ -68,7 +75,8 @@ final class ChessBoardView extends View {
         textPaint.setTypeface(android.graphics.Typeface.create(android.graphics.Typeface.SERIF, android.graphics.Typeface.NORMAL));
         coordPaint.setTypeface(Fonts.current(host));
         setBoardTheme(boardTheme);
-        history.add(new GameState(position, whiteTurn, castleRights));
+        root = new MoveNode(null, position, whiteTurn, castleRights, null);
+        current = root;
         doubleTap = new android.view.GestureDetector(host, new android.view.GestureDetector.SimpleOnGestureListener() {
             @Override public boolean onDoubleTap(android.view.MotionEvent e) {
                 return handleDoubleTap(e);
@@ -273,9 +281,12 @@ final class ChessBoardView extends View {
     }
 
     boolean whiteToMove() { return whiteTurn; }
-    int cursor() { return historyCursor; }
-    int totalMoves() { return moves.size(); }
-    List<String> movesList() { return moves; }
+    int cursor() { return current.ply(); }
+    /** How many plies the permanent mainline (whichever move was played first at every
+     *  fork, {@code children.get(0)}) runs to in total — a simple, single number for
+     *  callers (like the Workspace panel's compact status line) that don't render the
+     *  branch tree itself. */
+    int totalMoves() { return mainTip(root).ply(); }
     /** Null while play can continue from the displayed position; otherwise "Checkmate —
      *  White/Black wins" or "Stalemate — draw". */
     String gameOverText() { return gameOverText; }
@@ -290,23 +301,114 @@ final class ChessBoardView extends View {
         }
     }
 
-    /** Jump to the position right after the {@code ply}-th half-move (1-based); 0 = start. */
-    void jumpTo(int ply) {
-        if (ply < 0 || ply > moves.size()) return;
-        restore(ply);
+    /** Walks forward from {@code from} via {@code children.get(0)} — the move first recorded
+     *  at every fork, permanently, since a later branch is always appended, never inserted —
+     *  until a node with no children. */
+    private MoveNode mainTip(MoveNode from) {
+        MoveNode n = from;
+        while (!n.children.isEmpty()) n = n.children.get(0);
+        return n;
     }
 
-    void first() { restore(0); }
-    void previous() { if (historyCursor > 0) restore(historyCursor - 1); }
-    void next() { if (historyCursor < moves.size()) restore(historyCursor + 1); }
-    void last() { restore(moves.size()); }
+    void first() { restoreNode(root); }
+    void previous() { if (current.parent != null) restoreNode(current.parent); }
+    void next() { if (!current.children.isEmpty()) restoreNode(current.children.get(0)); }
+    void last() { restoreNode(mainTip(current)); }
 
-    private void restore(int target) {
-        historyCursor = target;
-        GameState state = history.get(target);
-        position = copy(state.board);
-        whiteTurn = state.whiteTurn;
-        castleRights = state.castleRights;
+    /** The position on screen right now — the moves grid compares nodes against this by
+     *  identity to decide which one (main line or inside a variation) to highlight, rather
+     *  than by ply number: two different nodes can share a ply number once a branch exists. */
+    MoveNode currentNode() { return current; }
+
+    /** Jumps straight to any node in the tree — the move list uses this to jump into a
+     *  variation, or back to a point on the mainline, from a single tap. Never reshapes the
+     *  tree itself: the permanent mainline stays exactly where it was, so a variation
+     *  looked at this way doesn't get promoted into it. */
+    void jumpToNode(MoveNode node) { restoreNode(node); }
+
+    /** Deletes {@code node} and everything recorded after it — a long-pressed move's
+     *  "Delete" action. Refuses on the root (nothing to delete). If the board was showing
+     *  {@code node} or anything inside it, it falls back to {@code node}'s parent, the
+     *  nearest position that still exists. */
+    void deleteNode(MoveNode node) {
+        if (node.parent == null) return;
+        MoveNode parent = node.parent;
+        boolean movingCurrent = false;
+        for (MoveNode n = current; n != null; n = n.parent) {
+            if (n == node) { movingCurrent = true; break; }
+        }
+        parent.children.remove(node);
+        if (movingCurrent) {
+            restoreNode(parent);
+        } else {
+            onChanged.run(); // tree changed under a still-valid `current` — just re-render the grid
+        }
+    }
+
+    /** Swaps {@code node} into {@code children.get(0)} of its own parent — a long-pressed
+     *  variation's "Promote to mainline" action. Only reorders that one fork: since the
+     *  moves grid only ever offers this on a variation hanging directly off an
+     *  already-mainline node, that's enough for the whole subtree to become reachable from
+     *  the root along {@code children.get(0)}. */
+    void promoteToMainline(MoveNode node) {
+        MoveNode parent = node.parent;
+        if (parent == null) return;
+        parent.children.remove(node);
+        parent.children.add(0, node);
+        onChanged.run();
+    }
+
+    /** One line for the moves grid: the nodes for plies {@code startPly}, {@code startPly+1}
+     *  ... in order — either the permanent mainline (always the same nodes, regardless of
+     *  where {@link #current} is) or a dimmed alternate branching
+     *  off some ply of it. */
+    static final class DisplayLine {
+        final int startPly;
+        final List<MoveNode> nodes;
+        DisplayLine(int startPly, List<MoveNode> nodes) {
+            this.startPly = startPly; this.nodes = nodes;
+        }
+    }
+
+    /** The permanent mainline (root to {@link #mainTip}, always the same nodes) plus, at
+     *  every ply along it, any sibling variation recorded there instead, each flattened to
+     *  its own tip the same way. Rendering never reshapes
+     *  this: looking at a variation only moves {@link #current}, which line is "the main
+     *  row" never changes. */
+    List<DisplayLine> displayLines() {
+        List<MoveNode> mainPath = new ArrayList<>();
+        for (MoveNode n = root; !n.children.isEmpty(); ) {
+            n = n.children.get(0);
+            mainPath.add(n);
+        }
+
+        List<DisplayLine> out = new ArrayList<>();
+        if (!mainPath.isEmpty()) out.add(new DisplayLine(1, mainPath));
+
+        MoveNode onPath = root;
+        int ply = 1;
+        for (MoveNode step : mainPath) {
+            for (MoveNode sibling : onPath.children) {
+                if (sibling == step) continue;
+                List<MoveNode> line = new ArrayList<>();
+                line.add(sibling);
+                MoveNode tip = sibling;
+                while (!tip.children.isEmpty()) { tip = tip.children.get(0); line.add(tip); }
+                out.add(new DisplayLine(ply, line));
+            }
+            onPath = step;
+            ply++;
+        }
+        return out;
+    }
+
+    /** Moves the board to {@code node} and refreshes everything that depends on the
+     *  displayed position. Doesn't touch the tree — see {@link #jumpToNode}. */
+    private void restoreNode(MoveNode node) {
+        current = node;
+        position = copy(node.board);
+        whiteTurn = node.whiteTurn;
+        castleRights = node.castleRights;
         selectedRow = selectedCol = -1;
         updateGameOverStatus();
         onChanged.run();
@@ -396,7 +498,7 @@ final class ChessBoardView extends View {
         String castling = "" + ((castleRights & 1) != 0 ? "K" : "") + ((castleRights & 2) != 0 ? "Q" : "")
                 + ((castleRights & 4) != 0 ? "k" : "") + ((castleRights & 8) != 0 ? "q" : "");
         sb.append(castling.isEmpty() ? "-" : castling);
-        sb.append(" - 0 ").append((moves.size() / 2) + 1);
+        sb.append(" - 0 ").append((current.ply() / 2) + 1);
         return sb.toString();
     }
 
@@ -468,6 +570,7 @@ final class ChessBoardView extends View {
         List<int[]> squares = new ArrayList<>();
         StringBuilder sb = new StringBuilder();
         int plies = Math.min(pvUci.size(), ANALYSIS_PLIES);
+        int ply = current.ply() + 1; // the PV picks up right after the position on screen
         for (int i = 0; i < plies; i++) {
             String mv = pvUci.get(i);
             if (mv.length() < 4) break;
@@ -481,10 +584,23 @@ final class ChessBoardView extends View {
             boolean promotes = Character.toUpperCase(moving) == 'P' && (toRow == 0 || toRow == 7);
             String san = castle ? (toCol > fromCol ? "O-O" : "O-O-O")
                     : sanFor(moving, fromRow, fromCol, toRow, toCol, captured != 0, promotes);
-            if (sb.length() > 0) sb.append(' ');
+            // Numbered the same way the move list is ("1. e4 e5 2. Nf3 Nc6"), continuing
+            // from whatever move number the displayed position is actually at rather than
+            // always restarting at 1 — this is a continuation from here, not a new game.
+            boolean whiteMove = (ply % 2) == 1;
+            int moveNum = (ply + 1) / 2;
+            if (whiteMove) {
+                if (i > 0) sb.append(' ');
+                sb.append(moveNum).append('.');
+            } else if (i == 0) {
+                sb.append(moveNum).append("...");
+            } else {
+                sb.append(' ');
+            }
             sb.append(san);
             undos.add(rawApply(fromRow, fromCol, toRow, toCol));
             squares.add(new int[]{fromRow, fromCol, toRow, toCol});
+            ply++;
         }
         for (int i = undos.size() - 1; i >= 0; i--) {
             int[] sq = squares.get(i);
@@ -640,8 +756,14 @@ final class ChessBoardView extends View {
         boolean promotes = Character.toUpperCase(moving) == 'P' && (toRow == 0 || toRow == 7);
         String san = castle ? (toCol > fromCol ? "O-O" : "O-O-O")
                 : sanFor(moving, fromRow, fromCol, toRow, toCol, capture, promotes);
-        while (moves.size() > historyCursor) moves.remove(moves.size() - 1);
-        while (history.size() > historyCursor + 1) history.remove(history.size() - 1);
+
+        // Replaying a move already recorded here — either simply continuing the line we're
+        // on, or stepping back into an existing variation — reuses that node instead of
+        // creating a duplicate branch.
+        for (MoveNode child : current.children) {
+            if (child.san.equals(san)) { restoreNode(child); return; }
+        }
+
         updateCastleRights(moving, fromRow, fromCol, captured, toRow, toCol);
         position[toRow][toCol] = moving;
         position[fromRow][fromCol] = 0;
@@ -655,10 +777,16 @@ final class ChessBoardView extends View {
         if (promotes) {
             position[toRow][toCol] = Character.isUpperCase(moving) ? 'Q' : 'q';
         }
-        moves.add(san);
         whiteTurn = !whiteTurn;
-        history.add(new GameState(position, whiteTurn, castleRights));
-        historyCursor++;
+        // A genuinely new move from here: append it as a child of `current` rather than
+        // truncating whatever was already recorded past this point — a fresh line off the
+        // tip becomes the sole (and so permanently mainline) child; one played after going
+        // back becomes a new sibling instead, leaving the existing continuation as the
+        // moves grid's main row exactly where it was — this only moves `current`, not the
+        // tree, so the grid never reflows just because a variation is being looked at.
+        MoveNode node = new MoveNode(san, position, whiteTurn, castleRights, current);
+        current.children.add(node);
+        current = node;
         selectedRow = selectedCol = -1;
         updateGameOverStatus();
         onChanged.run();
@@ -720,12 +848,33 @@ final class ChessBoardView extends View {
         return out;
     }
 
-    private final class GameState {
+    /** One position in the move tree: {@code san} is the move that reached it (null only for
+     *  {@link #root}), {@code children} its recorded continuations in the order they were
+     *  first played — never reordered, so {@code children.get(0)} is always the permanent
+     *  mainline continuation no matter where {@link #current} has since wandered to.
+     *  Package-visible, not static: {@link MovesGrid} holds direct
+     *  references to nodes (via {@link DisplayLine#nodes}) to jump to on a tap. */
+    final class MoveNode {
+        final String san;
         final char[][] board;
         final boolean whiteTurn;
         final int castleRights;
-        GameState(char[][] source, boolean turn, int rights) {
-            board = copy(source); whiteTurn = turn; castleRights = rights;
+        final MoveNode parent;
+        final List<MoveNode> children = new ArrayList<>();
+
+        MoveNode(String san, char[][] boardSource, boolean turn, int rights, MoveNode parent) {
+            this.san = san;
+            this.board = copy(boardSource);
+            this.whiteTurn = turn;
+            this.castleRights = rights;
+            this.parent = parent;
+        }
+
+        /** Half-moves from the root to here; 0 for the root itself. */
+        int ply() {
+            int n = 0;
+            for (MoveNode p = this; p.parent != null; p = p.parent) n++;
+            return n;
         }
     }
 
