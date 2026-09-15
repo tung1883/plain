@@ -39,7 +39,7 @@ public final class ChessActivity extends Activity {
     private ChessBoardView board;
     private TextView turnLine;
     private TextView moveLine;
-    private TextView movesLine;
+    private MovesGrid movesGrid;
     private TextView themeLine;
     private String selectedBoard = "Slate Study";
     private String selectedPieces = "neo";
@@ -58,7 +58,7 @@ public final class ChessActivity extends Activity {
 
         LinearLayout status = new LinearLayout(this);
         status.setGravity(Gravity.CENTER_VERTICAL);
-        status.setPadding(0, UiKit.dp(this, 16), 0, UiKit.dp(this, 12));
+        status.setPadding(48, UiKit.dp(this, 16), 48, UiKit.dp(this, 12));
         turnLine = text("White to move", 17, Color.WHITE);
         status.addView(turnLine, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         moveLine = text("Move 0 / 0", 15, 0xFFDDDDDD);
@@ -68,13 +68,23 @@ public final class ChessActivity extends Activity {
 
         LinearLayout transport = new LinearLayout(this);
         transport.setGravity(Gravity.CENTER);
-        transport.setPadding(0, UiKit.dp(this, 12), 0, UiKit.dp(this, 12));
+        transport.setPadding(48, UiKit.dp(this, 12), 48, UiKit.dp(this, 12));
         String[] transportLabels = {"|‹", "‹", "›", "›|"};
         for (int i = 0; i < transportLabels.length; i++) {
             String label = transportLabels[i];
             final int action = i;
             TextView button = text(label, 25, Color.WHITE);
-            button.setGravity(Gravity.CENTER);
+            // First/last icons line up with the moves grid's own left/right margin;
+            // the two middle ones stay centered in their share of the row.
+            if (i == 0) {
+                button.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
+                button.setTranslationX(-inkLeadIn(label, 25f));
+            } else if (i == transportLabels.length - 1) {
+                button.setGravity(Gravity.CENTER_VERTICAL | Gravity.END);
+                button.setTranslationX(inkTrailOut(label, 25f));
+            } else {
+                button.setGravity(Gravity.CENTER);
+            }
             button.setOnClickListener(v -> {
                 if (action == 0) board.first();
                 else if (action == 1) board.previous();
@@ -85,11 +95,10 @@ public final class ChessActivity extends Activity {
         }
         content.addView(transport, matchWrap());
 
-        movesLine = text("Tap a white piece to begin", 14, 0xFFDADADA);
-        movesLine.setSingleLine(true);
-        movesLine.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
-        movesLine.setPadding(UiKit.dp(this, 4), UiKit.dp(this, 12), UiKit.dp(this, 4), UiKit.dp(this, 12));
-        content.addView(movesLine, matchWrap());
+        movesGrid = new MovesGrid(this, board, this::updateStudyUi);
+        movesGrid.setPadding(48, UiKit.dp(this, 12), 48, UiKit.dp(this, 12));
+        content.addView(movesGrid, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         content.addView(rule(), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1));
 
         LinearLayout actions = new LinearLayout(this);
@@ -142,6 +151,30 @@ public final class ChessActivity extends Activity {
         return v;
     }
 
+    /** Blank space before a glyph's actual ink, at the given sp size — the gap a
+     *  START-aligned icon like "|‹" leaves before matching text's own left edge. */
+    private float inkLeadIn(String text, float sp) {
+        android.graphics.Paint p = new android.graphics.Paint();
+        p.setTypeface(Fonts.current(this));
+        p.setTextSize(android.util.TypedValue.applyDimension(
+                android.util.TypedValue.COMPLEX_UNIT_SP, sp, getResources().getDisplayMetrics()));
+        android.graphics.Rect bounds = new android.graphics.Rect();
+        p.getTextBounds(text, 0, text.length(), bounds);
+        return bounds.left;
+    }
+
+    /** Blank space after a glyph's actual ink, at the given sp size — the gap an
+     *  END-aligned icon like "›|" leaves before matching text's own right edge. */
+    private float inkTrailOut(String text, float sp) {
+        android.graphics.Paint p = new android.graphics.Paint();
+        p.setTypeface(Fonts.current(this));
+        p.setTextSize(android.util.TypedValue.applyDimension(
+                android.util.TypedValue.COMPLEX_UNIT_SP, sp, getResources().getDisplayMetrics()));
+        android.graphics.Rect bounds = new android.graphics.Rect();
+        p.getTextBounds(text, 0, text.length(), bounds);
+        return p.measureText(text) - bounds.right;
+    }
+
     private View rule() {
         View v = new View(this);
         v.setBackgroundColor(0xFF303030);
@@ -157,18 +190,22 @@ public final class ChessActivity extends Activity {
     }
 
     private void chooseBoard() {
-        List<String> items = new ArrayList<>();
-        items.add("Slate Study");
+        List<String[]> options = new ArrayList<>(); // {slug, label}
         try {
             for (String name : getAssets().list("chess_theme/board")) {
-                if (name.endsWith(".png")) items.add(pretty(name.substring(6, name.length() - 4)));
+                if (!name.endsWith(".png")) continue;
+                String slug = name.substring(6, name.length() - 4);
+                options.add(new String[]{slug, pretty(slug)});
             }
         } catch (Exception ignored) { }
-        Collections.sort(items.subList(1, items.size()));
+        Collections.sort(options, (a, b) -> a[1].compareTo(b[1]));
+        options.add(0, new String[]{"default", "Slate Study"});
+        String[] labels = new String[options.size()];
+        for (int i = 0; i < labels.length; i++) labels[i] = options.get(i)[1];
         new AlertDialog.Builder(this).setTitle("Board theme")
-                .setItems(items.toArray(new String[0]), (d, which) -> {
-                    selectedBoard = items.get(which);
-                    board.setBoardTheme(selectedBoard);
+                .setItems(labels, (d, which) -> {
+                    selectedBoard = options.get(which)[1];
+                    board.setBoardTheme(options.get(which)[0]);
                     updateThemeLine();
                 }).show();
     }
@@ -193,13 +230,13 @@ public final class ChessActivity extends Activity {
 
     private void updateStudyUi() {
         if (board == null || turnLine == null) return;
-        turnLine.setText(board.whiteToMove() ? "White to move" : "Black to move");
+        String gameOver = board.gameOverText();
+        turnLine.setText(gameOver != null ? gameOver : board.whiteToMove() ? "White to move" : "Black to move");
         moveLine.setText("Move " + board.cursor() + " / " + board.totalMoves());
-        String text = board.moveText();
-        movesLine.setText(text.length() == 0 ? "Tap a piece, then a marked square" : text);
+        movesGrid.refresh();
     }
 
-    private static String pretty(String raw) {
+    static String pretty(String raw) {
         if (raw.equals("fritz")) return "Fritz";
         if (raw.equals("8bit")) return "8-Bit";
         String[] words = raw.replace('-', ' ').replace('_', ' ').split(" ");
@@ -259,6 +296,7 @@ public final class ChessActivity extends Activity {
         // Kept separate from board/highlight paint: legal-move hints can never tint a piece bitmap.
         private final Paint piecePaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
         private final Paint textPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint coordPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private char[][] position = {
                 {'r','n','b','q','k','b','n','r'},
                 {'p','p','p','p','p','p','p','p'},
@@ -278,9 +316,11 @@ public final class ChessActivity extends Activity {
         private float dragX, dragY;
         private boolean draggingPiece;
         private int selectedRow = -1, selectedCol = -1;
-        private String boardTheme = "Slate Study";
+        private String boardTheme = "default";
         private String pieceTheme = "fritz";
         private int light = 0xFF393A3C, dark = 0xFF1D1E20;
+        private Bitmap boardLightTile, boardDarkTile;
+        private String gameOverText; // null while the game (at the displayed position) is ongoing
 
         ChessBoardView(Activity host, Runnable onChanged) {
             super(host);
@@ -288,18 +328,35 @@ public final class ChessActivity extends Activity {
             this.onChanged = onChanged;
             setFocusable(true);
             textPaint.setTypeface(android.graphics.Typeface.create(android.graphics.Typeface.SERIF, android.graphics.Typeface.NORMAL));
+            coordPaint.setTypeface(Fonts.current(host));
             setBoardTheme(boardTheme);
             history.add(new GameState(position, whiteTurn, castleRights));
         }
 
-        void setBoardTheme(String theme) {
-            boardTheme = theme;
-            if (theme.equals("Slate Study")) { light = 0xFF3A3B3D; dark = 0xFF1B1C1E; }
-            else if (theme.equalsIgnoreCase("Walnut")) { light = 0xFFDBB58C; dark = 0xFF805137; }
-            else if (theme.equalsIgnoreCase("Green")) { light = 0xFFF0E4C3; dark = 0xFF779556; }
-            else if (theme.equalsIgnoreCase("Marble")) { light = 0xFFE6E0D5; dark = 0xFF8B8D91; }
+        /** {@code slug} is the board asset's file slug (e.g. "walnut" for board-walnut.png),
+         *  or "default" for the plain slate study look with no bundled texture. */
+        void setBoardTheme(String slug) {
+            boardTheme = slug;
+            boardLightTile = null;
+            boardDarkTile = null;
+            if (!slug.equals("default")) {
+                try (InputStream in = host.getAssets().open("chess_theme/board/board-" + slug + ".png")) {
+                    Bitmap full = BitmapFactory.decodeStream(in);
+                    // Bundled board art is a 2x2 repeating tile: light square top-left, dark top-right.
+                    if (full != null) {
+                        int w = full.getWidth() / 2, h = full.getHeight() / 2;
+                        boardLightTile = Bitmap.createBitmap(full, 0, 0, w, h);
+                        boardDarkTile = Bitmap.createBitmap(full, w, 0, w, h);
+                    }
+                } catch (Exception ignored) { }
+            }
+            if (boardLightTile != null) {
+                invalidate();
+                return;
+            }
+            if (slug.equals("default")) { light = 0xFF3A3B3D; dark = 0xFF1B1C1E; }
             else {
-                float hue = (Math.abs(theme.hashCode()) % 360);
+                float hue = (Math.abs(slug.hashCode()) % 360);
                 light = Color.HSVToColor(new float[]{hue, .18f, .72f});
                 dark = Color.HSVToColor(new float[]{hue, .42f, .34f});
             }
@@ -316,14 +373,19 @@ public final class ChessActivity extends Activity {
         @Override protected void onDraw(Canvas canvas) {
             super.onDraw(canvas);
             float marginLeft = UiKit.dp(host, 20);
-            float marginBottom = UiKit.dp(host, 20);
             float side = getWidth() - marginLeft;
             float cell = side / 8f;
             float top = 0;
             for (int row = 0; row < 8; row++) for (int col = 0; col < 8; col++) {
-                paint.setColor(((row + col) & 1) == 0 ? light : dark);
-                canvas.drawRect(marginLeft + col * cell, top + row * cell,
-                        marginLeft + (col + 1) * cell, top + (row + 1) * cell, paint);
+                float l = marginLeft + col * cell, t = top + row * cell;
+                boolean isLight = ((row + col) & 1) == 0;
+                if (boardLightTile != null) {
+                    Bitmap tile = isLight ? boardLightTile : boardDarkTile;
+                    canvas.drawBitmap(tile, null, new RectF(l, t, l + cell, t + cell), piecePaint);
+                } else {
+                    paint.setColor(isLight ? light : dark);
+                    canvas.drawRect(l, t, l + cell, t + cell, paint);
+                }
             }
             drawHints(canvas, marginLeft, top, cell);
             for (int row = 0; row < 8; row++) for (int col = 0; col < 8; col++) {
@@ -335,12 +397,12 @@ public final class ChessActivity extends Activity {
                 // Hold the piece slightly above the finger, like chess.com, so its destination stays visible.
                 drawPiece(canvas, position[dragRow][dragCol], dragX - cell / 2f, dragY - cell * .70f, cell);
             }
-            textPaint.setTextSize(UiKit.dp(host, 13));
-            textPaint.setColor(0xFFBDBDBD);
-            textPaint.setTextAlign(Paint.Align.CENTER);
-            for (int col = 0; col < 8; col++) canvas.drawText(String.valueOf((char)('a' + col)), marginLeft + (col + .5f) * cell, side + UiKit.dp(host, 15), textPaint);
-            textPaint.setTextAlign(Paint.Align.RIGHT);
-            for (int row = 0; row < 8; row++) canvas.drawText(String.valueOf(8 - row), marginLeft - UiKit.dp(host, 7), top + (row + .62f) * cell, textPaint);
+            coordPaint.setTextSize(UiKit.dp(host, 13));
+            coordPaint.setColor(0xFFBDBDBD);
+            coordPaint.setTextAlign(Paint.Align.CENTER);
+            for (int col = 0; col < 8; col++) canvas.drawText(String.valueOf((char)('a' + col)), marginLeft + (col + .5f) * cell, side + UiKit.dp(host, 15), coordPaint);
+            coordPaint.setTextAlign(Paint.Align.RIGHT);
+            for (int row = 0; row < 8; row++) canvas.drawText(String.valueOf(8 - row), marginLeft - UiKit.dp(host, 7), top + (row + .62f) * cell, coordPaint);
         }
 
         private void drawHints(Canvas c, float left, float top, float cell) {
@@ -393,11 +455,14 @@ public final class ChessActivity extends Activity {
             if (event.getAction() == android.view.MotionEvent.ACTION_DOWN) {
                 downX = event.getX(); downY = event.getY();
                 dragCol = (int) ((downX - left) / cell); dragRow = (int) (downY / cell);
-                if (in(dragRow, dragCol) && position[dragRow][dragCol] != 0
+                if (gameOverText == null && in(dragRow, dragCol) && position[dragRow][dragCol] != 0
                         && Character.isUpperCase(position[dragRow][dragCol]) == whiteTurn) {
                     selectedRow = dragRow; selectedCol = dragCol;
                     invalidate(); // Selection never tints pieces; it only reveals move dots.
                 }
+                // The board owns every gesture that starts on it — picking up a piece,
+                // tapping a destination, whatever — never let the section swiper steal it.
+                getParent().requestDisallowInterceptTouchEvent(true);
                 return true;
             }
             if (event.getAction() == android.view.MotionEvent.ACTION_MOVE) {
@@ -420,9 +485,8 @@ public final class ChessActivity extends Activity {
             }
             boolean dragged = Math.abs(event.getX() - downX) > UiKit.dp(host, 8)
                     || Math.abs(event.getY() - downY) > UiKit.dp(host, 8);
-            if (in(dragRow, dragCol) && selectedRow == dragRow && selectedCol == dragCol
-                    && isLegalTarget(row, col)) {
-                commitMove(dragRow, dragCol, row, col);
+            if (selectedRow >= 0 && isLegalTarget(row, col)) {
+                commitMove(selectedRow, selectedCol, row, col);
             } else if (!dragged && position[row][col] != 0
                     && Character.isUpperCase(position[row][col]) == whiteTurn) {
                 selectedRow = row; selectedCol = col;
@@ -438,18 +502,25 @@ public final class ChessActivity extends Activity {
         boolean whiteToMove() { return whiteTurn; }
         int cursor() { return historyCursor; }
         int totalMoves() { return moves.size(); }
+        List<String> movesList() { return moves; }
+        /** Null while play can continue from the displayed position; otherwise "Checkmate —
+         *  White/Black wins" or "Stalemate — draw". */
+        String gameOverText() { return gameOverText; }
 
-        String moveText() {
-            if (moves.isEmpty()) return "";
-            StringBuilder out = new StringBuilder();
-            int end = historyCursor;
-            int start = Math.max(0, end - 7);
-            for (int i = start; i < end; i++) {
-                if (i > start) out.append("   ");
-                if ((i & 1) == 0) out.append((i / 2 + 1)).append(". ");
-                out.append(moves.get(i));
+        private void updateGameOverStatus() {
+            if (hasAnyLegalMove(whiteTurn)) {
+                gameOverText = null;
+            } else if (isKingInCheck(whiteTurn)) {
+                gameOverText = "Checkmate — " + (whiteTurn ? "Black" : "White") + " wins";
+            } else {
+                gameOverText = "Stalemate — draw";
             }
-            return out.toString();
+        }
+
+        /** Jump to the position right after the {@code ply}-th half-move (1-based); 0 = start. */
+        void jumpTo(int ply) {
+            if (ply < 0 || ply > moves.size()) return;
+            restore(ply);
         }
 
         void first() { restore(0); }
@@ -464,6 +535,7 @@ public final class ChessActivity extends Activity {
             whiteTurn = state.whiteTurn;
             castleRights = state.castleRights;
             selectedRow = selectedCol = -1;
+            updateGameOverStatus();
             onChanged.run();
             invalidate();
         }
@@ -480,6 +552,9 @@ public final class ChessActivity extends Activity {
             char captured = position[toRow][toCol];
             boolean capture = captured != 0;
             boolean castle = Character.toUpperCase(moving) == 'K' && Math.abs(toCol - fromCol) == 2;
+            boolean promotes = Character.toUpperCase(moving) == 'P' && (toRow == 0 || toRow == 7);
+            String san = castle ? (toCol > fromCol ? "O-O" : "O-O-O")
+                    : sanFor(moving, fromRow, fromCol, toRow, toCol, capture, promotes);
             while (moves.size() > historyCursor) moves.remove(moves.size() - 1);
             while (history.size() > historyCursor + 1) history.remove(history.size() - 1);
             updateCastleRights(moving, fromRow, fromCol, captured, toRow, toCol);
@@ -492,19 +567,52 @@ public final class ChessActivity extends Activity {
                 position[toRow][rookFrom] = 0;
             }
             // Automatic queen promotion keeps the offline board playable without a modal.
-            if (Character.toUpperCase(moving) == 'P' && (toRow == 0 || toRow == 7)) {
+            if (promotes) {
                 position[toRow][toCol] = Character.isUpperCase(moving) ? 'Q' : 'q';
             }
-            moves.add(castle ? (toCol > fromCol ? "O-O" : "O-O-O")
-                    : coordinate(fromRow, fromCol) + (capture ? "x" : "-") + coordinate(toRow, toCol));
+            moves.add(san);
             whiteTurn = !whiteTurn;
             history.add(new GameState(position, whiteTurn, castleRights));
             historyCursor++;
             selectedRow = selectedCol = -1;
+            updateGameOverStatus();
             onChanged.run();
         }
 
         private String coordinate(int row, int col) { return "" + (char)('a' + col) + (char)('8' - row); }
+
+        /** Standard algebraic notation for the move about to be made (board not yet mutated). */
+        private String sanFor(char moving, int fromRow, int fromCol, int toRow, int toCol,
+                               boolean capture, boolean promotes) {
+            char type = Character.toUpperCase(moving);
+            if (type == 'P') {
+                String dest = coordinate(toRow, toCol);
+                String san = capture ? (char) ('a' + fromCol) + "x" + dest : dest;
+                return promotes ? san + "=Q" : san;
+            }
+            String letter = type == 'N' ? "N" : type == 'B' ? "B" : type == 'R' ? "R" : type == 'Q' ? "Q" : "K";
+            String disambig = "";
+            if (type != 'K') {
+                boolean sameFile = false, sameRank = false, ambiguous = false;
+                for (int r = 0; r < 8; r++) for (int c = 0; c < 8; c++) {
+                    if (r == fromRow && c == fromCol) continue;
+                    if (position[r][c] != moving) continue;
+                    for (int[] mv : legalMoves(r, c)) {
+                        if (mv[0] == toRow && mv[1] == toCol) {
+                            ambiguous = true;
+                            if (c == fromCol) sameFile = true;
+                            if (r == fromRow) sameRank = true;
+                        }
+                    }
+                }
+                if (ambiguous) {
+                    if (!sameFile) disambig = String.valueOf((char) ('a' + fromCol));
+                    else if (!sameRank) disambig = String.valueOf(8 - fromRow);
+                    else disambig = coordinate(fromRow, fromCol);
+                }
+            }
+            return letter + disambig + (capture ? "x" : "") + coordinate(toRow, toCol);
+        }
 
         private void updateCastleRights(char moving, int fromRow, int fromCol,
                                         char captured, int toRow, int toCol) {
@@ -535,7 +643,44 @@ public final class ChessActivity extends Activity {
             }
         }
 
+        /** Geometrically legal moves, filtered to drop any that would leave (or put) the
+         *  mover's own king in check — a pinned piece can't move off the pin line, and a
+         *  king can't step into an attacked square. */
         private List<int[]> legalMoves(int row, int col) {
+            char moving = position[row][col];
+            if (moving == 0) return new ArrayList<>();
+            boolean white = Character.isUpperCase(moving);
+            List<int[]> out = new ArrayList<>();
+            for (int[] mv : pseudoLegalMoves(row, col)) {
+                char captured = position[mv[0]][mv[1]];
+                position[mv[0]][mv[1]] = moving;
+                position[row][col] = 0;
+                boolean safe = !isKingInCheck(white);
+                position[row][col] = moving;
+                position[mv[0]][mv[1]] = captured;
+                if (safe) out.add(mv);
+            }
+            return out;
+        }
+
+        private boolean isKingInCheck(boolean white) {
+            char king = white ? 'K' : 'k';
+            for (int r = 0; r < 8; r++) for (int c = 0; c < 8; c++) {
+                if (position[r][c] == king) return isSquareAttacked(r, c, !white);
+            }
+            return false;
+        }
+
+        /** True once the side to move has no legal move left in the current position. */
+        private boolean hasAnyLegalMove(boolean white) {
+            for (int r = 0; r < 8; r++) for (int c = 0; c < 8; c++) {
+                char p = position[r][c];
+                if (p != 0 && Character.isUpperCase(p) == white && !legalMoves(r, c).isEmpty()) return true;
+            }
+            return false;
+        }
+
+        private List<int[]> pseudoLegalMoves(int row, int col) {
             List<int[]> out = new ArrayList<>();
             char p = position[row][col]; if (p == 0) return out;
             boolean white = Character.isUpperCase(p); int dir = white ? -1 : 1;
@@ -609,5 +754,162 @@ public final class ChessActivity extends Activity {
         }
         private void slide(List<int[]> out,int r,int c,boolean w,int[][] ds){for(int[]d:ds){int rr=r+d[0],cc=c+d[1];while(in(rr,cc)){if(position[rr][cc]==0)out.add(new int[]{rr,cc});else{if(Character.isUpperCase(position[rr][cc])!=w)out.add(new int[]{rr,cc});break;}rr+=d[0];cc+=d[1];}}}
         private boolean in(int r,int c){return r>=0&&r<8&&c>=0&&c<8;}
+    }
+
+    /** Move list as a grid, packed move-by-move into rows based on the container's actual
+     *  measured width — however many full moves fit is however many land on a row, so
+     *  there's no leftover blank strip from a hardcoded per-row count that happens not to
+     *  match the available width. Every cell hugs its own text; the gap between the two
+     *  halves of one move is a small fixed margin, the gap before the next move a clearly
+     *  bigger one, both sized off the text's own line height rather than a raw dp constant.
+     *  Current ply highlighted white, the rest greyed out; tap any half-move to jump the
+     *  board there. Shared by the standalone screen and Home panel. */
+    static final class MovesGrid extends LinearLayout {
+        private static final float TEXT_SP = 14f;
+
+        private final ChessBoardView board;
+        private final Runnable afterJump;
+
+        MovesGrid(Activity host, ChessBoardView board, Runnable afterJump) {
+            super(host);
+            setOrientation(VERTICAL);
+            this.board = board;
+            this.afterJump = afterJump;
+        }
+
+        void refresh() {
+            Activity host = (Activity) getContext();
+            removeAllViews();
+            List<String> moves = board.movesList();
+            if (moves.isEmpty()) {
+                TextView empty = new TextView(host);
+                empty.setText("Tap a piece, then a marked square");
+                empty.setTypeface(Fonts.current(host));
+                empty.setTextSize(TEXT_SP);
+                empty.setTextColor(0xFFDADADA);
+                addView(empty);
+                return;
+            }
+            // One text-line's own rendered height stands in for "1 unit" of space, so
+            // gaps scale with whatever font size/scale the device is actually using.
+            android.graphics.Paint metrics = new android.graphics.Paint();
+            metrics.setTypeface(Fonts.current(host));
+            metrics.setTextSize(android.util.TypedValue.applyDimension(
+                    android.util.TypedValue.COMPLEX_UNIT_SP, TEXT_SP, host.getResources().getDisplayMetrics()));
+            int unit = Math.round(-metrics.ascent() + metrics.descent());
+            int tightGap = Math.round(unit * 0.3f);   // between the two halves of one move
+            int moveGap = Math.round(unit * 0.9f);    // between one move and the next
+            int vPad = Math.round(unit * 0.28f);
+            // Reserve enough width for the longest realistic move up front (a disambiguated,
+            // promoting capture like "Nbxd7" or "bxa1=Q") so a cell never resizes/reflows
+            // once a longer move than seen so far actually gets played.
+            int moveW = Math.round(Math.max(metrics.measureText("Nbxd7"), metrics.measureText("bxa1=Q")));
+
+            // Full screen width is too generous a guess: it ignores this view's own padding
+            // and its ancestors', so a row packed against it can end up wider than what's
+            // actually visible and get clipped at the edge. Wait for a real measured width
+            // instead of guessing.
+            int availWidth = getWidth() - getPaddingLeft() - getPaddingRight();
+            if (availWidth <= 0) {
+                View parent = getParent() instanceof View ? (View) getParent() : null;
+                if (parent != null && parent.getWidth() > 0) {
+                    availWidth = parent.getWidth() - parent.getPaddingLeft() - parent.getPaddingRight();
+                }
+            }
+            if (availWidth <= 0) {
+                post(this::refresh);
+                return;
+            }
+
+            // How many full moves fit per row, from a fixed per-pair width (move number +
+            // two fixed-width move slots) rather than each row's own actual content — that
+            // fixed budget is what lets a *full* row be justified to fill the width exactly
+            // (leftover distributed into its inter-move gaps) instead of leaving one
+            // dangling blank chunk wherever the last move that fit happens to end.
+            int numW = Math.round(metrics.measureText("88."));
+            int pairWidth = numW + moveW + tightGap + moveW;
+            int movesPerRow = Math.max(1, (availWidth + moveGap) / (pairWidth + moveGap));
+
+            int fullMoves = (moves.size() + 1) / 2;
+            int currentPly = board.cursor();
+            LinearLayout row = null;
+            int posInRow = 0;
+            int rowMoveGap = moveGap;
+            for (int m = 0; m < fullMoves; m++) {
+                if (m % movesPerRow == 0) {
+                    int countThisRow = Math.min(movesPerRow, fullMoves - m);
+                    boolean fullRow = countThisRow == movesPerRow;
+                    int leftover = fullRow ? Math.max(0, availWidth
+                            - (countThisRow * pairWidth + (countThisRow - 1) * moveGap)) : 0;
+                    rowMoveGap = moveGap + (countThisRow > 1 ? leftover / (countThisRow - 1) : 0);
+                    row = new LinearLayout(host);
+                    row.setOrientation(HORIZONTAL);
+                    addView(row, new LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                    posInRow = 0;
+                }
+                int i0 = m * 2, i1 = m * 2 + 1;
+                boolean hasBlack = i1 < moves.size();
+                View whiteCell = buildCell(host, moves, i0, currentPly, moveW);
+                View blackCell = hasBlack ? buildCell(host, moves, i1, currentPly, moveW) : null;
+                whiteCell.setPadding(0, vPad, 0, vPad);
+
+                LinearLayout.LayoutParams wlp = new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                wlp.leftMargin = posInRow > 0 ? rowMoveGap : 0;
+                wlp.rightMargin = hasBlack ? tightGap : 0;
+                row.addView(whiteCell, wlp);
+                if (hasBlack) {
+                    blackCell.setPadding(0, vPad, 0, vPad);
+                    row.addView(blackCell, new LinearLayout.LayoutParams(moveW, ViewGroup.LayoutParams.WRAP_CONTENT));
+                }
+                posInRow++;
+            }
+        }
+
+        private View buildCell(Activity host, List<String> moves, int i, int currentPly, int moveW) {
+            boolean white = (i % 2) == 0;
+            boolean current = i == currentPly - 1;
+            int textColor = current ? Color.WHITE : 0xFF6E6E6E;
+            final int ply = i + 1;
+            View.OnClickListener jump = v -> {
+                board.jumpTo(ply);
+                if (afterJump != null) afterJump.run();
+            };
+
+            View cell;
+            if (white) {
+                LinearLayout box = new LinearLayout(host);
+                box.setOrientation(HORIZONTAL);
+                TextView num = new TextView(host);
+                num.setText(((i / 2) + 1) + ".");
+                num.setTypeface(Fonts.current(host));
+                num.setTextSize(TEXT_SP);
+                num.setSingleLine(true);
+                num.setTextColor(textColor);
+                TextView move = new TextView(host);
+                move.setText(moves.get(i));
+                move.setTypeface(Fonts.current(host));
+                move.setTextSize(TEXT_SP);
+                move.setSingleLine(true);
+                move.setGravity(Gravity.END);
+                move.setTextColor(textColor);
+                box.addView(num);
+                box.addView(move, new LinearLayout.LayoutParams(moveW, ViewGroup.LayoutParams.WRAP_CONTENT));
+                cell = box;
+            } else {
+                TextView move = new TextView(host);
+                move.setText(moves.get(i));
+                move.setTypeface(Fonts.current(host));
+                move.setTextSize(TEXT_SP);
+                move.setSingleLine(true);
+                move.setGravity(Gravity.END);
+                move.setTextColor(textColor);
+                move.setLayoutParams(new LinearLayout.LayoutParams(moveW, ViewGroup.LayoutParams.WRAP_CONTENT));
+                cell = move;
+            }
+            cell.setOnClickListener(jump);
+            return cell;
+        }
     }
 }

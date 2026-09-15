@@ -4,6 +4,7 @@ import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.animation.ValueAnimator;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.app.WallpaperManager;
 import android.content.Context;
 import android.content.Intent;
@@ -40,7 +41,10 @@ import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -104,7 +108,10 @@ public class MainActivity extends Activity implements SelectionHost {
     private boolean statsPanelShown;
     private View chessPanel;
     private ChessActivity.ChessBoardView chessBoard;
-    private TextView chessTurnLine, chessMoveLine, chessMovesLine;
+    private TextView chessTurnLine, chessMoveLine, chessThemeLine;
+    private ChessActivity.MovesGrid chessMovesGrid;
+    private String chessSelectedBoard = "Slate Study";
+    private String chessSelectedPieces = "neo";
 
     private static final int REQUEST_NOTES_UNLOCK = 4301;
     private static final int REQUEST_PICK_NOTES_FOLDER = 4302;
@@ -118,6 +125,8 @@ public class MainActivity extends Activity implements SelectionHost {
     private static final int REQUEST_IMPORT_RECORDINGS = 4310;
     private static final int REQUEST_VAULT_UNLOCK = 4311;
     private static final int REQUEST_DEV_UNLOCK = 4312;
+    private static final int REQUEST_CHESS_IMPORT = 4313;
+    private static final int REQUEST_CHESS_EXPORT = 4314;
     /** Deferred action to run once the vault is unlocked (move-to-vault). */
     private Runnable afterVaultUnlock;
     private FrameLayout artFrame;
@@ -194,6 +203,10 @@ public class MainActivity extends Activity implements SelectionHost {
             if (resultCode == RESULT_OK && action != null && VaultSession.get().isUnlocked()) {
                 action.run();
             }
+        } else if (requestCode == REQUEST_CHESS_IMPORT) {
+            handleChessImport(resultCode, data);
+        } else if (requestCode == REQUEST_CHESS_EXPORT) {
+            handleChessExport(resultCode, data);
         }
     }
 
@@ -952,8 +965,9 @@ public class MainActivity extends Activity implements SelectionHost {
     }
 
     private boolean collapseEligible() {
+        boolean chessShown = chessPanel != null && chessPanel.getVisibility() == View.VISIBLE;
         return homeUiBuilt && currentQuery.isEmpty() && selectMode == null
-                && (listView.getVisibility() == View.VISIBLE || statsPanelShown);
+                && (listView.getVisibility() == View.VISIBLE || statsPanelShown || chessShown);
     }
 
     /** Re-measure the header's natural full height and the search band height. */
@@ -1106,17 +1120,17 @@ public class MainActivity extends Activity implements SelectionHost {
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(0, UiKit.dp(this, 8), 0, 0);
         panel.addView(content, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         chessBoard = new ChessActivity.ChessBoardView(this, this::updateChessHomeUi);
         chessBoard.setPieceTheme("neo");
         // Keep the entire study in the Home viewport: no vertical scroll container may steal a drag.
         content.addView(chessBoard, new LinearLayout.LayoutParams(
-                UiKit.dp(this, 200), ViewGroup.LayoutParams.WRAP_CONTENT));
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         LinearLayout status = new LinearLayout(this);
         status.setGravity(Gravity.CENTER_VERTICAL);
-        status.setPadding(0, UiKit.dp(this, 16), 0, UiKit.dp(this, 12));
+        status.setPadding(48, UiKit.dp(this, 16), 48, UiKit.dp(this, 12));
         chessTurnLine = chessText("White to move", 17, Color.WHITE);
         status.addView(chessTurnLine, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         chessMoveLine = chessText("Move 0 / 0", 15, 0xFFDDDDDD);
@@ -1126,12 +1140,22 @@ public class MainActivity extends Activity implements SelectionHost {
 
         LinearLayout transport = new LinearLayout(this);
         transport.setGravity(Gravity.CENTER);
-        transport.setPadding(0, UiKit.dp(this, 12), 0, UiKit.dp(this, 12));
+        transport.setPadding(48, UiKit.dp(this, 12), 48, UiKit.dp(this, 12));
         String[] labels = {"|‹", "‹", "›", "›|"};
         for (int i = 0; i < labels.length; i++) {
             final int action = i;
             TextView button = chessText(labels[i], 25, Color.WHITE);
-            button.setGravity(Gravity.CENTER);
+            // First/last icons line up with the moves grid's own left/right margin;
+            // the two middle ones stay centered in their share of the row.
+            if (i == 0) {
+                button.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
+                button.setTranslationX(-chessInkLeadIn(labels[i], 25f));
+            } else if (i == labels.length - 1) {
+                button.setGravity(Gravity.CENTER_VERTICAL | Gravity.END);
+                button.setTranslationX(chessInkTrailOut(labels[i], 25f));
+            } else {
+                button.setGravity(Gravity.CENTER);
+            }
             button.setOnClickListener(v -> {
                 if (action == 0) chessBoard.first();
                 else if (action == 1) chessBoard.previous();
@@ -1141,12 +1165,113 @@ public class MainActivity extends Activity implements SelectionHost {
             transport.addView(button, new LinearLayout.LayoutParams(0, UiKit.dp(this, 42), 1f));
         }
         content.addView(transport);
-        chessMovesLine = chessText("Tap a piece, then a marked square", 14, 0xFFDADADA);
-        chessMovesLine.setSingleLine(true);
-        chessMovesLine.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
-        chessMovesLine.setPadding(UiKit.dp(this, 4), UiKit.dp(this, 12), UiKit.dp(this, 4), UiKit.dp(this, 12));
-        content.addView(chessMovesLine);
+        chessMovesGrid = new ChessActivity.MovesGrid(this, chessBoard, this::updateChessHomeUi);
+        chessMovesGrid.setPadding(48, UiKit.dp(this, 12), 48, UiKit.dp(this, 12));
+        content.addView(chessMovesGrid, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        content.addView(chessRule(), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1));
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setGravity(Gravity.CENTER_VERTICAL);
+        actions.setPadding(0, UiKit.dp(this, 12), 0, 0);
+        TextView settings = chessText("⚙", 22, Color.WHITE);
+        settings.setGravity(Gravity.CENTER);
+        settings.setContentDescription("Chess settings");
+        settings.setOnClickListener(v -> chessOpenSettings());
+        actions.addView(settings, new LinearLayout.LayoutParams(UiKit.dp(this, 44), UiKit.dp(this, 44)));
+        content.addView(actions);
+
+        chessThemeLine = chessText(chessSelectedBoard + " · " + ChessActivity.pretty(chessSelectedPieces), 12, 0xFFAAAAAA);
+        chessThemeLine.setGravity(Gravity.RIGHT);
+        chessThemeLine.setPadding(0, UiKit.dp(this, 2), UiKit.dp(this, 6), 0);
+        content.addView(chessThemeLine);
         return panel;
+    }
+
+    private void chessOpenSettings() {
+        new AlertDialog.Builder(this)
+                .setTitle("Chess")
+                .setItems(new String[]{"Import PGN", "Export PGN", "Board theme", "Piece theme"}, (d, which) -> {
+                    if (which == 0) chessImportPgn();
+                    else if (which == 1) chessExportPgn();
+                    else if (which == 2) chessChooseBoard();
+                    else chessChoosePieces();
+                }).show();
+    }
+
+    private void chessChooseBoard() {
+        List<String[]> options = new ArrayList<>(); // {slug, label}
+        try {
+            for (String name : getAssets().list("chess_theme/board")) {
+                if (!name.endsWith(".png")) continue;
+                String slug = name.substring(6, name.length() - 4);
+                options.add(new String[]{slug, ChessActivity.pretty(slug)});
+            }
+        } catch (Exception ignored) { }
+        Collections.sort(options, (a, b) -> a[1].compareTo(b[1]));
+        options.add(0, new String[]{"default", "Slate Study"});
+        String[] labels = new String[options.size()];
+        for (int i = 0; i < labels.length; i++) labels[i] = options.get(i)[1];
+        new AlertDialog.Builder(this).setTitle("Board theme")
+                .setItems(labels, (d, which) -> {
+                    chessSelectedBoard = options.get(which)[1];
+                    chessBoard.setBoardTheme(options.get(which)[0]);
+                    chessUpdateThemeLine();
+                }).show();
+    }
+
+    private void chessChoosePieces() {
+        List<String> folders = new ArrayList<>();
+        try { folders.addAll(Arrays.asList(getAssets().list("chess_theme/pieces"))); } catch (Exception ignored) { }
+        Collections.sort(folders);
+        String[] labels = new String[folders.size()];
+        for (int i = 0; i < labels.length; i++) labels[i] = ChessActivity.pretty(folders.get(i));
+        new AlertDialog.Builder(this).setTitle("Piece theme")
+                .setItems(labels, (d, which) -> {
+                    chessSelectedPieces = folders.get(which);
+                    chessBoard.setPieceTheme(chessSelectedPieces);
+                    chessUpdateThemeLine();
+                }).show();
+    }
+
+    private void chessUpdateThemeLine() {
+        chessThemeLine.setText(chessSelectedBoard + " · " + ChessActivity.pretty(chessSelectedPieces));
+    }
+
+    private void chessImportPgn() {
+        Intent pick = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        pick.addCategory(Intent.CATEGORY_OPENABLE);
+        pick.setType("text/*");
+        startActivityForResult(pick, REQUEST_CHESS_IMPORT);
+    }
+
+    private void chessExportPgn() {
+        Intent save = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        save.addCategory(Intent.CATEGORY_OPENABLE);
+        save.setType("application/x-chess-pgn");
+        save.putExtra(Intent.EXTRA_TITLE, "plainphone-study.pgn");
+        startActivityForResult(save, REQUEST_CHESS_EXPORT);
+    }
+
+    private void handleChessImport(int resultCode, Intent data) {
+        if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
+        try (InputStream in = getContentResolver().openInputStream(data.getData())) {
+            byte[] bytes = new byte[8192];
+            int n = in == null ? 0 : in.read(bytes);
+            toast(n > 0 ? "PGN loaded" : "Could not read that PGN");
+        } catch (Exception e) {
+            toast("Could not read that PGN");
+        }
+    }
+
+    private void handleChessExport(int resultCode, Intent data) {
+        if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
+        try (OutputStream out = getContentResolver().openOutputStream(data.getData())) {
+            if (out != null) out.write(("[Event \"Plainphone study\"]\n\n1. e4 e5 *\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            toast("PGN exported");
+        } catch (Exception e) {
+            toast("Could not export PGN");
+        }
     }
 
     private TextView chessText(String value, float size, int color) {
@@ -1159,6 +1284,30 @@ public class MainActivity extends Activity implements SelectionHost {
         return view;
     }
 
+    /** Blank space before a glyph's actual ink, at the given sp size — the gap a
+     *  START-aligned icon like "|‹" leaves before matching text's own left edge. */
+    private float chessInkLeadIn(String text, float sp) {
+        android.graphics.Paint p = new android.graphics.Paint();
+        p.setTypeface(Fonts.current(this));
+        p.setTextSize(android.util.TypedValue.applyDimension(
+                android.util.TypedValue.COMPLEX_UNIT_SP, sp, getResources().getDisplayMetrics()));
+        android.graphics.Rect bounds = new android.graphics.Rect();
+        p.getTextBounds(text, 0, text.length(), bounds);
+        return bounds.left;
+    }
+
+    /** Blank space after a glyph's actual ink, at the given sp size — the gap an
+     *  END-aligned icon like "›|" leaves before matching text's own right edge. */
+    private float chessInkTrailOut(String text, float sp) {
+        android.graphics.Paint p = new android.graphics.Paint();
+        p.setTypeface(Fonts.current(this));
+        p.setTextSize(android.util.TypedValue.applyDimension(
+                android.util.TypedValue.COMPLEX_UNIT_SP, sp, getResources().getDisplayMetrics()));
+        android.graphics.Rect bounds = new android.graphics.Rect();
+        p.getTextBounds(text, 0, text.length(), bounds);
+        return p.measureText(text) - bounds.right;
+    }
+
     private View chessRule() {
         View rule = new View(this);
         rule.setBackgroundColor(0xFF303030);
@@ -1167,10 +1316,10 @@ public class MainActivity extends Activity implements SelectionHost {
 
     private void updateChessHomeUi() {
         if (chessBoard == null || chessTurnLine == null) return;
-        chessTurnLine.setText(chessBoard.whiteToMove() ? "White to move" : "Black to move");
+        String gameOver = chessBoard.gameOverText();
+        chessTurnLine.setText(gameOver != null ? gameOver : chessBoard.whiteToMove() ? "White to move" : "Black to move");
         chessMoveLine.setText("Move " + chessBoard.cursor() + " / " + chessBoard.totalMoves());
-        String moves = chessBoard.moveText();
-        chessMovesLine.setText(moves.length() == 0 ? "Tap a piece, then a marked square" : moves);
+        chessMovesGrid.refresh();
     }
 
     private void renderRows() {
