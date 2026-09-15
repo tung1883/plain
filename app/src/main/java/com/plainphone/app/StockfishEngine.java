@@ -12,18 +12,31 @@ import java.util.List;
 
 /** Thin UCI wrapper around the Stockfish binary bundled at jniLibs/arm64-v8a/libstockfish.so
  *  (the .so name is a packaging trick — it's a real executable, not a shared library; Android
- *  extracts it to nativeLibraryDir with exec permission the same way it would a real .so). One
- *  process is started lazily and kept alive for the app's lifetime; every call here blocks on
- *  process I/O, so callers must run it off the UI thread. */
+ *  extracts it to nativeLibraryDir with exec permission the same way it would a real .so).
+ *  Two independent processes are kept alive for the app's lifetime, not one: {@link #get}
+ *  (the fast double-tap move-picker, {@link #bestOf}) and {@link #getAnalysis} (background
+ *  eval, {@link #analyzeMultiPv}, re-run after every move) each get their own process, so a
+ *  slow deep analysis on one can never make a double-tap wait behind it — they used to share
+ *  a single process and lock, and a double-tap could queue up for seconds behind whatever
+ *  depth the analysis setting asked for. Every call here blocks on process I/O, so callers
+ *  must run it off the UI thread. */
 final class StockfishEngine {
-    private static StockfishEngine instance;
+    private static StockfishEngine moveInstance;
+    private static StockfishEngine analysisInstance;
 
     private final BufferedReader out;
     private final BufferedWriter in;
 
+    /** The move-picker process — used by {@link #bestOf} for double-tap. */
     static synchronized StockfishEngine get(Context context) throws IOException {
-        if (instance == null) instance = new StockfishEngine(context);
-        return instance;
+        if (moveInstance == null) moveInstance = new StockfishEngine(context);
+        return moveInstance;
+    }
+
+    /** The background-analysis process — used by {@link #analyzeMultiPv}. */
+    static synchronized StockfishEngine getAnalysis(Context context) throws IOException {
+        if (analysisInstance == null) analysisInstance = new StockfishEngine(context);
+        return analysisInstance;
     }
 
     private StockfishEngine(Context context) throws IOException {
@@ -92,19 +105,25 @@ final class StockfishEngine {
 
     private int lastMultiPv = 1;
 
+    // analyzeMultiPv() no longer shares a process/lock with bestOf(), so this is no longer
+    // about protecting double-tap latency — it's a safety net against Android's phantom
+    // process killer (Samsung/Android 12+ kills long-running high-CPU child processes), since
+    // a move re-triggers analysis every time. Stockfish still stops itself early if it
+    // reaches targetDepth first.
+    private static final int ANALYSIS_MOVETIME_CAP_MS = 1500;
+
     /** The top {@code lines} candidate moves (not just the single best one), each with its own
      *  evaluation and principal variation, ranked best-first — this is what an engine panel
      *  actually shows, as opposed to {@link #bestOf} which only ever needs the single winner
-     *  among a restricted set of squares. A depth limit (not a time budget) since this is the
-     *  user-facing "engine depth" setting — Stockfish's own iterative deepening stops itself
-     *  once it completes that depth, so there's no runaway search to guard against. */
+     *  among a restricted set of squares. Depth is the user-facing "engine depth" setting;
+     *  see {@link #ANALYSIS_MOVETIME_CAP_MS} for why it's still paired with a time cap. */
     synchronized List<Analysis> analyzeMultiPv(String fen, int targetDepth, int lines) throws IOException {
         if (lines != lastMultiPv) {
             send("setoption name MultiPV value " + lines);
             lastMultiPv = lines;
         }
         send("position fen " + fen);
-        send("go depth " + targetDepth);
+        send("go depth " + targetDepth + " movetime " + ANALYSIS_MOVETIME_CAP_MS);
         // Index 0 unused; UCI's multipv numbering starts at 1, and keeping the same numbering
         // here avoids an off-by-one every time a line is read back out of this array.
         Analysis[] slots = new Analysis[lines + 1];

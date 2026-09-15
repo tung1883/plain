@@ -422,7 +422,7 @@ final class ChessBoardView extends View {
             List<String> summary;
             try {
                 List<StockfishEngine.Analysis> pvLines =
-                        StockfishEngine.get(host).analyzeMultiPv(fen, depth, lines);
+                        StockfishEngine.getAnalysis(host).analyzeMultiPv(fen, depth, lines);
                 summary = formatAnalysis(pvLines);
             } catch (Exception e) {
                 summary = new ArrayList<>();
