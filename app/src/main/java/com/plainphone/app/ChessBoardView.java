@@ -26,13 +26,7 @@ final class ChessBoardView extends View {
     private final Paint piecePaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     private final Paint textPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint coordPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private char[][] position = {
-            {'r','n','b','q','k','b','n','r'},
-            {'p','p','p','p','p','p','p','p'},
-            {0,0,0,0,0,0,0,0},{0,0,0,0,0,0,0,0},
-            {0,0,0,0,0,0,0,0},{0,0,0,0,0,0,0,0},
-            {'P','P','P','P','P','P','P','P'},
-            {'R','N','B','Q','K','B','N','R'} };
+    private char[][] position = startingPosition();
     private final Map<String, Bitmap> images = new HashMap<>();
     // Every played move is a node in a tree, not an entry truncated away on going back and
     // playing something else — root is the start position, `current` is whatever position
@@ -42,7 +36,9 @@ final class ChessBoardView extends View {
     // navigating into it — no separate "promote" step, no truncation, ever. Built in the
     // constructor, not here: it needs whiteTurn/castleRights already at their real starting
     // values, not the defaults a field initializer would see this early.
-    final MoveNode root;
+    // Not final: loading a game from a PGN file replaces the whole tree (see
+    // resetToStartPosition) rather than keeping whatever game was already on screen.
+    private MoveNode root;
     private MoveNode current;
     private boolean whiteTurn = true;
     // WK, WQ, BK, BQ castling rights; they are saved with every history state.
@@ -67,6 +63,18 @@ final class ChessBoardView extends View {
     private List<String> engineSummary = new ArrayList<>();
     private int analysisGeneration;
 
+    // --- puzzle-solving mode ---------------------------------------------
+    // While active, a tap only commits if it matches the next expected move in
+    // puzzleSolution — anything else is rejected rather than played. Cleared by any other
+    // way of changing the board (a fresh game load, reset) so a stray puzzle state never
+    // outlives the position it belonged to.
+    private boolean puzzleMode;
+    private List<String> puzzleSolution;
+    private int puzzleStep;
+    private boolean puzzleSolved;
+    private Runnable onPuzzleWrongMove;
+    private Runnable onPuzzleSolved;
+
     ChessBoardView(Activity host, Runnable onChanged) {
         super(host);
         this.host = host;
@@ -83,6 +91,175 @@ final class ChessBoardView extends View {
             }
         });
         requestAnalysis();
+    }
+
+    private static char[][] startingPosition() {
+        return new char[][]{
+                {'r','n','b','q','k','b','n','r'},
+                {'p','p','p','p','p','p','p','p'},
+                {0,0,0,0,0,0,0,0},{0,0,0,0,0,0,0,0},
+                {0,0,0,0,0,0,0,0},{0,0,0,0,0,0,0,0},
+                {'P','P','P','P','P','P','P','P'},
+                {'R','N','B','Q','K','B','N','R'} };
+    }
+
+    /** Discards the game on screen entirely and starts fresh from the standard opening
+     *  position — the first step of loading a different game from an imported PGN file
+     *  (see {@link #loadSanMoves}), as opposed to {@link #first}/{@link #jumpToNode} which
+     *  navigate within the existing tree. */
+    void resetToStartPosition() {
+        position = startingPosition();
+        whiteTurn = true;
+        castleRights = 1 | 2 | 4 | 8;
+        root = new MoveNode(null, position, whiteTurn, castleRights, null);
+        current = root;
+        selectedRow = selectedCol = -1;
+        draggingPiece = false;
+        dragRow = dragCol = -1;
+        puzzleMode = false;
+        updateGameOverStatus();
+        onChanged.run();
+        requestAnalysis();
+        invalidate();
+    }
+
+    /** Loads a puzzle position from a FEN (piece placement + side to move + castling rights —
+     *  the same three fields {@link #toFen} writes, everything else in a FEN string is
+     *  ignored) and arms puzzle-solving mode: a tap only commits if it matches
+     *  {@code solutionUci[puzzleStep]}; a correct move auto-plays the solution's next
+     *  (opponent) move after a short pause, and the puzzle is solved once every move in
+     *  {@code solutionUci} has been played. */
+    void loadPuzzle(String fen, List<String> solutionUci, Runnable onWrongMove, Runnable onSolved) {
+        String[] fields = fen.split(" ");
+        char[][] board = new char[8][8];
+        String[] rows = fields[0].split("/");
+        for (int r = 0; r < Math.min(8, rows.length); r++) {
+            int c = 0;
+            for (char ch : rows[r].toCharArray()) {
+                if (c >= 8) break;
+                if (Character.isDigit(ch)) c += ch - '0';
+                else board[r][c++] = ch;
+            }
+        }
+        boolean white = fields.length < 2 || !fields[1].equals("b");
+        int rights = 0;
+        String castling = fields.length > 2 ? fields[2] : "";
+        if (castling.indexOf('K') >= 0) rights |= 1;
+        if (castling.indexOf('Q') >= 0) rights |= 2;
+        if (castling.indexOf('k') >= 0) rights |= 4;
+        if (castling.indexOf('q') >= 0) rights |= 8;
+
+        position = board;
+        whiteTurn = white;
+        castleRights = rights;
+        root = new MoveNode(null, position, whiteTurn, castleRights, null);
+        current = root;
+        selectedRow = selectedCol = -1;
+        draggingPiece = false;
+        dragRow = dragCol = -1;
+
+        puzzleMode = true;
+        puzzleSolution = new ArrayList<>(solutionUci);
+        puzzleStep = 0;
+        puzzleSolved = false;
+        onPuzzleWrongMove = onWrongMove;
+        onPuzzleSolved = onSolved;
+
+        updateGameOverStatus();
+        onChanged.run();
+        requestAnalysis();
+        invalidate();
+    }
+
+    /** Null outside puzzle mode; otherwise what the status line should show instead of the
+     *  normal "White/Black to move". */
+    String puzzleStatusText() {
+        if (!puzzleMode) return null;
+        if (puzzleSolved) return "Puzzle solved!";
+        return (whiteTurn ? "White" : "Black") + " to find the best move";
+    }
+
+    private boolean matchesPuzzleMove(int fromRow, int fromCol, int toRow, int toCol) {
+        if (puzzleSolution == null || puzzleStep >= puzzleSolution.size()) return false;
+        String expected = puzzleSolution.get(puzzleStep);
+        String actual = uciMove(fromRow, fromCol, toRow, toCol);
+        String a = actual.length() > 4 ? actual.substring(0, 4) : actual;
+        String e = expected.length() > 4 ? expected.substring(0, 4) : expected;
+        return a.equals(e);
+    }
+
+    /** Called right after the player's own correct move has been committed: advances past it,
+     *  then — if the puzzle isn't done — auto-plays the solution's next (opponent) move after
+     *  a short pause so it reads as a reply rather than an instant swap. */
+    private void advancePuzzleAfterPlayerMove() {
+        puzzleStep++;
+        if (puzzleStep >= puzzleSolution.size()) {
+            puzzleSolved = true;
+            onChanged.run();
+            if (onPuzzleSolved != null) onPuzzleSolved.run();
+            return;
+        }
+        String replyUci = puzzleSolution.get(puzzleStep);
+        postDelayed(() -> {
+            int[] mv = uciToSquares(replyUci);
+            if (mv != null && in(mv[0], mv[1]) && in(mv[2], mv[3])) commitMove(mv[0], mv[1], mv[2], mv[3]);
+            puzzleStep++;
+            if (puzzleStep >= puzzleSolution.size()) {
+                puzzleSolved = true;
+                onChanged.run();
+                if (onPuzzleSolved != null) onPuzzleSolved.run();
+            }
+        }, 450);
+    }
+
+    private int[] uciToSquares(String uci) {
+        if (uci.length() < 4) return null;
+        int fromCol = uci.charAt(0) - 'a', fromRow = 8 - (uci.charAt(1) - '0');
+        int toCol = uci.charAt(2) - 'a', toRow = 8 - (uci.charAt(3) - '0');
+        return new int[]{fromRow, fromCol, toRow, toCol};
+    }
+
+    /** Loads a game parsed from PGN: resets to the start position, then replays each SAN
+     *  move by matching it against the legal moves from the position it lands on — reusing
+     *  the exact same {@link #sanFor} that generates SAN for real moves, so a PGN's own
+     *  notation (disambiguation included) lines up without a separate move-text engine.
+     *  Stops at the first move that doesn't match a legal move (a corrupt or unsupported
+     *  file) rather than leaving the board in a half-applied, potentially illegal state. */
+    void loadSanMoves(List<String> sans) {
+        resetToStartPosition();
+        for (String raw : sans) {
+            String san = normalizeSan(raw);
+            int[] move = findMoveBySan(san);
+            if (move == null) break;
+            commitMove(move[0], move[1], move[2], move[3]);
+        }
+    }
+
+    /** PGN sometimes writes castling with digits ("0-0") instead of letters ("O-O"), and
+     *  always carries check/mate/annotation glyphs ("+", "#", "!", "?") our own SAN
+     *  generator never adds — stripped here so a PGN token can be compared directly
+     *  against what {@link #sanFor} produces. */
+    private String normalizeSan(String san) {
+        String s = san.replace("0-0-0", "O-O-O").replace("0-0", "O-O");
+        int end = s.length();
+        while (end > 0 && "+#!?".indexOf(s.charAt(end - 1)) >= 0) end--;
+        return s.substring(0, end);
+    }
+
+    private int[] findMoveBySan(String san) {
+        for (int r = 0; r < 8; r++) for (int c = 0; c < 8; c++) {
+            char moving = position[r][c];
+            if (moving == 0 || Character.isUpperCase(moving) != whiteTurn) continue;
+            for (int[] mv : legalMoves(r, c)) {
+                char captured = position[mv[0]][mv[1]];
+                boolean castle = Character.toUpperCase(moving) == 'K' && Math.abs(mv[1] - c) == 2;
+                boolean promotes = Character.toUpperCase(moving) == 'P' && (mv[0] == 0 || mv[0] == 7);
+                String candidate = castle ? (mv[1] > c ? "O-O" : "O-O-O")
+                        : sanFor(moving, r, c, mv[0], mv[1], captured != 0, promotes);
+                if (candidate.equals(san)) return new int[]{r, c, mv[0], mv[1]};
+            }
+        }
+        return null;
     }
 
     List<String> engineSummary() { return engineSummary; }
@@ -279,7 +456,16 @@ final class ChessBoardView extends View {
         boolean dragged = Math.abs(event.getX() - downX) > UiKit.dp(host, 8)
                 || Math.abs(event.getY() - downY) > UiKit.dp(host, 8);
         if (selectedRow >= 0 && isLegalTarget(row, col)) {
-            commitMove(selectedRow, selectedCol, row, col);
+            if (puzzleMode && puzzleSolved) {
+                // Solved — the board is free-play from here, same as any other position.
+                commitMove(selectedRow, selectedCol, row, col);
+            } else if (puzzleMode && !matchesPuzzleMove(selectedRow, selectedCol, row, col)) {
+                selectedRow = selectedCol = -1;
+                if (onPuzzleWrongMove != null) onPuzzleWrongMove.run();
+            } else {
+                commitMove(selectedRow, selectedCol, row, col);
+                if (puzzleMode) advancePuzzleAfterPlayerMove();
+            }
         } else if (!dragged && position[row][col] != 0
                 && Character.isUpperCase(position[row][col]) == whiteTurn) {
             selectedRow = row; selectedCol = col;
@@ -320,6 +506,29 @@ final class ChessBoardView extends View {
         MoveNode n = from;
         while (!n.children.isEmpty()) n = n.children.get(0);
         return n;
+    }
+
+    /** The permanent mainline's SAN moves in order, root to tip — what PGN export writes as
+     *  the game's movetext. Deliberately just the mainline: PGN's own variation syntax
+     *  would be needed to also carry recorded sidelines, which is more than a "save my
+     *  game" export needs right now. */
+    List<String> mainlineSans() {
+        List<String> out = new ArrayList<>();
+        MoveNode n = root;
+        while (!n.children.isEmpty()) { n = n.children.get(0); out.add(n.san); }
+        return out;
+    }
+
+    /** The PGN Result tag for the mainline's own ending — "*" (still open, or the board
+     *  isn't currently sitting at the mainline's tip so there's nothing decisive to read)
+     *  unless {@code current} is actually there and {@link #gameOverText} says the game
+     *  ended. */
+    String pgnResult() {
+        if (current != mainTip(root) || gameOverText == null) return "*";
+        if (gameOverText.startsWith("Checkmate")) {
+            return gameOverText.contains("White wins") ? "1-0" : "0-1";
+        }
+        return "1/2-1/2";
     }
 
     void first() { restoreNode(root); }

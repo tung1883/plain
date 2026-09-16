@@ -79,6 +79,14 @@ final class PluginTasks {
             public boolean running(Context c) { return DevService.isConnected(); }
             public String detail(Context c) { return DevService.activeDetail(); }
         });
+        // The puzzle generator can run for hours over the whole imported library — surfaced
+        // here so locking Chess (once it's lockable) or "Lock all" shows it's still going,
+        // same as every other background task.
+        sources.add(new Source() {
+            public HomeMode plugin() { return HomeMode.CHESS; }
+            public boolean running(Context c) { return ChessPuzzleJobs.isRunning(c); }
+            public String detail(Context c) { return ChessPuzzleJobs.activeLabel(c); }
+        });
     }
 
     static void register(Source s) {

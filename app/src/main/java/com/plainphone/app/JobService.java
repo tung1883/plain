@@ -14,9 +14,11 @@ import android.os.Looper;
 import android.provider.DocumentsContract;
 
 import java.io.File;
+import java.io.IOException;
 import java.io.OutputStream;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
 
 /** Runs the global persistent queue one job at a time. */
@@ -78,6 +80,8 @@ public class JobService extends Service {
             new Thread(() -> runSectionJob(job), "job-section").start();
         } else if (SearchJobs.isType(job.type)) {
             new Thread(() -> runSearchJob(job), "job-search").start();
+        } else if (ChessPuzzleJobs.TYPE_PUZZLEGEN.equals(job.type)) {
+            new Thread(() -> runChessPuzzleGen(job), "job-chess-puzzlegen").start();
         } else {
             android.util.Log.w("JobService", "Dropping unknown job type " + job.type);
             JobQueue.clear(app, job.id);
@@ -188,6 +192,75 @@ public class JobService extends Service {
             android.util.Log.w("JobService", "search job failed", e);
         }
         JobQueue.clear(app, job.id);
+        running = false;
+        main.post(this::maybeStart);
+    }
+
+    // --- chess puzzle generator --------------------------------------------
+
+    private static final int PUZZLEGEN_CHECKPOINT_EVERY = 5;
+
+    private void runChessPuzzleGen(JobQueue.Job job) {
+        Context app = getApplicationContext();
+        int startCursor = Config.getChessPuzzlegenCursor(app);
+        int total = ChessLibrary.lineCount(app);
+        if (startCursor >= total) {
+            JobQueue.clear(app, job.id);
+            ChessPuzzleJobs.clearSnapshot();
+            running = false;
+            main.post(this::maybeStart);
+            return;
+        }
+
+        StockfishEngine engine;
+        try {
+            engine = StockfishEngine.getGenerator(app);
+        } catch (IOException e) {
+            android.util.Log.w("JobService", "chess puzzlegen: no engine available", e);
+            JobQueue.clear(app, job.id);
+            running = false;
+            main.post(this::maybeStart);
+            return;
+        }
+        PuzzleGenerator generator = new PuzzleGenerator(engine, () -> ChessPuzzleJobs.cancelRequested);
+
+        ChessPuzzleJobs.Snapshot snap = new ChessPuzzleJobs.Snapshot();
+        snap.gamesTotal = total;
+        snap.gamesScanned = startCursor;
+        snap.puzzlesFound = ChessPuzzles.count(app);
+        ChessPuzzleJobs.publish(snap);
+
+        int[] sinceCheckpoint = {0};
+        ChessLibrary.scanFrom(app, startCursor, (lineNumber, entry) -> {
+            if (ChessPuzzleJobs.cancelRequested) return false;
+            keepAlive(job);
+            try {
+                Optional<ChessPuzzles.Puzzle> found = generator.analyzeGame(entry);
+                if (found.isPresent()) {
+                    ChessPuzzles.appendPuzzle(app, found.get());
+                    snap.puzzlesFound++;
+                }
+            } catch (Exception e) {
+                android.util.Log.w("JobService", "chess puzzlegen: game failed, skipping", e);
+            }
+            snap.gamesScanned = lineNumber;
+            if (++sinceCheckpoint[0] >= PUZZLEGEN_CHECKPOINT_EVERY) {
+                sinceCheckpoint[0] = 0;
+                Config.setChessPuzzlegenCursor(app, lineNumber);
+            }
+            ChessPuzzleJobs.publish(snap);
+            throttledNotif(notif("Generating chess puzzles",
+                    snap.gamesScanned + " of " + snap.gamesTotal + " games · " + snap.puzzlesFound + " found",
+                    pct(snap.gamesScanned, snap.gamesTotal)));
+            return !ChessPuzzleJobs.cancelRequested;
+        });
+        Config.setChessPuzzlegenCursor(app, snap.gamesScanned);
+        ChessPuzzleJobs.cancelRequested = false;
+
+        // Either caught up or stopped — either way the job row is done; a future
+        // ChessPuzzleJobs.start() re-enqueues and picks up from Config's cursor.
+        JobQueue.clear(app, job.id);
+        ChessPuzzleJobs.clearSnapshot();
         running = false;
         main.post(this::maybeStart);
     }

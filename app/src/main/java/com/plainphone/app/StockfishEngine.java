@@ -23,6 +23,7 @@ import java.util.List;
 final class StockfishEngine {
     private static StockfishEngine moveInstance;
     private static StockfishEngine analysisInstance;
+    private static StockfishEngine generatorInstance;
 
     private final BufferedReader out;
     private final BufferedWriter in;
@@ -37,6 +38,14 @@ final class StockfishEngine {
     static synchronized StockfishEngine getAnalysis(Context context) throws IOException {
         if (analysisInstance == null) analysisInstance = new StockfishEngine(context);
         return analysisInstance;
+    }
+
+    /** The puzzle-generator's own process — kept separate from both of the above so a long
+     *  batch scan (potentially hours) never makes the live analysis panel or a double-tap
+     *  wait behind it, same reasoning as the existing move/analysis split. */
+    static synchronized StockfishEngine getGenerator(Context context) throws IOException {
+        if (generatorInstance == null) generatorInstance = new StockfishEngine(context);
+        return generatorInstance;
     }
 
     private StockfishEngine(Context context) throws IOException {

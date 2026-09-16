@@ -25,6 +25,8 @@ import android.os.Looper;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.Gravity;
+import android.view.MotionEvent;
+import android.view.ScaleGestureDetector;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
@@ -32,6 +34,7 @@ import android.view.WindowInsets;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.AdapterView;
+import android.widget.BaseAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
@@ -49,7 +52,9 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 public class MainActivity extends Activity implements SelectionHost {
@@ -118,6 +123,11 @@ public class MainActivity extends Activity implements SelectionHost {
     private MovesGrid chessMovesGrid;
     private String chessSelectedBoard = "Slate Study";
     private String chessSelectedPieces = "neo";
+    // Manual override on top of resizeChessBoardIfNeeded's auto-fit width — 1f means "no
+    // override, defer to auto-fit". Set by the corner drag handle / pinch, persisted in
+    // Config so the size sticks across restarts.
+    private float chessManualScale = 1f;
+    private TextView chessResetPill;
 
     private static final int REQUEST_NOTES_UNLOCK = 4301;
     private static final int REQUEST_PICK_NOTES_FOLDER = 4302;
@@ -133,6 +143,8 @@ public class MainActivity extends Activity implements SelectionHost {
     private static final int REQUEST_DEV_UNLOCK = 4312;
     private static final int REQUEST_CHESS_IMPORT = 4313;
     private static final int REQUEST_CHESS_EXPORT = 4314;
+    private static final int REQUEST_CHESS_LIBRARY = 4315;
+    private static final int REQUEST_CHESS_PUZZLES = 4316;
     /** Deferred action to run once the vault is unlocked (move-to-vault). */
     private Runnable afterVaultUnlock;
     private FrameLayout artFrame;
@@ -213,6 +225,10 @@ public class MainActivity extends Activity implements SelectionHost {
             handleChessImport(resultCode, data);
         } else if (requestCode == REQUEST_CHESS_EXPORT) {
             handleChessExport(resultCode, data);
+        } else if (requestCode == REQUEST_CHESS_LIBRARY) {
+            handleChessLibraryPick(resultCode, data);
+        } else if (requestCode == REQUEST_CHESS_PUZZLES) {
+            handleChessPuzzlePick(resultCode, data);
         }
     }
 
@@ -1123,6 +1139,90 @@ public class MainActivity extends Activity implements SelectionHost {
     // weight/0dp to flexibly fill leftover space the way it did without an outer scroll.
     private static final int CHESS_MOVES_GRID_HEIGHT_DP = 140;
 
+    /** Wraps {@link #chessBoard} with a corner drag handle and a two-finger pinch listener,
+     *  both feeding the same {@link #chessManualScale} override. {@link ChessBoardView}'s own
+     *  {@code onTouchEvent} unconditionally consumes single-finger touches for piece
+     *  drag-and-drop, so neither gesture may compete with that: the handle is a separate small
+     *  view outside the board's bounds, and the pinch detector only steals the touch stream
+     *  once a second finger is down ({@code onInterceptTouchEvent} returns {@code false} for
+     *  one finger, letting it fall straight through to the board exactly as before). */
+    private View buildChessBoardWrap() {
+        ScaleGestureDetector[] scaleHolder = new ScaleGestureDetector[1];
+        FrameLayout wrap = new FrameLayout(this) {
+            @Override public boolean onInterceptTouchEvent(MotionEvent ev) {
+                scaleHolder[0].onTouchEvent(ev);
+                return ev.getPointerCount() >= 2;
+            }
+            @Override public boolean onTouchEvent(MotionEvent ev) {
+                scaleHolder[0].onTouchEvent(ev);
+                int action = ev.getActionMasked();
+                if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_POINTER_UP
+                        || action == MotionEvent.ACTION_CANCEL) {
+                    Config.setChessBoardScale(this.getContext(), chessManualScale);
+                    chessResetPill.setVisibility(chessManualScale == 1f ? View.GONE : View.VISIBLE);
+                }
+                return true;
+            }
+        };
+        scaleHolder[0] = new ScaleGestureDetector(this, new ScaleGestureDetector.SimpleOnScaleGestureListener() {
+            @Override public boolean onScale(ScaleGestureDetector detector) {
+                chessManualScale = clamp(chessManualScale * detector.getScaleFactor(), 0.55f, 1.5f);
+                resizeChessBoardIfNeeded();
+                return true;
+            }
+        });
+
+        wrap.addView(chessBoard, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL));
+
+        View handle = new View(this);
+        StateListDrawable handleBg = new StateListDrawable();
+        handleBg.addState(new int[]{android.R.attr.state_pressed},
+                UiKit.rounded(this, Color.BLACK, 0xFF8FBF8F, 2f, UiKit.R_PILL));
+        handleBg.addState(new int[]{}, UiKit.rounded(this, Color.BLACK, 0xFF3A3A3A, 2f, UiKit.R_PILL));
+        int handleTouchSize = UiKit.dp(this, 44);
+        int handleVisibleInset = UiKit.dp(this, 11); // 44dp touch target, 22dp visible dot
+        handle.setBackground(new android.graphics.drawable.InsetDrawable(handleBg,
+                handleVisibleInset, handleVisibleInset, handleVisibleInset, handleVisibleInset));
+        int handleOffset = UiKit.dp(this, 18);
+        // Offset half outside the board's corner, same as the mockup's "⤢ dot" — the hit
+        // area stays a full 44dp even though the drawn dot is smaller.
+        FrameLayout.LayoutParams handleLp = new FrameLayout.LayoutParams(handleTouchSize, handleTouchSize);
+        handleLp.gravity = Gravity.END | Gravity.BOTTOM;
+        handleLp.rightMargin = -handleOffset;
+        handleLp.bottomMargin = -handleOffset;
+        wrap.addView(handle, handleLp);
+
+        float[] startY = new float[1];
+        float[] startScale = new float[1];
+        handle.setOnTouchListener((v, ev) -> {
+            switch (ev.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    startY[0] = ev.getRawY();
+                    startScale[0] = chessManualScale;
+                    return true;
+                case MotionEvent.ACTION_MOVE:
+                    float dy = startY[0] - ev.getRawY(); // drag up = bigger, matches pinch-out
+                    chessManualScale = clamp(startScale[0] + dy / UiKit.dp(this, 220), 0.55f, 1.5f);
+                    resizeChessBoardIfNeeded();
+                    return true;
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    Config.setChessBoardScale(this, chessManualScale);
+                    chessResetPill.setVisibility(chessManualScale == 1f ? View.GONE : View.VISIBLE);
+                    return true;
+                default:
+                    return false;
+            }
+        });
+
+        return wrap;
+    }
+
+    private static float clamp(float v, float lo, float hi) {
+        return Math.max(lo, Math.min(hi, v));
+    }
+
     private View buildChessPanel() {
         ScrollView panel = new ScrollView(this);
         panel.setFillViewport(true);
@@ -1134,9 +1234,11 @@ public class MainActivity extends Activity implements SelectionHost {
         panel.addView(content, new ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
+        chessManualScale = Config.getChessBoardScale(this);
+
         chessBoard = new ChessBoardView(this, this::updateChessHomeUi);
         chessBoard.setPieceTheme("neo");
-        content.addView(chessBoard, new LinearLayout.LayoutParams(
+        content.addView(buildChessBoardWrap(), new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         chessFixedRows = new LinearLayout(this);
@@ -1149,6 +1251,22 @@ public class MainActivity extends Activity implements SelectionHost {
         status.setPadding(48, UiKit.dp(this, 16), 48, UiKit.dp(this, 12));
         chessTurnLine = chessText("White to move", 17, Color.WHITE);
         status.addView(chessTurnLine, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        chessResetPill = chessText("Reset", 12, 0xFF6E6E6E);
+        chessResetPill.setPadding(UiKit.dp(this, 10), UiKit.dp(this, 4), UiKit.dp(this, 10), UiKit.dp(this, 4));
+        chessResetPill.setBackground(UiKit.rounded(this, Color.TRANSPARENT, 0xFF2C2C2C, 1f, UiKit.R_PILL));
+        chessResetPill.setVisibility(chessManualScale == 1f ? View.GONE : View.VISIBLE);
+        chessResetPill.setOnClickListener(v -> {
+            chessManualScale = 1f;
+            Config.setChessBoardScale(this, chessManualScale);
+            chessResetPill.setVisibility(View.GONE);
+            resizeChessBoardIfNeeded();
+        });
+        LinearLayout.LayoutParams resetLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        resetLp.rightMargin = UiKit.dp(this, 8);
+        status.addView(chessResetPill, resetLp);
+
         android.widget.ImageView chessSettingsIcon = new android.widget.ImageView(this);
         chessSettingsIcon.setImageDrawable(getResources().getDrawable(R.drawable.ic_chess_settings, getTheme()));
         chessSettingsIcon.setScaleType(android.widget.ImageView.ScaleType.CENTER_INSIDE);
@@ -1264,10 +1382,17 @@ public class MainActivity extends Activity implements SelectionHost {
         int screenW = getResources().getDisplayMetrics().widthPixels;
         int target = Math.min(screenW, available);
         target = Math.max(UiKit.dp(this, 160), Math.min(screenW, target));
-        LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) chessBoard.getLayoutParams();
+        // The drag handle / pinch override is relative to whatever auto-fit just picked for
+        // this header state, so dragging bigger/smaller still respects the header-collapsed
+        // vs. expanded baseline instead of fighting it.
+        if (chessManualScale != 1f) {
+            target = Math.round(target * chessManualScale);
+            target = Math.max(UiKit.dp(this, 120), Math.min(screenW, target));
+        }
+        FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) chessBoard.getLayoutParams();
         if (lp.width != target || lp.gravity != Gravity.CENTER_HORIZONTAL) {
             lp.width = target;
-            lp.gravity = Gravity.CENTER_HORIZONTAL; // don't rely on inheriting content's gravity
+            lp.gravity = Gravity.CENTER_HORIZONTAL;
             chessBoard.setLayoutParams(lp);
         }
     }
@@ -1304,6 +1429,27 @@ public class MainActivity extends Activity implements SelectionHost {
         rows.removeAllViews();
         rows.addView(chessSettingsRow("Import PGN", v -> { dialog.dismiss(); chessImportPgn(); }));
         rows.addView(chessSettingsRow("Export PGN", v -> { dialog.dismiss(); chessExportPgn(); }));
+        rows.addView(chessSettingsRow("Imported games", v -> {
+            dialog.dismiss();
+            startActivityForResult(new Intent(this, ChessLibraryActivity.class), REQUEST_CHESS_LIBRARY);
+        }));
+        rows.addView(chessSettingsRow("Puzzles (" + ChessPuzzles.count(this) + ")", v -> {
+            dialog.dismiss();
+            startActivityForResult(new Intent(this, ChessPuzzlesActivity.class), REQUEST_CHESS_PUZZLES);
+        }));
+        if (ChessPuzzleJobs.isRunning(this)) {
+            rows.addView(chessSettingsRow("Stop generating puzzles", v -> {
+                dialog.dismiss();
+                ChessPuzzleJobs.stop(this);
+                toast("Stopped — progress is saved, resumes from here next time");
+            }));
+        } else {
+            rows.addView(chessSettingsRow("Generate puzzles", v -> {
+                dialog.dismiss();
+                ChessPuzzleJobs.start(this);
+                toast("Generating puzzles in the background…");
+            }));
+        }
         rows.addView(chessSettingsRow("Board theme: " + chessSelectedBoard,
                 v -> { dialog.dismiss(); chessChooseBoard(); }));
         rows.addView(chessSettingsRow("Piece theme: " + ChessBoardView.pretty(chessSelectedPieces),
@@ -1415,9 +1561,12 @@ public class MainActivity extends Activity implements SelectionHost {
     }
 
     private void chessImportPgn() {
+        // .pgn has no MIME type Android recognizes, so a "text/*" filter hides it from the
+        // picker entirely (it isn't registered as text/anything) — "*/*" shows everything,
+        // which is the standard workaround for a custom extension with no registered type.
         Intent pick = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         pick.addCategory(Intent.CATEGORY_OPENABLE);
-        pick.setType("text/*");
+        pick.setType("*/*");
         startActivityForResult(pick, REQUEST_CHESS_IMPORT);
     }
 
@@ -1431,19 +1580,173 @@ public class MainActivity extends Activity implements SelectionHost {
 
     private void handleChessImport(int resultCode, Intent data) {
         if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
-        try (InputStream in = getContentResolver().openInputStream(data.getData())) {
-            byte[] bytes = new byte[8192];
-            int n = in == null ? 0 : in.read(bytes);
-            toast(n > 0 ? "PGN loaded" : "Could not read that PGN");
+        Uri uri = data.getData();
+        // A real downloaded PGN collection (a player's whole career, an opening database)
+        // is routinely thousands of games and several MB of text — reading + parsing that
+        // synchronously here would freeze the UI thread for a couple of seconds. A large
+        // file can still take a few seconds even off the UI thread, so say something now
+        // rather than leave a silent multi-second gap that looks like the tap did nothing.
+        toast("Reading PGN…");
+        new Thread(() -> {
+            String text = readChessImportText(uri);
+            List<Pgn.Game> games = text == null ? null : Pgn.parse(text);
+            if (games != null && !games.isEmpty()) {
+                ChessLibrary.appendGames(this, chessDisplayNameOf(uri), games);
+            }
+            runOnUiThread(() -> {
+                if (games == null) { toast("Could not read that PGN"); return; }
+                if (games.isEmpty()) { toast("No games found in that file"); return; }
+                if (games.size() == 1) {
+                    loadPgnGame(games.get(0));
+                } else {
+                    showPgnGamePicker(games);
+                }
+            });
+        }).start();
+    }
+
+    /** The file's display name, for the "Imported games" library's source label — a content
+     *  {@link Uri} carries no filename of its own, so this is a best-effort lookup via the
+     *  {@code OpenableColumns} projection every document provider is required to answer. */
+    private String chessDisplayNameOf(Uri uri) {
+        try (android.database.Cursor c = getContentResolver().query(uri, null, null, null, null)) {
+            if (c != null && c.moveToFirst()) {
+                int idx = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME);
+                if (idx >= 0) {
+                    String name = c.getString(idx);
+                    if (name != null && !name.isEmpty()) return name;
+                }
+            }
+        } catch (Exception ignored) { }
+        return "Imported PGN";
+    }
+
+    private String readChessImportText(Uri uri) {
+        try (InputStream in = getContentResolver().openInputStream(uri)) {
+            if (in == null) return null;
+            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) != -1) out.write(buf, 0, n);
+            return out.toString(java.nio.charset.StandardCharsets.UTF_8.name());
         } catch (Exception e) {
-            toast("Could not read that PGN");
+            return null;
         }
+    }
+
+    private void loadPgnGame(Pgn.Game game) {
+        chessBoard.loadSanMoves(game.sans);
+        toast(game.sans.isEmpty() ? "PGN loaded (no moves found)"
+                : "Loaded " + game.tag("White", "?") + " vs " + game.tag("Black", "?"));
+    }
+
+    private void handleChessLibraryPick(int resultCode, Intent data) {
+        if (resultCode != RESULT_OK || data == null) return;
+        String white = data.getStringExtra(ChessLibraryActivity.EXTRA_WHITE);
+        String black = data.getStringExtra(ChessLibraryActivity.EXTRA_BLACK);
+        String sans = data.getStringExtra(ChessLibraryActivity.EXTRA_SANS);
+        if (sans == null) return;
+        List<String> moves = new ArrayList<>();
+        if (!sans.isEmpty()) for (String s : sans.split(" ")) if (!s.isEmpty()) moves.add(s);
+        chessBoard.loadSanMoves(moves);
+        toast(moves.isEmpty() ? "PGN loaded (no moves found)" : "Loaded " + white + " vs " + black);
+    }
+
+    private void handleChessPuzzlePick(int resultCode, Intent data) {
+        if (resultCode != RESULT_OK || data == null) return;
+        String fen = data.getStringExtra(ChessPuzzlesActivity.EXTRA_FEN);
+        String solution = data.getStringExtra(ChessPuzzlesActivity.EXTRA_SOLUTION);
+        if (fen == null || fen.isEmpty() || solution == null || solution.isEmpty()) return;
+        List<String> solutionUci = new ArrayList<>();
+        for (String s : solution.split(" ")) if (!s.isEmpty()) solutionUci.add(s);
+        chessBoard.loadPuzzle(fen, solutionUci,
+                () -> toast("Not quite — try again"),
+                () -> toast("Puzzle solved!"));
+        toast("Find the best move");
+    }
+
+    /** Standard rounded plainphone popup — same chrome as the chess settings sheet — with
+     *  one two-line row per game (White vs Black, then Event · Date · Result dimmed below)
+     *  and a Cancel row at the bottom. A real downloaded PGN collection is routinely
+     *  thousands of games (a player's whole career, an opening database), so this is a
+     *  {@link ListView}/{@link BaseAdapter} that recycles a handful of row views rather
+     *  than a plain {@code LinearLayout} of thousands built up front — that would mean
+     *  thousands of real View objects before the dialog even shows, an ANR risk on its own. */
+    private void showPgnGamePicker(List<Pgn.Game> games) {
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackground(UiKit.dialogBackground(this));
+        UiKit.clipRounded(this, root, UiKit.R_MD);
+        root.setPadding(2, 32, 2, UiKit.dp(this, UiKit.R_MD));
+        root.addView(UiKit.dialogTitle(this, "Import PGN — choose a game (" + games.size() + ")"));
+
+        AlertDialog dialog = new AlertDialog.Builder(this).setView(root).create();
+        UiKit.clearDialogChrome(dialog);
+
+        ListView list = new ListView(this);
+        list.setDivider(new ColorDrawable(0xFF303030));
+        list.setDividerHeight(1);
+        list.setCacheColorHint(Color.BLACK);
+        list.setAdapter(new BaseAdapter() {
+            @Override public int getCount() { return games.size(); }
+            @Override public Object getItem(int position) { return games.get(position); }
+            @Override public long getItemId(int position) { return position; }
+            @Override public View getView(int position, View recycled, ViewGroup parent) {
+                View row = recycled != null ? recycled : chessPgnGameRow();
+                bindPgnGameRow(row, games.get(position));
+                return row;
+            }
+        });
+        list.setOnItemClickListener((parent, view, position, id) -> {
+            dialog.dismiss();
+            loadPgnGame(games.get(position));
+        });
+        root.addView(list, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        root.addView(chessSettingsRow("Cancel", v -> dialog.dismiss()));
+
+        dialog.show();
+        UiKit.unboxDialog(root);
+        if (dialog.getWindow() != null) {
+            android.view.WindowManager.LayoutParams p = dialog.getWindow().getAttributes();
+            p.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.85);
+            p.height = (int) (getResources().getDisplayMetrics().heightPixels * 0.7);
+            dialog.getWindow().setAttributes(p);
+        }
+    }
+
+    /** One recyclable row shape for {@link #showPgnGamePicker} — {@link #bindPgnGameRow}
+     *  fills in a specific game's text each time the adapter reuses it. */
+    private View chessPgnGameRow() {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.VERTICAL);
+        row.setPadding(UiKit.dp(this, 20), UiKit.dp(this, 12), UiKit.dp(this, 20), UiKit.dp(this, 12));
+        StateListDrawable bg = new StateListDrawable();
+        bg.addState(new int[]{android.R.attr.state_pressed}, new ColorDrawable(Color.DKGRAY));
+        bg.addState(new int[]{}, new ColorDrawable(Color.BLACK));
+        row.setBackground(bg);
+        row.addView(chessText("", 16, Color.WHITE));
+        TextView meta = chessText("", 12, 0xFF6E6E6E);
+        meta.setPadding(0, UiKit.dp(this, 3), 0, 0);
+        row.addView(meta);
+        return row;
+    }
+
+    private void bindPgnGameRow(View row, Pgn.Game game) {
+        LinearLayout box = (LinearLayout) row;
+        ((TextView) box.getChildAt(0)).setText(game.tag("White", "?") + " vs " + game.tag("Black", "?"));
+        ((TextView) box.getChildAt(1)).setText(game.tag("Event", "Game")
+                + " · " + game.tag("Date", "????.??.??") + " · " + game.tag("Result", "*"));
     }
 
     private void handleChessExport(int resultCode, Intent data) {
         if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
+        Map<String, String> tags = new LinkedHashMap<>();
+        tags.put("Event", "Plainphone study");
+        tags.put("Date", new java.text.SimpleDateFormat("yyyy.MM.dd", java.util.Locale.US).format(new java.util.Date()));
+        String pgn = Pgn.write(tags, chessBoard.mainlineSans(), chessBoard.pgnResult());
         try (OutputStream out = getContentResolver().openOutputStream(data.getData())) {
-            if (out != null) out.write(("[Event \"Plainphone study\"]\n\n1. e4 e5 *\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            if (out != null) out.write(pgn.getBytes(java.nio.charset.StandardCharsets.UTF_8));
             toast("PGN exported");
         } catch (Exception e) {
             toast("Could not export PGN");
@@ -1492,8 +1795,11 @@ public class MainActivity extends Activity implements SelectionHost {
 
     private void updateChessHomeUi() {
         if (chessBoard == null || chessTurnLine == null) return;
+        String puzzleStatus = chessBoard.puzzleStatusText();
         String gameOver = chessBoard.gameOverText();
-        chessTurnLine.setText(gameOver != null ? gameOver : chessBoard.whiteToMove() ? "White to move" : "Black to move");
+        chessTurnLine.setText(puzzleStatus != null ? puzzleStatus
+                : gameOver != null ? gameOver
+                : chessBoard.whiteToMove() ? "White to move" : "Black to move");
         List<String> engineLines = chessBoard.engineSummary();
         for (int i = 0; i < chessEngineLines.length; i++) {
             boolean has = i < engineLines.size();

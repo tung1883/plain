@@ -214,6 +214,16 @@
             android:theme="@style/Theme.PlainPhone" />
 
         <activity
+            android:name=".ChessLibraryActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
+            android:name=".ChessPuzzlesActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
             android:name=".LockPinGateActivity"
             android:exported="false"
             android:theme="@style/Theme.PlainPhone" />

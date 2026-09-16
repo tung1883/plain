@@ -884,6 +884,28 @@ class Config {
         prefs(context).edit().putBoolean("chess_show_coords", show).apply();
     }
 
+    /** Manual size override for the board (drag handle / pinch), relative to the auto-fit
+     *  size — 1f means "no override, defer to auto-fit". */
+    static float getChessBoardScale(Context context) {
+        return prefs(context).getFloat("chess_board_scale", 1f);
+    }
+
+    static void setChessBoardScale(Context context, float scale) {
+        prefs(context).edit().putFloat("chess_board_scale", Math.max(0.55f, Math.min(1.5f, scale))).apply();
+    }
+
+    /** How many lines of the imported-games library the puzzle generator has scanned through
+     *  so far — kept here rather than on the {@link JobQueue.Job} itself, since that job gets
+     *  cleared (not paused) every time a run ends, whether it finished or was stopped, and a
+     *  job's own sidecar files are deleted along with it. */
+    static int getChessPuzzlegenCursor(Context context) {
+        return prefs(context).getInt("chess_puzzlegen_cursor", 0);
+    }
+
+    static void setChessPuzzlegenCursor(Context context, int cursor) {
+        prefs(context).edit().putInt("chess_puzzlegen_cursor", cursor).apply();
+    }
+
     static void setDevLastHostId(Context context, String id) {
         prefs(context).edit().putString("dev_last_host", id).apply();
     }

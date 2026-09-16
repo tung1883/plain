@@ -24,7 +24,7 @@ final class PluginLock {
     /** Plugins that can carry a pausable background task. */
     private static Set<HomeMode> taskPlugins() {
         return EnumSet.of(HomeMode.VAULT, HomeMode.NOTES, HomeMode.TODOS, HomeMode.RECORDER,
-                HomeMode.DEV);
+                HomeMode.DEV, HomeMode.CHESS);
     }
 
     /**
@@ -111,6 +111,10 @@ final class PluginLock {
             } else if (p == HomeMode.DEV) {
                 DevService.disconnect(ctx);
                 lockSection(ctx, Lock.DEV);
+            } else if (p == HomeMode.CHESS) {
+                // No Lock.CHESS yet — the generator keeps running regardless, same as any
+                // other task-carrying plugin locked while its job is mid-flight. This branch
+                // is where a future chess lock hooks in.
             }
         }
     }
