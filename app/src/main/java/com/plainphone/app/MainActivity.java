@@ -1228,6 +1228,16 @@ public class MainActivity extends Activity implements SelectionHost {
         content.addView(movesScroll, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, UiKit.dp(this, CHESS_MOVES_GRID_HEIGHT_DP)));
         content.addView(chessRule(), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1));
+        // On first opening the panel, resizeChessBoardIfNeeded's very first attempt (via
+        // syncHeaderCollapse right after this returns) almost always fires before
+        // chessFixedRows has actually been measured (getHeight() still 0), so it silently
+        // no-ops and the board is left at its full-width default — even if the header was
+        // already collapsed from a previous visit. Nothing else was re-triggering it after
+        // that, so it just stayed big until the user next dragged the header. This keeps
+        // retrying on every layout pass instead (cheap and self-limiting: once the width
+        // stops changing, resizeChessBoardIfNeeded stops calling setLayoutParams, so no
+        // more layout passes fire from it).
+        content.getViewTreeObserver().addOnGlobalLayoutListener(this::resizeChessBoardIfNeeded);
         return panel;
     }
 
