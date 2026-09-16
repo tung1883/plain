@@ -35,6 +35,7 @@ public class WorkspaceActivity extends Activity implements DevService.StateListe
     private PanelHost panelHost;
     private View spinner;
     private TextView titleView;
+    private LinearLayout head;
     private LinearLayout taskbar;
     private HorizontalScrollView taskbarScroller;
 
@@ -61,10 +62,10 @@ public class WorkspaceActivity extends Activity implements DevService.StateListe
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(Color.BLACK);
 
-        LinearLayout head = UiKit.header(this, "Workspace");
+        head = UiKit.header(this, "Workspace");
         if (head.getChildAt(1) instanceof TextView) {
             titleView = (TextView) head.getChildAt(1);
-            titleView.setOnClickListener(v -> showWorkspaceMenu(titleView));
+            titleView.setOnClickListener(v -> showWorkspaceMenu());
         }
         applyName();
 
@@ -217,7 +218,7 @@ public class WorkspaceActivity extends Activity implements DevService.StateListe
         panelHost.post(this::restore);
     }
 
-    private void showWorkspaceMenu(View anchor) {
+    private void showWorkspaceMenu() {
         List<Workspaces.Meta> all = Workspaces.list(this);
         List<String> items = new ArrayList<>();
         for (Workspaces.Meta m : all) {
@@ -226,7 +227,13 @@ public class WorkspaceActivity extends Activity implements DevService.StateListe
         items.add("+ New workspace");
         items.add("Rename…");
         if (all.size() > 1) items.add("Delete workspace");
-        buildPopup(anchor, items.toArray(new String[0]), choice -> {
+        // titleView is WRAP_CONTENT height, centered within the header — its own bottom
+        // edge sits above the header's actual bottom (the divider), unlike the "+" button
+        // (MATCH_PARENT height, so its bottom already lands flush on it). Anchoring to
+        // `head` itself instead fixes that gap; the xoff keeps the popup positioned under
+        // "Workspace" rather than sliding it to the header's left edge under the back button.
+        int xoff = titleView.getLeft();
+        buildPopup(head, items.toArray(new String[0]), choice -> {
             if (choice.equals("+ New workspace")) {
                 switchTo(Workspaces.create(this, null).id);
             } else if (choice.equals("Rename…")) {
@@ -249,7 +256,7 @@ public class WorkspaceActivity extends Activity implements DevService.StateListe
                     }
                 }
             }
-        }, 0, Gravity.START);
+        }, xoff, Gravity.START);
     }
 
     private String currentName() {
