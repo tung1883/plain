@@ -12,7 +12,9 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.graphics.Bitmap;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Paint;
 import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
@@ -127,7 +129,7 @@ public class MainActivity extends Activity implements SelectionHost {
     // override, defer to auto-fit". Set by the corner drag handle / pinch, persisted in
     // Config so the size sticks across restarts.
     private float chessManualScale = 1f;
-    private TextView chessResetPill;
+    private android.widget.ImageView chessResizeIcon;
 
     private static final int REQUEST_NOTES_UNLOCK = 4301;
     private static final int REQUEST_PICK_NOTES_FOLDER = 4302;
@@ -1139,83 +1141,14 @@ public class MainActivity extends Activity implements SelectionHost {
     // weight/0dp to flexibly fill leftover space the way it did without an outer scroll.
     private static final int CHESS_MOVES_GRID_HEIGHT_DP = 140;
 
-    /** Wraps {@link #chessBoard} with a corner drag handle and a two-finger pinch listener,
-     *  both feeding the same {@link #chessManualScale} override. {@link ChessBoardView}'s own
-     *  {@code onTouchEvent} unconditionally consumes single-finger touches for piece
-     *  drag-and-drop, so neither gesture may compete with that: the handle is a separate small
-     *  view outside the board's bounds, and the pinch detector only steals the touch stream
-     *  once a second finger is down ({@code onInterceptTouchEvent} returns {@code false} for
-     *  one finger, letting it fall straight through to the board exactly as before). */
+    /** Plain wrapper around {@link #chessBoard} — resizing no longer happens by touching the
+     *  live board at all; it's entirely inside {@link #chessShowResizeDialog}'s own preview,
+     *  which pinches independently and only pushes the result into {@link #chessManualScale}
+     *  once that dialog closes. */
     private View buildChessBoardWrap() {
-        ScaleGestureDetector[] scaleHolder = new ScaleGestureDetector[1];
-        FrameLayout wrap = new FrameLayout(this) {
-            @Override public boolean onInterceptTouchEvent(MotionEvent ev) {
-                scaleHolder[0].onTouchEvent(ev);
-                return ev.getPointerCount() >= 2;
-            }
-            @Override public boolean onTouchEvent(MotionEvent ev) {
-                scaleHolder[0].onTouchEvent(ev);
-                int action = ev.getActionMasked();
-                if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_POINTER_UP
-                        || action == MotionEvent.ACTION_CANCEL) {
-                    Config.setChessBoardScale(this.getContext(), chessManualScale);
-                    chessResetPill.setVisibility(chessManualScale == 1f ? View.GONE : View.VISIBLE);
-                }
-                return true;
-            }
-        };
-        scaleHolder[0] = new ScaleGestureDetector(this, new ScaleGestureDetector.SimpleOnScaleGestureListener() {
-            @Override public boolean onScale(ScaleGestureDetector detector) {
-                chessManualScale = clamp(chessManualScale * detector.getScaleFactor(), 0.55f, 1.5f);
-                resizeChessBoardIfNeeded();
-                return true;
-            }
-        });
-
+        FrameLayout wrap = new FrameLayout(this);
         wrap.addView(chessBoard, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL));
-
-        View handle = new View(this);
-        StateListDrawable handleBg = new StateListDrawable();
-        handleBg.addState(new int[]{android.R.attr.state_pressed},
-                UiKit.rounded(this, Color.BLACK, 0xFF8FBF8F, 2f, UiKit.R_PILL));
-        handleBg.addState(new int[]{}, UiKit.rounded(this, Color.BLACK, 0xFF3A3A3A, 2f, UiKit.R_PILL));
-        int handleTouchSize = UiKit.dp(this, 44);
-        int handleVisibleInset = UiKit.dp(this, 11); // 44dp touch target, 22dp visible dot
-        handle.setBackground(new android.graphics.drawable.InsetDrawable(handleBg,
-                handleVisibleInset, handleVisibleInset, handleVisibleInset, handleVisibleInset));
-        int handleOffset = UiKit.dp(this, 18);
-        // Offset half outside the board's corner, same as the mockup's "⤢ dot" — the hit
-        // area stays a full 44dp even though the drawn dot is smaller.
-        FrameLayout.LayoutParams handleLp = new FrameLayout.LayoutParams(handleTouchSize, handleTouchSize);
-        handleLp.gravity = Gravity.END | Gravity.BOTTOM;
-        handleLp.rightMargin = -handleOffset;
-        handleLp.bottomMargin = -handleOffset;
-        wrap.addView(handle, handleLp);
-
-        float[] startY = new float[1];
-        float[] startScale = new float[1];
-        handle.setOnTouchListener((v, ev) -> {
-            switch (ev.getActionMasked()) {
-                case MotionEvent.ACTION_DOWN:
-                    startY[0] = ev.getRawY();
-                    startScale[0] = chessManualScale;
-                    return true;
-                case MotionEvent.ACTION_MOVE:
-                    float dy = startY[0] - ev.getRawY(); // drag up = bigger, matches pinch-out
-                    chessManualScale = clamp(startScale[0] + dy / UiKit.dp(this, 220), 0.55f, 1.5f);
-                    resizeChessBoardIfNeeded();
-                    return true;
-                case MotionEvent.ACTION_UP:
-                case MotionEvent.ACTION_CANCEL:
-                    Config.setChessBoardScale(this, chessManualScale);
-                    chessResetPill.setVisibility(chessManualScale == 1f ? View.GONE : View.VISIBLE);
-                    return true;
-                default:
-                    return false;
-            }
-        });
-
         return wrap;
     }
 
@@ -1252,27 +1185,27 @@ public class MainActivity extends Activity implements SelectionHost {
         chessTurnLine = chessText("White to move", 17, Color.WHITE);
         status.addView(chessTurnLine, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
-        chessResetPill = chessText("Reset", 12, 0xFF6E6E6E);
-        chessResetPill.setPadding(UiKit.dp(this, 10), UiKit.dp(this, 4), UiKit.dp(this, 10), UiKit.dp(this, 4));
-        chessResetPill.setBackground(UiKit.rounded(this, Color.TRANSPARENT, 0xFF2C2C2C, 1f, UiKit.R_PILL));
-        chessResetPill.setVisibility(chessManualScale == 1f ? View.GONE : View.VISIBLE);
-        chessResetPill.setOnClickListener(v -> {
-            chessManualScale = 1f;
-            Config.setChessBoardScale(this, chessManualScale);
-            chessResetPill.setVisibility(View.GONE);
-            resizeChessBoardIfNeeded();
-        });
-        LinearLayout.LayoutParams resetLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        resetLp.rightMargin = UiKit.dp(this, 8);
-        status.addView(chessResetPill, resetLp);
+        // 24dp — matches both icons' own 24x24 viewport exactly, so the drawn glyph fills the
+        // box instead of leaving the extra centering slack a bigger box (36dp) would add on
+        // top of the icon's own edge; that slack was why the gear used to sit visibly inset
+        // from the transport row's "›|" (which corrects for glyph ink-bearing on its own).
+        int iconBoxDp = 18;
+
+        chessResizeIcon = new android.widget.ImageView(this);
+        chessResizeIcon.setImageDrawable(getResources().getDrawable(R.drawable.ic_chess_resize, getTheme()));
+        chessResizeIcon.setScaleType(android.widget.ImageView.ScaleType.CENTER_INSIDE);
+        chessResizeIcon.setContentDescription("Resize board");
+        chessResizeIcon.setOnClickListener(v -> chessShowResizeDialog());
+        LinearLayout.LayoutParams resizeIconLp = new LinearLayout.LayoutParams(UiKit.dp(this, iconBoxDp), UiKit.dp(this, iconBoxDp));
+        resizeIconLp.rightMargin = UiKit.dp(this, 14);
+        status.addView(chessResizeIcon, resizeIconLp);
 
         android.widget.ImageView chessSettingsIcon = new android.widget.ImageView(this);
         chessSettingsIcon.setImageDrawable(getResources().getDrawable(R.drawable.ic_chess_settings, getTheme()));
         chessSettingsIcon.setScaleType(android.widget.ImageView.ScaleType.CENTER_INSIDE);
         chessSettingsIcon.setContentDescription("Chess settings");
         chessSettingsIcon.setOnClickListener(v -> chessOpenSettings());
-        status.addView(chessSettingsIcon, new LinearLayout.LayoutParams(UiKit.dp(this, 36), UiKit.dp(this, 36)));
+        status.addView(chessSettingsIcon, new LinearLayout.LayoutParams(UiKit.dp(this, iconBoxDp), UiKit.dp(this, iconBoxDp)));
         chessFixedRows.addView(status);
 
         chessEngineLines = new TextView[5]; // pool sized for the max "Variations shown" setting
@@ -1379,15 +1312,18 @@ public class MainActivity extends Activity implements SelectionHost {
         // The fully-open header (menu swiped down) leaves the tightest fit — nudge the
         // board a little larger there; the outer panel ScrollView absorbs the rest.
         if (headerOffset <= 0f) available += UiKit.dp(this, 28);
-        int screenW = getResources().getDisplayMetrics().widthPixels;
-        int target = Math.min(screenW, available);
-        target = Math.max(UiKit.dp(this, 160), Math.min(screenW, target));
+        // Same side inset every other row in this panel already uses (status, engine lines,
+        // transport all pad 48px each side) — the board used to run edge-to-edge instead of
+        // matching that margin.
+        int maxW = getResources().getDisplayMetrics().widthPixels - 96;
+        int target = Math.min(maxW, available);
+        target = Math.max(UiKit.dp(this, 160), Math.min(maxW, target));
         // The drag handle / pinch override is relative to whatever auto-fit just picked for
         // this header state, so dragging bigger/smaller still respects the header-collapsed
         // vs. expanded baseline instead of fighting it.
         if (chessManualScale != 1f) {
             target = Math.round(target * chessManualScale);
-            target = Math.max(UiKit.dp(this, 120), Math.min(screenW, target));
+            target = Math.max(UiKit.dp(this, 120), Math.min(maxW, target));
         }
         FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) chessBoard.getLayoutParams();
         if (lp.width != target || lp.gravity != Gravity.CENTER_HORIZONTAL) {
@@ -1395,6 +1331,117 @@ public class MainActivity extends Activity implements SelectionHost {
             lp.gravity = Gravity.CENTER_HORIZONTAL;
             chessBoard.setLayoutParams(lp);
         }
+    }
+
+    // Preview board side at chessManualScale == 1f, inside the resize dialog — independent of
+    // the live board's own auto-fit size, since the dialog needs a fixed reference to scale
+    // up/down from regardless of whatever the real board currently measures.
+    private static final int CHESS_RESIZE_PREVIEW_BASE_DP = 200;
+
+    /** The resize icon opens an empty preview board sized at {@link #chessManualScale} — pinch
+     *  it there (not the live board) to change size, with a live percentage readout and a
+     *  Reset row alongside an X close button. Nothing is applied to the real board until the
+     *  dialog closes (X, Reset's own effect stays live-preview-only, or a tap outside), at
+     *  which point the dialog's final scale becomes the new {@link #chessManualScale}. */
+    private void chessShowResizeDialog() {
+        float[] previewScale = {chessManualScale};
+
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackground(UiKit.dialogBackground(this));
+        UiKit.clipRounded(this, root, UiKit.R_MD);
+
+        AlertDialog dialog = new AlertDialog.Builder(this).setView(root).create();
+        UiKit.clearDialogChrome(dialog);
+        dialog.setOnDismissListener(d -> {
+            chessManualScale = previewScale[0];
+            Config.setChessBoardScale(this, chessManualScale);
+            resizeChessBoardIfNeeded();
+        });
+
+        FrameLayout header = new FrameLayout(this);
+        TextView close = chessText("✕", 13, 0xFF8A8A8A);
+        close.setPadding(UiKit.dp(this, 12), UiKit.dp(this, 12), UiKit.dp(this, 12), UiKit.dp(this, 12));
+        close.setOnClickListener(v -> dialog.dismiss());
+        FrameLayout.LayoutParams closeLp = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        closeLp.gravity = Gravity.TOP | Gravity.END;
+        header.addView(close, closeLp);
+        root.addView(header, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, UiKit.dp(this, 40)));
+
+        TextView pct = chessText(Math.round(previewScale[0] * 100) + "%", 14, 0xFF8FBF8F);
+        pct.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams pctLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        pctLp.bottomMargin = UiKit.dp(this, 14);
+        root.addView(pct, pctLp);
+
+        int maxPreviewDp = Math.round(CHESS_RESIZE_PREVIEW_BASE_DP * 1.5f);
+        FrameLayout previewBox = new FrameLayout(this);
+        View preview = chessResizePreviewBoard();
+        FrameLayout.LayoutParams previewLp = new FrameLayout.LayoutParams(0, 0);
+        previewLp.gravity = Gravity.CENTER;
+        previewBox.addView(preview, previewLp);
+        LinearLayout.LayoutParams previewBoxLp = new LinearLayout.LayoutParams(
+                UiKit.dp(this, maxPreviewDp), UiKit.dp(this, maxPreviewDp));
+        previewBoxLp.gravity = Gravity.CENTER_HORIZONTAL;
+        root.addView(previewBox, previewBoxLp);
+
+        Runnable applyPreviewSize = () -> {
+            int side = UiKit.dp(this, Math.round(CHESS_RESIZE_PREVIEW_BASE_DP * previewScale[0]));
+            FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) preview.getLayoutParams();
+            lp.width = side;
+            lp.height = side;
+            preview.setLayoutParams(lp);
+            pct.setText(Math.round(previewScale[0] * 100) + "%");
+        };
+        applyPreviewSize.run();
+
+        ScaleGestureDetector detector = new ScaleGestureDetector(this,
+                new ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                    @Override public boolean onScale(ScaleGestureDetector d) {
+                        previewScale[0] = clamp(previewScale[0] * d.getScaleFactor(), 0.55f, 1.5f);
+                        applyPreviewSize.run();
+                        return true;
+                    }
+                });
+        previewBox.setOnTouchListener((v, ev) -> {
+            detector.onTouchEvent(ev);
+            return true;
+        });
+
+        LinearLayout.LayoutParams gapLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, UiKit.dp(this, 18));
+        root.addView(new View(this), gapLp);
+        root.addView(chessSettingsRow("Reset", v -> {
+            previewScale[0] = 1f;
+            applyPreviewSize.run();
+        }));
+
+        dialog.show();
+        UiKit.unboxDialog(root);
+        if (dialog.getWindow() != null) {
+            android.view.WindowManager.LayoutParams p = dialog.getWindow().getAttributes();
+            p.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.8);
+            dialog.getWindow().setAttributes(p);
+        }
+    }
+
+    /** An empty (no pieces) checkerboard, same colors as the default board theme — purely a
+     *  size reference inside {@link #chessShowResizeDialog}, never played on. */
+    private View chessResizePreviewBoard() {
+        return new View(this) {
+            private final Paint paint = new Paint();
+            @Override protected void onDraw(Canvas c) {
+                super.onDraw(c);
+                float cell = getWidth() / 8f;
+                for (int r = 0; r < 8; r++) for (int col = 0; col < 8; col++) {
+                    paint.setColor(((r + col) & 1) == 0 ? 0xFF3A3B3D : 0xFF1B1C1E);
+                    c.drawRect(col * cell, r * cell, (col + 1) * cell, (r + 1) * cell, paint);
+                }
+            }
+        };
     }
 
     private void chessOpenSettings() {

@@ -42,19 +42,32 @@ final class StockfishEngine {
 
     /** The puzzle-generator's own process — kept separate from both of the above so a long
      *  batch scan (potentially hours) never makes the live analysis panel or a double-tap
-     *  wait behind it, same reasoning as the existing move/analysis split. */
+     *  wait behind it, same reasoning as the existing move/analysis split. Runs multi-threaded
+     *  (the move-picker and live-analysis processes stay single-threaded, unchanged — this is
+     *  the one process where nothing else on screen needs to share the CPU with it): the
+     *  generator scans thousands of positions in a row with no user waiting on any single one
+     *  of them, so it's the one case where handing Stockfish more cores speeds up literally
+     *  every search it runs. */
     static synchronized StockfishEngine getGenerator(Context context) throws IOException {
-        if (generatorInstance == null) generatorInstance = new StockfishEngine(context);
+        if (generatorInstance == null) {
+            int threads = Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors() - 1));
+            generatorInstance = new StockfishEngine(context, threads);
+        }
         return generatorInstance;
     }
 
     private StockfishEngine(Context context) throws IOException {
+        this(context, 1);
+    }
+
+    private StockfishEngine(Context context, int threads) throws IOException {
         String path = context.getApplicationInfo().nativeLibraryDir + "/libstockfish.so";
         Process process = new ProcessBuilder(path).redirectErrorStream(true).start();
         out = new BufferedReader(new InputStreamReader(process.getInputStream()));
         in = new BufferedWriter(new OutputStreamWriter(process.getOutputStream()));
         send("uci");
         waitFor("uciok");
+        if (threads > 1) send("setoption name Threads value " + threads);
         send("isready");
         waitFor("readyok");
     }
@@ -139,12 +152,21 @@ final class StockfishEngine {
      *  second and let it keep sharpening while the position is still the one on screen,
      *  rather than showing nothing until the full budget (or {@code targetDepth}) is spent. */
     synchronized List<Analysis> analyzeMultiPv(String fen, int targetDepth, int lines, AnalysisListener listener) throws IOException {
+        return analyzeMultiPv(fen, targetDepth, lines, listener, ANALYSIS_MOVETIME_CAP_MS);
+    }
+
+    /** Same as the four-argument {@link #analyzeMultiPv}, but with an explicit movetime cap
+     *  instead of the shared {@link #ANALYSIS_MOVETIME_CAP_MS} — for a caller that runs one
+     *  query per ply across thousands of positions (the puzzle generator's walk) and needs a
+     *  much shorter budget per call than the live analysis panel does. */
+    synchronized List<Analysis> analyzeMultiPv(String fen, int targetDepth, int lines,
+                                               AnalysisListener listener, int movetimeMs) throws IOException {
         if (lines != lastMultiPv) {
             send("setoption name MultiPV value " + lines);
             lastMultiPv = lines;
         }
         send("position fen " + fen);
-        send("go depth " + targetDepth + " movetime " + ANALYSIS_MOVETIME_CAP_MS);
+        send("go depth " + targetDepth + " movetime " + movetimeMs);
         // Index 0 unused; UCI's multipv numbering starts at 1, and keeping the same numbering
         // here avoids an off-by-one every time a line is read back out of this array.
         Analysis[] slots = new Analysis[lines + 1];

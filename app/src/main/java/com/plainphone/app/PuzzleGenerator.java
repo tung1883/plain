@@ -17,8 +17,13 @@ import java.util.Set;
 final class PuzzleGenerator {
 
     // Mobile-scaled down from upstream's depth 50 / 30s / 25M-node pair search and depth 15 /
-    // 10s mate-defense search — all still capped by StockfishEngine's own 1.5s movetime cap.
-    private static final int WALK_DEPTH = 10;     // per-ply "what's the eval here" walk
+    // 10s mate-defense search. The walk runs once per ply of every game scanned — by far the
+    // dominant cost — so it gets a much shorter budget than the pair/defense searches, which
+    // only ever run on the rare candidate a walk-score swing has already flagged; a cheap
+    // catch here can afford to miss the occasional deeper tactic since that's an accepted
+    // tradeoff for scanning thousands of games in reasonable time.
+    private static final int WALK_DEPTH = 8;
+    private static final int WALK_MOVETIME_MS = 300;
     private static final int PAIR_DEPTH = 14;     // investigating a candidate (multipv 2)
     private static final int DEFENSE_DEPTH = 10;  // opponent's forced defense in a mate line
 
@@ -185,7 +190,7 @@ final class PuzzleGenerator {
      *  {@code %eval} annotation — already in the side-to-move's own POV, same UCI convention
      *  {@link StockfishEngine} documents elsewhere. */
     private Score walkScore(ChessRules.Pos board) throws IOException {
-        List<StockfishEngine.Analysis> info = engine.analyzeMultiPv(ChessRules.toFen(board), WALK_DEPTH, 1, null);
+        List<StockfishEngine.Analysis> info = engine.analyzeMultiPv(ChessRules.toFen(board), WALK_DEPTH, 1, null, WALK_MOVETIME_MS);
         if (info.isEmpty()) return null;
         StockfishEngine.Analysis a = info.get(0);
         return new Score(a.scoreCp, a.mateIn);

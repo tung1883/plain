@@ -1001,44 +1001,56 @@ final class ChessBoardView extends View {
     }
 
     private void commitMove(int fromRow, int fromCol, int toRow, int toCol) {
-        char moving = position[fromRow][fromCol];
-        char captured = position[toRow][toCol];
-        boolean capture = captured != 0;
-        boolean castle = Character.toUpperCase(moving) == 'K' && Math.abs(toCol - fromCol) == 2;
-        boolean promotes = Character.toUpperCase(moving) == 'P' && (toRow == 0 || toRow == 7);
-        String san = castle ? (toCol > fromCol ? "O-O" : "O-O-O")
-                : sanFor(moving, fromRow, fromCol, toRow, toCol, capture, promotes);
+        // A real move commits on the UI thread, but the background analysis thread's
+        // pvToSan formats OTHER candidate lines by temporarily playing them out on this same
+        // `position` array (rawApply/rawUndo) and undoing them a moment later — without this
+        // lock, a commit landing in the middle of one of those temporary excursions could
+        // read/write mid-mutation state, or have pvToSan's later rawUndo restore the wrong
+        // captured piece against the just-committed board, leaving a stray duplicate piece
+        // behind (e.g. an old PV's "capture" square never getting its real occupant back).
+        // sanFor()'s own legalMoves() probing mutates position too, so the read of `moving`/
+        // `captured` through the actual mutation both need to be inside the same lock.
+        synchronized (positionLock) {
+            char moving = position[fromRow][fromCol];
+            char captured = position[toRow][toCol];
+            boolean capture = captured != 0;
+            boolean castle = Character.toUpperCase(moving) == 'K' && Math.abs(toCol - fromCol) == 2;
+            boolean promotes = Character.toUpperCase(moving) == 'P' && (toRow == 0 || toRow == 7);
+            String san = castle ? (toCol > fromCol ? "O-O" : "O-O-O")
+                    : sanFor(moving, fromRow, fromCol, toRow, toCol, capture, promotes);
 
-        // Replaying a move already recorded here — either simply continuing the line we're
-        // on, or stepping back into an existing variation — reuses that node instead of
-        // creating a duplicate branch.
-        for (MoveNode child : current.children) {
-            if (child.san.equals(san)) { restoreNode(child); return; }
-        }
+            // Replaying a move already recorded here — either simply continuing the line
+            // we're on, or stepping back into an existing variation — reuses that node
+            // instead of creating a duplicate branch.
+            for (MoveNode child : current.children) {
+                if (child.san.equals(san)) { restoreNode(child); return; }
+            }
 
-        updateCastleRights(moving, fromRow, fromCol, captured, toRow, toCol);
-        position[toRow][toCol] = moving;
-        position[fromRow][fromCol] = 0;
-        if (castle) {
-            int rookFrom = toCol > fromCol ? 7 : 0;
-            int rookTo = toCol > fromCol ? 5 : 3;
-            position[toRow][rookTo] = position[toRow][rookFrom];
-            position[toRow][rookFrom] = 0;
+            updateCastleRights(moving, fromRow, fromCol, captured, toRow, toCol);
+            position[toRow][toCol] = moving;
+            position[fromRow][fromCol] = 0;
+            if (castle) {
+                int rookFrom = toCol > fromCol ? 7 : 0;
+                int rookTo = toCol > fromCol ? 5 : 3;
+                position[toRow][rookTo] = position[toRow][rookFrom];
+                position[toRow][rookFrom] = 0;
+            }
+            // Automatic queen promotion keeps the offline board playable without a modal.
+            if (promotes) {
+                position[toRow][toCol] = Character.isUpperCase(moving) ? 'Q' : 'q';
+            }
+            whiteTurn = !whiteTurn;
+            // A genuinely new move from here: append it as a child of `current` rather than
+            // truncating whatever was already recorded past this point — a fresh line off
+            // the tip becomes the sole (and so permanently mainline) child; one played after
+            // going back becomes a new sibling instead, leaving the existing continuation as
+            // the moves grid's main row exactly where it was — this only moves `current`,
+            // not the tree, so the grid never reflows just because a variation is being
+            // looked at.
+            MoveNode node = new MoveNode(san, position, whiteTurn, castleRights, current);
+            current.children.add(node);
+            current = node;
         }
-        // Automatic queen promotion keeps the offline board playable without a modal.
-        if (promotes) {
-            position[toRow][toCol] = Character.isUpperCase(moving) ? 'Q' : 'q';
-        }
-        whiteTurn = !whiteTurn;
-        // A genuinely new move from here: append it as a child of `current` rather than
-        // truncating whatever was already recorded past this point — a fresh line off the
-        // tip becomes the sole (and so permanently mainline) child; one played after going
-        // back becomes a new sibling instead, leaving the existing continuation as the
-        // moves grid's main row exactly where it was — this only moves `current`, not the
-        // tree, so the grid never reflows just because a variation is being looked at.
-        MoveNode node = new MoveNode(san, position, whiteTurn, castleRights, current);
-        current.children.add(node);
-        current = node;
         selectedRow = selectedCol = -1;
         updateGameOverStatus();
         onChanged.run();
