@@ -132,6 +132,22 @@ public class MainActivity extends Activity implements SelectionHost {
     private float chessManualScale = 1f;
     private boolean chessAutoResize;
     private android.widget.ImageView chessResizeIcon;
+    // The library record for whatever game is currently on the board, if it came from (or
+    // has since been matched into) the library — null for a fresh/blank board or a game
+    // loaded straight from a raw PGN file that hasn't been imported yet. Drives the
+    // metadata block and the "Game N of M" PGN stepper; both quietly hide when this is null.
+    private ChessLibrary.Entry chessCurrentEntry;
+    private TextView chessMetaPlayers, chessMetaEvent, chessMetaOpening, chessMetaResult;
+    private TextView chessPgnStepper, chessPgnSourceChip;
+    private LinearLayout chessMetaBlock, chessPgnRow;
+    // The 3-tab restructure: Board / Puzzles / Library share one home section, swapped by
+    // visibility (never a separate Activity transition) inside chessTabContainer.
+    private View chessBoardTabContent;
+    private ChessPuzzlesPanel chessPuzzlesPanel;
+    private ChessLibraryPanel chessLibraryPanel;
+    private FrameLayout chessTabContainer;
+    private TextView[] chessTabButtons;
+    private int chessActiveTab;
 
     private static final int REQUEST_NOTES_UNLOCK = 4301;
     private static final int REQUEST_PICK_NOTES_FOLDER = 4302;
@@ -148,7 +164,6 @@ public class MainActivity extends Activity implements SelectionHost {
     private static final int REQUEST_CHESS_IMPORT = 4313;
     private static final int REQUEST_CHESS_EXPORT = 4314;
     private static final int REQUEST_CHESS_LIBRARY = 4315;
-    private static final int REQUEST_CHESS_PUZZLES = 4316;
     /** Deferred action to run once the vault is unlocked (move-to-vault). */
     private Runnable afterVaultUnlock;
     private FrameLayout artFrame;
@@ -231,8 +246,6 @@ public class MainActivity extends Activity implements SelectionHost {
             handleChessExport(resultCode, data);
         } else if (requestCode == REQUEST_CHESS_LIBRARY) {
             handleChessLibraryPick(resultCode, data);
-        } else if (requestCode == REQUEST_CHESS_PUZZLES) {
-            handleChessPuzzlePick(resultCode, data);
         }
     }
 
@@ -1154,11 +1167,188 @@ public class MainActivity extends Activity implements SelectionHost {
         return wrap;
     }
 
+    /** Players / event+round / opening, plus a result pill — from {@link #chessCurrentEntry}.
+     *  Whole block hides when there's no known library record for the game on screen (a
+     *  fresh board, or a game loaded straight from a raw PGN that was never imported).
+     *  Any single line (opening especially — most PGNs don't carry an ECO/Opening tag)
+     *  hides on its own when that field is blank, rather than showing an empty row. */
+    private View buildChessMetaBlock() {
+        chessMetaBlock = new LinearLayout(this);
+        chessMetaBlock.setOrientation(LinearLayout.HORIZONTAL);
+        chessMetaBlock.setGravity(Gravity.TOP);
+        chessMetaBlock.setPadding(48, UiKit.dp(this, 12), 48, 0);
+
+        LinearLayout lines = new LinearLayout(this);
+        lines.setOrientation(LinearLayout.VERTICAL);
+        chessMetaPlayers = chessText("", 15, Color.WHITE);
+        chessMetaPlayers.setTypeface(Fonts.current(this), android.graphics.Typeface.BOLD);
+        chessMetaEvent = chessText("", 12, Color.GRAY);
+        chessMetaOpening = chessText("", 12, Color.GRAY);
+        lines.addView(chessMetaPlayers);
+        lines.addView(chessMetaEvent);
+        lines.addView(chessMetaOpening);
+        chessMetaBlock.addView(lines, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        chessMetaResult = chessText("", 12, Color.WHITE);
+        chessMetaResult.setBackground(UiKit.rounded(this, Color.BLACK, 0xFF333333, 2f, UiKit.R_SM));
+        chessMetaResult.setPadding(UiKit.dp(this, 10), UiKit.dp(this, 3), UiKit.dp(this, 10), UiKit.dp(this, 3));
+        chessMetaBlock.addView(chessMetaResult);
+        return chessMetaBlock;
+    }
+
+    /** "‹ Game N of M ›" (steps through the loaded PGN's own games) plus the source
+     *  filename, tappable to browse that PGN's games. Hidden along with the meta block
+     *  when there's no known source. */
+    private View buildChessPgnRow() {
+        chessPgnRow = new LinearLayout(this);
+        chessPgnRow.setOrientation(LinearLayout.HORIZONTAL);
+        chessPgnRow.setGravity(Gravity.CENTER_VERTICAL);
+        chessPgnRow.setPadding(48, UiKit.dp(this, 10), 48, 0);
+
+        chessPgnStepper = chessText("", 12, Color.WHITE);
+        chessPgnRow.addView(chessPgnStepper, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        chessPgnSourceChip = chessText("", 12, Color.WHITE);
+        chessPgnSourceChip.setBackground(UiKit.pressable(this, Color.BLACK, Color.DKGRAY, 0xFF262626, 2f, UiKit.R_SM));
+        chessPgnSourceChip.setPadding(UiKit.dp(this, 10), UiKit.dp(this, 4), UiKit.dp(this, 10), UiKit.dp(this, 4));
+        chessPgnSourceChip.setOnClickListener(v -> {
+            if (chessCurrentEntry == null) return;
+            Intent i = new Intent(this, ChessLibraryActivity.class);
+            i.putExtra(ChessLibraryActivity.EXTRA_SOURCE_FILTER, chessCurrentEntry.src);
+            i.putExtra(ChessLibraryActivity.EXTRA_CURRENT_ID, chessCurrentEntry.id);
+            startActivityForResult(i, REQUEST_CHESS_LIBRARY);
+        });
+        chessPgnRow.addView(chessPgnSourceChip);
+        return chessPgnRow;
+    }
+
+    /** Refreshes the meta block + PGN stepper from {@link #chessCurrentEntry} — called
+     *  whenever a game is (re)loaded onto the board. Cheap enough to just re-run in full
+     *  rather than diffing what changed. */
+    private void updateChessMetaUi() {
+        if (chessMetaBlock == null) return;
+        ChessLibrary.Entry e = chessCurrentEntry;
+        boolean known = e != null;
+        chessMetaBlock.setVisibility(known ? View.VISIBLE : View.GONE);
+        chessPgnRow.setVisibility(known ? View.VISIBLE : View.GONE);
+        if (!known) return;
+
+        chessMetaPlayers.setText(e.white + " vs " + e.black);
+        String eventLine = e.event + (e.round.isEmpty() ? "" : " · Round " + e.round);
+        chessMetaEvent.setText(eventLine);
+        chessMetaEvent.setVisibility(eventLine.isEmpty() ? View.GONE : View.VISIBLE);
+        chessMetaOpening.setText(e.eco);
+        chessMetaOpening.setVisibility(e.eco.isEmpty() ? View.GONE : View.VISIBLE);
+        chessMetaResult.setText(e.result);
+
+        List<ChessLibrary.Entry> siblings = ChessLibrary.loadBySource(this, e.src);
+        int index = -1;
+        for (int i = 0; i < siblings.size(); i++) if (siblings.get(i).id.equals(e.id)) { index = i; break; }
+        // siblings is newest-first; show the PGN's own file order (oldest-first) to match
+        // how a human reading the source file would count games in it.
+        int total = siblings.size();
+        int posFromEnd = index < 0 ? 0 : total - index;
+        chessPgnStepper.setText(index < 0 ? "" : "‹ Game " + posFromEnd + " of " + total + " ›");
+        chessPgnSourceChip.setText(e.src + " ›");
+    }
+
     private static float clamp(float v, float lo, float hi) {
         return Math.max(lo, Math.min(hi, v));
     }
 
+    /** The whole Chess home section: a Board/Puzzles/Library segmented strip (same visual
+     *  pattern as {@link StatsPanel#addToggle}'s Today/Week/Month toggle) over a
+     *  {@link FrameLayout} holding all three tabs' content, swapped by visibility — never a
+     *  separate Activity transition, and all three built once so switching tabs is instant
+     *  and doesn't lose whatever state (an in-progress puzzle, a Library search) a tab had. */
     private View buildChessPanel() {
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackgroundColor(Color.BLACK);
+
+        LinearLayout tabs = new LinearLayout(this);
+        tabs.setOrientation(LinearLayout.HORIZONTAL);
+        tabs.setPadding(UiKit.dp(this, 18), UiKit.dp(this, 14), UiKit.dp(this, 18), 0);
+        String[] labels = {"Board", "Puzzles", "Library"};
+        chessTabButtons = new TextView[labels.length];
+        for (int i = 0; i < labels.length; i++) {
+            final int idx = i;
+            TextView tab = chessText(labels[i], 13, Color.WHITE);
+            tab.setGravity(Gravity.CENTER);
+            tab.setPadding(0, UiKit.dp(this, 12), 0, UiKit.dp(this, 12));
+            tab.setOnClickListener(v -> chessSelectTab(idx));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            if (i > 0) lp.leftMargin = UiKit.dp(this, 8);
+            tabs.addView(tab, lp);
+            chessTabButtons[i] = tab;
+        }
+        root.addView(tabs);
+
+        chessTabContainer = new FrameLayout(this);
+        chessBoardTabContent = buildChessBoardTabContent();
+        chessPuzzlesPanel = new ChessPuzzlesPanel(this, new ChessPuzzlesPanel.Listener() {
+            @Override public void onOpenPuzzleList() { startActivity(new Intent(MainActivity.this, ChessPuzzleListActivity.class)); }
+            @Override public void onResizeRequested() { chessShowResizeDialog(); }
+            @Override public void onOpenSettings() { chessOpenSettings(); }
+        });
+        chessLibraryPanel = new ChessLibraryPanel(this, new ChessLibraryPanel.Listener() {
+            @Override public void onGameChosen(ChessLibrary.Entry entry) { chessLoadEntryOntoBoard(entry); }
+            @Override public void onOpenPgnFiles() { startActivity(new Intent(MainActivity.this, ChessPgnFilesActivity.class)); }
+            @Override public void onImportPgn() { chessImportPgn(); }
+            @Override public void onExportPgn() { chessExportPgn(); }
+        });
+        chessTabContainer.addView(chessBoardTabContent, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        chessTabContainer.addView(chessPuzzlesPanel.view(), new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        chessTabContainer.addView(chessLibraryPanel.view(), new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        root.addView(chessTabContainer, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+
+        chessActiveTab = 0;
+        chessRestyleTabs();
+        chessPuzzlesPanel.view().setVisibility(View.GONE);
+        chessLibraryPanel.view().setVisibility(View.GONE);
+        return root;
+    }
+
+    private void chessSelectTab(int index) {
+        if (index == chessActiveTab) return;
+        chessActiveTab = index;
+        chessBoardTabContent.setVisibility(index == 0 ? View.VISIBLE : View.GONE);
+        chessPuzzlesPanel.view().setVisibility(index == 1 ? View.VISIBLE : View.GONE);
+        chessLibraryPanel.view().setVisibility(index == 2 ? View.VISIBLE : View.GONE);
+        chessRestyleTabs();
+        if (index == 1) chessPuzzlesPanel.onShown();
+        if (index == 2) chessLibraryPanel.refresh();
+    }
+
+    private void chessRestyleTabs() {
+        for (int i = 0; i < chessTabButtons.length; i++) {
+            boolean on = i == chessActiveTab;
+            chessTabButtons[i].setBackground(on
+                    ? UiKit.rounded(this, Color.WHITE, 0, 0f, UiKit.R_SM)
+                    : UiKit.rounded(this, Color.BLACK, 0xFF2C2C2C, 2f, UiKit.R_SM));
+            chessTabButtons[i].setTextColor(on ? Color.BLACK : Color.WHITE);
+        }
+    }
+
+    /** Loads {@code entry} onto the Board tab's board and switches to it — the Library tab's
+     *  row-tap path; {@link #handleChessLibraryPick} is the equivalent for the Intent-based
+     *  "Games in a PGN" picker (still a separate {@link ChessLibraryActivity} screen). */
+    private void chessLoadEntryOntoBoard(ChessLibrary.Entry entry) {
+        chessCurrentEntry = entry;
+        updateChessMetaUi();
+        chessBoard.loadSanMoves(entry.sans());
+        chessSelectTab(0);
+        toast("Loaded " + entry.white + " vs " + entry.black);
+    }
+
+    /** The "Board" tab's whole content — unchanged from before the 3-tab restructure (see
+     *  {@link #buildChessPanel()}), just renamed since it's no longer the entire Chess home
+     *  section on its own. */
+    private View buildChessBoardTabContent() {
         ScrollView panel = new ScrollView(this);
         panel.setFillViewport(true);
         panel.setBackgroundColor(Color.BLACK);
@@ -1176,6 +1366,12 @@ public class MainActivity extends Activity implements SelectionHost {
         chessBoard.setPieceTheme(chessSelectedPieces);
         chessBoard.setBoardTheme("grey");
         UiKit.clipRounded(this, chessBoard, UiKit.R_SM);
+
+        content.addView(buildChessMetaBlock(), new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        content.addView(buildChessPgnRow(), new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
         content.addView(buildChessBoardWrap(), new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
@@ -1195,6 +1391,24 @@ public class MainActivity extends Activity implements SelectionHost {
         // top of the icon's own edge; that slack was why the gear used to sit visibly inset
         // from the transport row's "›|" (which corrects for glyph ink-bearing on its own).
         int iconBoxDp = 18;
+
+        android.widget.ImageView chessFlipIcon = new android.widget.ImageView(this);
+        chessFlipIcon.setImageDrawable(getResources().getDrawable(R.drawable.ic_chess_flip, getTheme()));
+        chessFlipIcon.setScaleType(android.widget.ImageView.ScaleType.CENTER_INSIDE);
+        chessFlipIcon.setContentDescription("Flip board");
+        chessFlipIcon.setOnClickListener(v -> chessBoard.toggleFlip());
+        LinearLayout.LayoutParams flipIconLp = new LinearLayout.LayoutParams(UiKit.dp(this, iconBoxDp), UiKit.dp(this, iconBoxDp));
+        flipIconLp.rightMargin = UiKit.dp(this, 14);
+        status.addView(chessFlipIcon, flipIconLp);
+
+        android.widget.ImageView chessCommentIcon = new android.widget.ImageView(this);
+        chessCommentIcon.setImageDrawable(getResources().getDrawable(R.drawable.ic_chess_comment, getTheme()));
+        chessCommentIcon.setScaleType(android.widget.ImageView.ScaleType.CENTER_INSIDE);
+        chessCommentIcon.setContentDescription("Add or edit a comment on this move");
+        chessCommentIcon.setOnClickListener(v -> chessEditCurrentMoveComment());
+        LinearLayout.LayoutParams commentIconLp = new LinearLayout.LayoutParams(UiKit.dp(this, iconBoxDp), UiKit.dp(this, iconBoxDp));
+        commentIconLp.rightMargin = UiKit.dp(this, 14);
+        status.addView(chessCommentIcon, commentIconLp);
 
         chessResizeIcon = new android.widget.ImageView(this);
         chessResizeIcon.setImageDrawable(getResources().getDrawable(R.drawable.ic_chess_resize, getTheme()));
@@ -1284,6 +1498,7 @@ public class MainActivity extends Activity implements SelectionHost {
         content.addView(movesScroll, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, UiKit.dp(this, CHESS_MOVES_GRID_HEIGHT_DP)));
         content.addView(chessRule(), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1));
+
         // On first opening the panel, resizeChessBoardIfNeeded's very first attempt (via
         // syncHeaderCollapse right after this returns) almost always fires before
         // chessFixedRows has actually been measured (getHeight() still 0), so it silently
@@ -1294,6 +1509,7 @@ public class MainActivity extends Activity implements SelectionHost {
         // stops changing, resizeChessBoardIfNeeded stops calling setLayoutParams, so no
         // more layout passes fire from it).
         content.getViewTreeObserver().addOnGlobalLayoutListener(this::resizeChessBoardIfNeeded);
+        updateChessMetaUi();
         return panel;
     }
 
@@ -1381,11 +1597,11 @@ public class MainActivity extends Activity implements SelectionHost {
     }
 
     /** The swiped-down board's own size — a user override (dp) if one's been pinched, else
-     *  150% of its own natural auto-fit size (point 4 of the design) — either way capped at
-     *  {@code ceilingPx} (the swiped-up size), so it can never grow past it. */
+     *  75% of {@code ceilingPx} (the swiped-up size) — either way capped at that same
+     *  ceiling, so it can never grow past it. */
     private int chessResolvedSizeDown(int naturalDownPx, int ceilingPx) {
         int dp = Config.getChessSizeDownDp(this);
-        int px = dp > 0 ? UiKit.dp(this, dp) : Math.round(naturalDownPx * 1.5f);
+        int px = dp > 0 ? UiKit.dp(this, dp) : Math.round(ceilingPx * 0.75f);
         return Math.max(UiKit.dp(this, 120), Math.min(ceilingPx, px));
     }
 
@@ -1674,7 +1890,22 @@ public class MainActivity extends Activity implements SelectionHost {
         root.setBackground(UiKit.dialogBackground(this));
         UiKit.clipRounded(this, root, UiKit.R_MD);
         root.setPadding(2, 32, 2, UiKit.dp(this, UiKit.R_MD));
-        root.addView(UiKit.dialogTitle(this, "Chess"));
+
+        AlertDialog dialog = new AlertDialog.Builder(this).setView(root).create();
+        UiKit.clearDialogChrome(dialog);
+
+        // Title and close share one top line — Import/Export/Imported games/Puzzles/Generate
+        // all moved to the Library and Puzzles tabs, so there's no longer a bottom "Close"
+        // row's worth of other rows to separate it from.
+        LinearLayout head = new LinearLayout(this);
+        head.setOrientation(LinearLayout.HORIZONTAL);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        TextView title = UiKit.dialogTitle(this, "Chess Settings");
+        head.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        TextView close = UiKit.dialogTitle(this, "✕");
+        close.setOnClickListener(v -> dialog.dismiss());
+        head.addView(close);
+        root.addView(head);
 
         LinearLayout rows = new LinearLayout(this);
         rows.setOrientation(LinearLayout.VERTICAL);
@@ -1683,10 +1914,7 @@ public class MainActivity extends Activity implements SelectionHost {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         root.addView(scroller);
 
-        AlertDialog dialog = new AlertDialog.Builder(this).setView(root).create();
-        UiKit.clearDialogChrome(dialog);
         renderChessSettingsRows(rows, dialog);
-        root.addView(chessSettingsRow("Close", v -> dialog.dismiss()));
         dialog.show();
         UiKit.unboxDialog(root);
         if (dialog.getWindow() != null) {
@@ -1698,29 +1926,6 @@ public class MainActivity extends Activity implements SelectionHost {
 
     private void renderChessSettingsRows(LinearLayout rows, AlertDialog dialog) {
         rows.removeAllViews();
-        rows.addView(chessSettingsRow("Import PGN", v -> { dialog.dismiss(); chessImportPgn(); }));
-        rows.addView(chessSettingsRow("Export PGN", v -> { dialog.dismiss(); chessExportPgn(); }));
-        rows.addView(chessSettingsRow("Imported games", v -> {
-            dialog.dismiss();
-            startActivityForResult(new Intent(this, ChessLibraryActivity.class), REQUEST_CHESS_LIBRARY);
-        }));
-        rows.addView(chessSettingsRow("Puzzles (" + ChessPuzzles.count(this) + ")", v -> {
-            dialog.dismiss();
-            startActivityForResult(new Intent(this, ChessPuzzlesActivity.class), REQUEST_CHESS_PUZZLES);
-        }));
-        if (ChessPuzzleJobs.isRunning(this)) {
-            rows.addView(chessSettingsRow("Stop generating puzzles", v -> {
-                dialog.dismiss();
-                ChessPuzzleJobs.stop(this);
-                toast("Stopped — progress is saved, resumes from here next time");
-            }));
-        } else {
-            rows.addView(chessSettingsRow("Generate puzzles", v -> {
-                dialog.dismiss();
-                ChessPuzzleJobs.start(this);
-                toast("Generating puzzles in the background…");
-            }));
-        }
         rows.addView(chessSettingsRow("Board theme: " + chessSelectedBoard,
                 v -> { dialog.dismiss(); chessChooseBoard(); }));
         rows.addView(chessSettingsRow("Piece theme: " + ChessBoardView.pretty(chessSelectedPieces),
@@ -1906,34 +2111,29 @@ public class MainActivity extends Activity implements SelectionHost {
     }
 
     private void loadPgnGame(Pgn.Game game) {
-        chessBoard.loadSanMoves(game.sans);
+        // Not (yet) matched to a library record — it may or may not end up imported, and
+        // even if it does, appendGames doesn't hand back the id it stamped. Metadata block
+        // and PGN stepper just stay hidden for a game loaded this way.
+        chessCurrentEntry = null;
+        updateChessMetaUi();
+        chessBoard.loadSanMoves(game.sans, game.comments);
         toast(game.sans.isEmpty() ? "PGN loaded (no moves found)"
                 : "Loaded " + game.tag("White", "?") + " vs " + game.tag("Black", "?"));
     }
 
     private void handleChessLibraryPick(int resultCode, Intent data) {
         if (resultCode != RESULT_OK || data == null) return;
+        String id = data.getStringExtra(ChessLibraryActivity.EXTRA_ID);
         String white = data.getStringExtra(ChessLibraryActivity.EXTRA_WHITE);
         String black = data.getStringExtra(ChessLibraryActivity.EXTRA_BLACK);
         String sans = data.getStringExtra(ChessLibraryActivity.EXTRA_SANS);
         if (sans == null) return;
         List<String> moves = new ArrayList<>();
         if (!sans.isEmpty()) for (String s : sans.split(" ")) if (!s.isEmpty()) moves.add(s);
+        chessCurrentEntry = id == null ? null : ChessLibrary.findById(this, id);
+        updateChessMetaUi();
         chessBoard.loadSanMoves(moves);
         toast(moves.isEmpty() ? "PGN loaded (no moves found)" : "Loaded " + white + " vs " + black);
-    }
-
-    private void handleChessPuzzlePick(int resultCode, Intent data) {
-        if (resultCode != RESULT_OK || data == null) return;
-        String fen = data.getStringExtra(ChessPuzzlesActivity.EXTRA_FEN);
-        String solution = data.getStringExtra(ChessPuzzlesActivity.EXTRA_SOLUTION);
-        if (fen == null || fen.isEmpty() || solution == null || solution.isEmpty()) return;
-        List<String> solutionUci = new ArrayList<>();
-        for (String s : solution.split(" ")) if (!s.isEmpty()) solutionUci.add(s);
-        chessBoard.loadPuzzle(fen, solutionUci,
-                () -> toast("Not quite — try again"),
-                () -> toast("Puzzle solved!"));
-        toast("Find the best move");
     }
 
     /** Standard rounded plainphone popup — same chrome as the chess settings sheet — with
@@ -2015,7 +2215,7 @@ public class MainActivity extends Activity implements SelectionHost {
         Map<String, String> tags = new LinkedHashMap<>();
         tags.put("Event", "Plainphone study");
         tags.put("Date", new java.text.SimpleDateFormat("yyyy.MM.dd", java.util.Locale.US).format(new java.util.Date()));
-        String pgn = Pgn.write(tags, chessBoard.mainlineSans(), chessBoard.pgnResult());
+        String pgn = Pgn.write(tags, chessBoard.mainlineSans(), chessBoard.mainlineComments(), chessBoard.pgnResult());
         try (OutputStream out = getContentResolver().openOutputStream(data.getData())) {
             if (out != null) out.write(pgn.getBytes(java.nio.charset.StandardCharsets.UTF_8));
             toast("PGN exported");
@@ -2077,7 +2277,16 @@ public class MainActivity extends Activity implements SelectionHost {
             chessEngineLines[i].setVisibility(has ? View.VISIBLE : View.GONE);
             if (has) chessEngineLines[i].setText(engineLines.get(i));
         }
-        chessMovesGrid.refresh();
+        chessMovesGrid.refresh(); // comments render inline in the grid, right under their move
+    }
+
+    /** "Add text" icon in the board status row — opens the same comment editor the moves
+     *  grid's long-press menu offers, but for whatever position is on screen right now
+     *  rather than requiring a long-press on a specific move first. */
+    private void chessEditCurrentMoveComment() {
+        ChessBoardView.MoveNode node = chessBoard.currentNode();
+        UiKit.textPrompt(this, "Comment", node.comment, "Save",
+                text -> chessBoard.setComment(node, text));
     }
 
     private void renderRows() {

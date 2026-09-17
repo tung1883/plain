@@ -310,6 +310,11 @@ class UiKit {
         if (dialog.getWindow() != null) {
             dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(
                     Color.TRANSPARENT));
+            // A transparent window background still leaves the window's own Material
+            // elevation shadow — a faint square halo around the rounded box, on top of the
+            // box's own rounded stroke, reading as "two borders" at once. Zeroing it removes
+            // that outer square entirely; the box's own rounded stroke is the only border.
+            dialog.getWindow().setElevation(0f);
         }
     }
 
@@ -324,6 +329,7 @@ class UiKit {
             View v = (View) p;
             v.setBackground(null);
             v.setPadding(0, 0, 0, 0);
+            v.setElevation(0f); // each panel ancestor can carry its own shadow, not just the window
             p = v.getParent();
         }
     }

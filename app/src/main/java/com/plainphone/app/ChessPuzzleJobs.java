@@ -24,6 +24,8 @@ final class ChessPuzzleJobs {
 
     static final class Snapshot {
         int gamesScanned, gamesTotal, puzzlesFound;
+        /** {@link Config#CHESS_PUZZLEGEN_SCOPE_ALL} or a single PGN source label. */
+        String scope = Config.CHESS_PUZZLEGEN_SCOPE_ALL;
     }
 
     static volatile Snapshot snapshot;
@@ -45,10 +47,20 @@ final class ChessPuzzleJobs {
      *  finishes, so freshly-added games eventually get scanned without the user having to
      *  remember to re-trigger it by hand. */
     static void start(Context context) {
+        start(context, Config.CHESS_PUZZLEGEN_SCOPE_ALL);
+    }
+
+    /** Same as {@link #start(Context)}, but scoped to a single PGN source label (as it appears
+     *  on {@link ChessLibrary.Entry#src}) instead of the whole library. */
+    static void start(Context context, String scopeSourceLabel) {
         if (JobQueue.anyOfType(context, TYPE_PUZZLEGEN)) return;
         cancelRequested = false;
+        String scope = scopeSourceLabel == null ? Config.CHESS_PUZZLEGEN_SCOPE_ALL : scopeSourceLabel;
+        String label = Config.CHESS_PUZZLEGEN_SCOPE_ALL.equals(scope)
+                ? "Generating chess puzzles" : "Generating puzzles — " + scope;
         JobQueue.enqueue(context, new JobQueue.Spec(TYPE_PUZZLEGEN)
-                .label("Generating chess puzzles"));
+                .label(label)
+                .put("scope", scope));
     }
 
     /** Checked by {@link JobService}'s scan loop and by {@link PuzzleGenerator}'s per-ply
@@ -74,8 +86,9 @@ final class ChessPuzzleJobs {
     static String activeLabel(Context context) {
         Snapshot s = snapshot;
         if (s == null || s.gamesTotal <= 0) return "generating puzzles";
-        return String.format(java.util.Locale.US, "generating puzzles — %,d of %,d games — %,d found",
-                s.gamesScanned, s.gamesTotal, s.puzzlesFound);
+        String scoped = Config.CHESS_PUZZLEGEN_SCOPE_ALL.equals(s.scope) ? "" : " (" + s.scope + ")";
+        return String.format(java.util.Locale.US, "generating puzzles%s — %,d of %,d games — %,d found",
+                scoped, s.gamesScanned, s.gamesTotal, s.puzzlesFound);
     }
 
 }

@@ -28,9 +28,16 @@ import java.util.Locale;
  *  of rows. */
 public class ChessLibraryActivity extends Activity {
 
+    static final String EXTRA_ID = "id";
     static final String EXTRA_WHITE = "white";
     static final String EXTRA_BLACK = "black";
     static final String EXTRA_SANS = "sans";
+    /** Optional: restricts the list to one PGN source's games ("Games in a PGN", opened from
+     *  the Board tab's PGN chip or the PGN-files screen) instead of the whole library. */
+    static final String EXTRA_SOURCE_FILTER = "source_filter";
+    /** Optional, only meaningful with {@link #EXTRA_SOURCE_FILTER}: the currently-loaded
+     *  game's id, shown bold in the list rather than picked out via any Intent result. */
+    static final String EXTRA_CURRENT_ID = "current_id";
 
     private List<ChessLibrary.Entry> all = new ArrayList<>();
     private List<ChessLibrary.Entry> shown = new ArrayList<>();
@@ -38,10 +45,14 @@ public class ChessLibraryActivity extends Activity {
     private TextView countLine;
     private final Handler searchHandler = new Handler();
     private Runnable pendingSearch;
+    private String sourceFilter;
+    private String currentEntryId;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        sourceFilter = getIntent().getStringExtra(EXTRA_SOURCE_FILTER);
+        currentEntryId = getIntent().getStringExtra(EXTRA_CURRENT_ID);
 
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
@@ -56,6 +67,8 @@ public class ChessLibraryActivity extends Activity {
         searchWrap.setPadding(UiKit.dp(this, 20), UiKit.dp(this, 14), UiKit.dp(this, 20), UiKit.dp(this, 8));
         searchWrap.addView(search, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        // "Games in a PGN" is a short, already-scoped list — no need for its own search.
+        searchWrap.setVisibility(sourceFilter == null ? View.VISIBLE : View.GONE);
         content.addView(searchWrap);
 
         countLine = new TextView(this);
@@ -90,14 +103,16 @@ public class ChessLibraryActivity extends Activity {
             @Override public void afterTextChanged(Editable s) { scheduleFilter(s.toString()); }
         });
 
-        UiKit.screen(this, "Imported games", content);
+        UiKit.screen(this, sourceFilter != null ? sourceFilter : "Imported games", content);
         load();
     }
 
     private void load() {
         countLine.setText("Loading…");
         new Thread(() -> {
-            List<ChessLibrary.Entry> loaded = ChessLibrary.loadAll(this);
+            List<ChessLibrary.Entry> loaded = sourceFilter != null
+                    ? ChessLibrary.loadBySource(this, sourceFilter)
+                    : ChessLibrary.loadAll(this);
             runOnUiThread(() -> {
                 all = loaded;
                 shown = all;
@@ -138,6 +153,7 @@ public class ChessLibraryActivity extends Activity {
 
     private void pick(ChessLibrary.Entry entry) {
         Intent result = new Intent();
+        result.putExtra(EXTRA_ID, entry.id);
         result.putExtra(EXTRA_WHITE, entry.white);
         result.putExtra(EXTRA_BLACK, entry.black);
         result.putExtra(EXTRA_SANS, entry.sansJoined);
@@ -165,7 +181,10 @@ public class ChessLibraryActivity extends Activity {
 
     private void bindRow(View row, ChessLibrary.Entry e) {
         LinearLayout box = (LinearLayout) row;
-        ((TextView) box.getChildAt(0)).setText(e.white + " vs " + e.black);
+        boolean current = e.id != null && e.id.equals(currentEntryId);
+        TextView title = (TextView) box.getChildAt(0);
+        title.setText(e.white + " vs " + e.black);
+        title.setTypeface(Fonts.current(this), current ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL);
         ((TextView) box.getChildAt(1)).setText(e.event + " · " + e.date + " · " + e.result);
         ((TextView) box.getChildAt(2)).setText(e.src);
     }

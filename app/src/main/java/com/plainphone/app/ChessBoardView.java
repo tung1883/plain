@@ -74,6 +74,18 @@ final class ChessBoardView extends View {
     private boolean puzzleSolved;
     private Runnable onPuzzleWrongMove;
     private Runnable onPuzzleSolved;
+    // Bumped by anything that replaces or jumps the displayed position (a fresh game/puzzle
+    // load, or navigating elsewhere) — lets a delayed callback scheduled against the old
+    // position (the puzzle auto-reply below, or askStockfish's background answer) recognize
+    // itself as stale and drop out instead of committing a move against a position it was
+    // never computed for.
+    private int boardGeneration;
+
+    // Display-only: the underlying `position`/MoveNode board coordinates never change with
+    // this — every screen-space computation (drawing, touch hit-testing) runs the board
+    // index through flip() on the way out and back in, so legality/SAN/history logic never
+    // needs to know which way the board is currently drawn.
+    private boolean flipped;
 
     ChessBoardView(Activity host, Runnable onChanged) {
         super(host);
@@ -108,6 +120,7 @@ final class ChessBoardView extends View {
      *  (see {@link #loadSanMoves}), as opposed to {@link #first}/{@link #jumpToNode} which
      *  navigate within the existing tree. */
     void resetToStartPosition() {
+        boardGeneration++;
         position = startingPosition();
         whiteTurn = true;
         castleRights = 1 | 2 | 4 | 8;
@@ -130,6 +143,7 @@ final class ChessBoardView extends View {
      *  (opponent) move after a short pause, and the puzzle is solved once every move in
      *  {@code solutionUci} has been played. */
     void loadPuzzle(String fen, List<String> solutionUci, Runnable onWrongMove, Runnable onSolved) {
+        boardGeneration++;
         String[] fields = fen.split(" ");
         char[][] board = new char[8][8];
         String[] rows = fields[0].split("/");
@@ -200,7 +214,9 @@ final class ChessBoardView extends View {
             return;
         }
         String replyUci = puzzleSolution.get(puzzleStep);
+        int gen = boardGeneration;
         postDelayed(() -> {
+            if (gen != boardGeneration) return; // a new puzzle/game/jump landed before this fired
             int[] mv = uciToSquares(replyUci);
             if (mv != null && in(mv[0], mv[1]) && in(mv[2], mv[3])) commitMove(mv[0], mv[1], mv[2], mv[3]);
             puzzleStep++;
@@ -226,13 +242,43 @@ final class ChessBoardView extends View {
      *  Stops at the first move that doesn't match a legal move (a corrupt or unsupported
      *  file) rather than leaving the board in a half-applied, potentially illegal state. */
     void loadSanMoves(List<String> sans) {
+        loadSanMoves(sans, null);
+    }
+
+    /** Same as {@link #loadSanMoves(List)}, plus a parallel comment list (same index as
+     *  {@code sans}; {@code null} or empty entries mean "no comment on that move") — used
+     *  by the direct-from-PGN import path, where {@link Pgn.Game#comments} is available.
+     *  {@link ChessLibrary}'s own storage doesn't carry comments, so games reloaded from
+     *  the library always come back through the no-comments overload above. */
+    void loadSanMoves(List<String> sans, List<String> comments) {
         resetToStartPosition();
-        for (String raw : sans) {
-            String san = normalizeSan(raw);
+        for (int i = 0; i < sans.size(); i++) {
+            String san = normalizeSan(sans.get(i));
             int[] move = findMoveBySan(san);
             if (move == null) break;
             commitMove(move[0], move[1], move[2], move[3]);
+            if (comments != null && i < comments.size()) {
+                String c = comments.get(i);
+                if (c != null && !c.isEmpty()) current.comment = c;
+            }
         }
+    }
+
+    /** Sets (or clears, with {@code null}/empty) {@code node}'s comment and lets the host
+     *  redraw whatever shows it (the moves grid's long-press menu label, a comment line
+     *  under the board). */
+    void setComment(MoveNode node, String comment) {
+        node.comment = (comment == null || comment.isEmpty()) ? null : comment;
+        onChanged.run();
+    }
+
+    /** {@link #mainlineSans()}'s comments, same order/index — "" where a mainline move has
+     *  none, so callers can zip the two lists together 1:1. */
+    List<String> mainlineComments() {
+        List<String> out = new ArrayList<>();
+        MoveNode n = root;
+        while (!n.children.isEmpty()) { n = n.children.get(0); out.add(n.comment == null ? "" : n.comment); }
+        return out;
     }
 
     /** PGN sometimes writes castling with digits ("0-0") instead of letters ("O-O"), and
@@ -318,6 +364,14 @@ final class ChessBoardView extends View {
 
     void setPieceTheme(String theme) { pieceTheme = theme; images.clear(); invalidate(); }
 
+    boolean isFlipped() { return flipped; }
+    void setFlipped(boolean f) { flipped = f; invalidate(); }
+    void toggleFlip() { flipped = !flipped; invalidate(); }
+
+    /** Board index (0-7) to/from the screen slot it's drawn/hit-tested in — self-inverse, so
+     *  the same call converts either direction. Identity when not flipped. */
+    private int flip(int i) { return flipped ? 7 - i : i; }
+
     @Override protected void onMeasure(int wSpec, int hSpec) {
         int width = MeasureSpec.getSize(wSpec);
         setMeasuredDimension(width, width);
@@ -351,7 +405,7 @@ final class ChessBoardView extends View {
             float margin = margin();
             float cell = cellSize();
             for (int row = 0; row < 8; row++) for (int col = 0; col < 8; col++) {
-                float l = margin + col * cell, t = margin + row * cell;
+                float l = margin + flip(col) * cell, t = margin + flip(row) * cell;
                 boolean isLight = ((row + col) & 1) == 0;
                 if (boardLightTile != null) {
                     Bitmap tile = isLight ? boardLightTile : boardDarkTile;
@@ -364,7 +418,7 @@ final class ChessBoardView extends View {
             drawHints(canvas, margin, margin, cell);
             for (int row = 0; row < 8; row++) for (int col = 0; col < 8; col++) {
                 if (position[row][col] != 0 && !(draggingPiece && row == dragRow && col == dragCol)) {
-                    drawPiece(canvas, position[row][col], margin + col * cell, margin + row * cell, cell);
+                    drawPiece(canvas, position[row][col], margin + flip(col) * cell, margin + flip(row) * cell, cell);
                 }
             }
             if (draggingPiece && in(dragRow, dragCol) && position[dragRow][dragCol] != 0) {
@@ -375,9 +429,9 @@ final class ChessBoardView extends View {
                 coordPaint.setTextSize(UiKit.dp(host, 13));
                 coordPaint.setColor(0xFFBDBDBD);
                 coordPaint.setTextAlign(Paint.Align.CENTER);
-                for (int col = 0; col < 8; col++) canvas.drawText(String.valueOf((char)('a' + col)), margin + (col + .5f) * cell, margin + 8 * cell + UiKit.dp(host, 15), coordPaint);
+                for (int col = 0; col < 8; col++) canvas.drawText(String.valueOf((char)('a' + col)), margin + (flip(col) + .5f) * cell, margin + 8 * cell + UiKit.dp(host, 15), coordPaint);
                 coordPaint.setTextAlign(Paint.Align.RIGHT);
-                for (int row = 0; row < 8; row++) canvas.drawText(String.valueOf(8 - row), margin - UiKit.dp(host, 7), margin + (row + .62f) * cell, coordPaint);
+                for (int row = 0; row < 8; row++) canvas.drawText(String.valueOf(8 - row), margin - UiKit.dp(host, 7), margin + (flip(row) + .62f) * cell, coordPaint);
             }
         }
     }
@@ -385,7 +439,7 @@ final class ChessBoardView extends View {
     private void drawHints(Canvas c, float left, float top, float cell) {
         if (selectedRow < 0) return;
         for (int[] move : legalMoves(selectedRow, selectedCol)) {
-            float cx = left + (move[1] + .5f) * cell, cy = top + (move[0] + .5f) * cell;
+            float cx = left + (flip(move[1]) + .5f) * cell, cy = top + (flip(move[0]) + .5f) * cell;
             boolean capture = position[move[0]][move[1]] != 0;
             paint.setColor(0x884C4C4C);
             paint.setStyle(capture ? Paint.Style.STROKE : Paint.Style.FILL);
@@ -432,7 +486,7 @@ final class ChessBoardView extends View {
         doubleTap.onTouchEvent(event);
         if (event.getAction() == android.view.MotionEvent.ACTION_DOWN) {
             downX = event.getX(); downY = event.getY();
-            dragCol = (int) ((downX - margin) / cell); dragRow = (int) ((downY - margin) / cell);
+            dragCol = flip((int) ((downX - margin) / cell)); dragRow = flip((int) ((downY - margin) / cell));
             boolean grabbedPiece = gameOverText == null && in(dragRow, dragCol) && position[dragRow][dragCol] != 0
                     && Character.isUpperCase(position[dragRow][dragCol]) == whiteTurn;
             if (grabbedPiece) {
@@ -456,7 +510,7 @@ final class ChessBoardView extends View {
             return true;
         }
         if (event.getAction() != android.view.MotionEvent.ACTION_UP) return true;
-        int col = (int) ((event.getX() - margin) / cell), row = (int) ((event.getY() - margin) / cell);
+        int col = flip((int) ((event.getX() - margin) / cell)), row = flip((int) ((event.getY() - margin) / cell));
         if (!in(row, col)) {
             dragRow = dragCol = -1;
             draggingPiece = false;
@@ -636,6 +690,7 @@ final class ChessBoardView extends View {
     /** Moves the board to {@code node} and refreshes everything that depends on the
      *  displayed position. Doesn't touch the tree — see {@link #jumpToNode}. */
     private void restoreNode(MoveNode node) {
+        boardGeneration++;
         current = node;
         position = copy(node.board);
         whiteTurn = node.whiteTurn;
@@ -663,7 +718,7 @@ final class ChessBoardView extends View {
     private boolean handleDoubleTap(android.view.MotionEvent e) {
         if (gameOverText != null || thinkingAboutDoubleTap) return false;
         float margin = margin(), cell = cellSize();
-        int col = (int) ((e.getX() - margin) / cell), row = (int) ((e.getY() - margin) / cell);
+        int col = flip((int) ((e.getX() - margin) / cell)), row = flip((int) ((e.getY() - margin) / cell));
         if (!in(row, col)) return false;
         char occupant = position[row][col];
         if (occupant != 0 && Character.isUpperCase(occupant) == whiteTurn) return false;
@@ -687,6 +742,7 @@ final class ChessBoardView extends View {
     private void askStockfish(List<int[]> candidates, int toRow, int toCol) {
         thinkingAboutDoubleTap = true;
         String fen = toFen();
+        int gen = boardGeneration;
         List<String> uciMoves = new ArrayList<>();
         for (int[] from : candidates) uciMoves.add(uciMove(from[0], from[1], toRow, toCol));
         new Thread(() -> {
@@ -710,6 +766,7 @@ final class ChessBoardView extends View {
             int[] fallback = picked;
             host.runOnUiThread(() -> {
                 thinkingAboutDoubleTap = false;
+                if (gen != boardGeneration) return; // board moved on while Stockfish was thinking
                 selectedRow = selectedCol = -1;
                 commitMove(fallback[0], fallback[1], toRow, toCol);
                 invalidate();
@@ -1135,6 +1192,11 @@ final class ChessBoardView extends View {
         final int castleRights;
         final MoveNode parent;
         final List<MoveNode> children = new ArrayList<>();
+        /** Freeform annotation on this move ("Add/Edit comment" in the moves grid's
+         *  long-press menu — see {@link ChessBoardView#setComment}), {@code null} when
+         *  there isn't one. Session-only: not persisted through {@link ChessLibrary}
+         *  (which stores plain SAN only), only through {@link Pgn#write} export. */
+        String comment;
 
         MoveNode(String san, char[][] boardSource, boolean turn, int rights, MoveNode parent) {
             this.san = san;

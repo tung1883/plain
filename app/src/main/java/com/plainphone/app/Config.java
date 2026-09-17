@@ -897,13 +897,28 @@ class Config {
     /** How many lines of the imported-games library the puzzle generator has scanned through
      *  so far — kept here rather than on the {@link JobQueue.Job} itself, since that job gets
      *  cleared (not paused) every time a run ends, whether it finished or was stopped, and a
-     *  job's own sidecar files are deleted along with it. */
-    static int getChessPuzzlegenCursor(Context context) {
-        return prefs(context).getInt("chess_puzzlegen_cursor", 0);
+     *  job's own sidecar files are deleted along with it. Keyed by scope ("ALL" or a single
+     *  PGN source label) so a scoped generation run and the whole-library run don't stomp on
+     *  each other's resume point. */
+    static final String CHESS_PUZZLEGEN_SCOPE_ALL = "ALL";
+
+    static int getChessPuzzlegenCursor(Context context, String scopeKey) {
+        return prefs(context).getInt("chess_puzzlegen_cursor_" + scopeKey, 0);
     }
 
-    static void setChessPuzzlegenCursor(Context context, int cursor) {
-        prefs(context).edit().putInt("chess_puzzlegen_cursor", cursor).apply();
+    static void setChessPuzzlegenCursor(Context context, String scopeKey, int cursor) {
+        prefs(context).edit().putInt("chess_puzzlegen_cursor_" + scopeKey, cursor).apply();
+    }
+
+    /** Called after a PGN source is deleted from the library — line offsets across the whole
+     *  file shift, so the ALL-scope cursor (and the deleted source's own, now-meaningless
+     *  cursor) can no longer be trusted; both are cleared, forcing a from-scratch rescan next
+     *  time. A scoped resume across "delete then regenerate" is intentionally not solved here. */
+    static void clearChessPuzzlegenCursor(Context context, String scopeKey) {
+        prefs(context).edit()
+                .remove("chess_puzzlegen_cursor_" + scopeKey)
+                .remove("chess_puzzlegen_cursor_" + CHESS_PUZZLEGEN_SCOPE_ALL)
+                .apply();
     }
 
     /** Whether the board keeps two independent sizes — one for the menu swiped up, one for
@@ -937,6 +952,34 @@ class Config {
 
     static void setChessSizeDownDp(Context context, int dp) {
         prefs(context).edit().putInt("chess_size_down_dp", dp).apply();
+    }
+
+    /** Whether solving a puzzle auto-advances to the next one in the queue a moment later. */
+    static boolean getChessAutoNextPuzzle(Context context) {
+        return prefs(context).getBoolean("chess_auto_next_puzzle", true);
+    }
+
+    static void setChessAutoNextPuzzle(Context context, boolean on) {
+        prefs(context).edit().putBoolean("chess_auto_next_puzzle", on).apply();
+    }
+
+    /** Puzzle ids ever solved — backs the "Solved" badge on the puzzle-solving screen.
+     *  Stored as one comma-joined string rather than a real set type since
+     *  {@code SharedPreferences.getStringSet}'s mutation semantics are notoriously easy to
+     *  get wrong (never mutate the returned set); a plain string is simpler to reason about
+     *  at this size. */
+    static boolean isChessPuzzleSolved(Context context, String puzzleId) {
+        if (puzzleId == null) return false;
+        String raw = prefs(context).getString("chess_solved_puzzle_ids", "");
+        for (String id : raw.split(",")) if (id.equals(puzzleId)) return true;
+        return false;
+    }
+
+    static void markChessPuzzleSolved(Context context, String puzzleId) {
+        if (puzzleId == null || isChessPuzzleSolved(context, puzzleId)) return;
+        String raw = prefs(context).getString("chess_solved_puzzle_ids", "");
+        String next = raw.isEmpty() ? puzzleId : raw + "," + puzzleId;
+        prefs(context).edit().putString("chess_solved_puzzle_ids", next).apply();
     }
 
     static void setDevLastHostId(Context context, String id) {

@@ -133,10 +133,14 @@ final class MovesGrid extends LinearLayout {
         LinearLayout row = null;
         int posInRow = 0;
         int rowMoveGap = moveGap;
+        // A commented move breaks the row right after it, ChessBase-style — the comment
+        // prints as its own line directly under the move it's on, not batched into one
+        // "comments" block detached from the grid. The next pair starts a fresh row below.
+        boolean forceNewRow = false;
         for (int m = 0; m < fullMoves; m++) {
-            if (m % movesPerRow == 0) {
+            if (forceNewRow || m % movesPerRow == 0) {
                 int countThisRow = Math.min(movesPerRow, fullMoves - m);
-                boolean fullRow = countThisRow == movesPerRow;
+                boolean fullRow = !forceNewRow && countThisRow == movesPerRow;
                 int leftover = fullRow ? Math.max(0, availWidth
                         - (countThisRow * pairWidth + (countThisRow - 1) * moveGap)) : 0;
                 rowMoveGap = moveGap + (countThisRow > 1 ? leftover / (countThisRow - 1) : 0);
@@ -145,11 +149,14 @@ final class MovesGrid extends LinearLayout {
                 addView(row, new LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
                 posInRow = 0;
+                forceNewRow = false;
             }
             int i0 = m * 2, i1 = m * 2 + 1;
             boolean hasBlack = i1 < nodes.size();
-            View whiteCell = buildCell(host, nodes.get(i0), nodes.get(i0) == currentNode, moveW, numW);
-            View blackCell = hasBlack ? buildCell(host, nodes.get(i1), nodes.get(i1) == currentNode, moveW, numW) : null;
+            ChessBoardView.MoveNode whiteNode = nodes.get(i0);
+            ChessBoardView.MoveNode blackNode = hasBlack ? nodes.get(i1) : null;
+            View whiteCell = buildCell(host, whiteNode, whiteNode == currentNode, moveW, numW);
+            View blackCell = hasBlack ? buildCell(host, blackNode, blackNode == currentNode, moveW, numW) : null;
             whiteCell.setPadding(0, vPad, 0, vPad);
 
             LinearLayout.LayoutParams wlp = new LinearLayout.LayoutParams(
@@ -162,7 +169,23 @@ final class MovesGrid extends LinearLayout {
                 row.addView(blackCell, new LinearLayout.LayoutParams(moveW, ViewGroup.LayoutParams.WRAP_CONTENT));
             }
             posInRow++;
+
+            if (whiteNode.comment != null) { addView(commentRow(host, moveLabel(whiteNode), whiteNode.comment)); forceNewRow = true; }
+            if (blackNode != null && blackNode.comment != null) { addView(commentRow(host, moveLabel(blackNode), blackNode.comment)); forceNewRow = true; }
         }
+    }
+
+    /** One mainline move's comment, right under the row it's on — "5. Nc3 — A model
+     *  Najdorf." Not clickable; the move cell right above it already jumps there. */
+    private View commentRow(Activity host, String label, String comment) {
+        TextView t = new TextView(host);
+        t.setText(label + " — " + comment);
+        t.setTypeface(Fonts.current(host), android.graphics.Typeface.ITALIC);
+        t.setTextSize(VARIATION_SP);
+        t.setTextColor(0xFFB7B7B7);
+        int pad = UiKit.dp(host, 18);
+        t.setPadding(pad, UiKit.dp(host, 2), pad, UiKit.dp(host, 10));
+        return t;
     }
 
     private View buildCell(Activity host, ChessBoardView.MoveNode node, boolean current, int moveW, int numW) {
@@ -339,6 +362,17 @@ final class MovesGrid extends LinearLayout {
             root.addView(menuRow(host, "Promote to mainline", v -> {
                 dialog.dismiss();
                 board.promoteToMainline(node);
+            }));
+        }
+        root.addView(menuRow(host, node.comment == null ? "Add comment" : "Edit comment", v -> {
+            dialog.dismiss();
+            UiKit.textPrompt(host, "Comment", node.comment, "Save",
+                    text -> board.setComment(node, text));
+        }));
+        if (node.comment != null) {
+            root.addView(menuRow(host, "Remove comment", v -> {
+                dialog.dismiss();
+                board.setComment(node, null);
             }));
         }
         root.addView(menuRow(host, "Delete this move", v -> {

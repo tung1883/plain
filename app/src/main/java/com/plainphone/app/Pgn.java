@@ -16,13 +16,21 @@ final class Pgn {
     private Pgn() {}
 
     private static final Pattern TAG_LINE = Pattern.compile("^\\[(\\w+)\\s+\"(.*)\"\\]$");
+    private static final Pattern MOVE_OR_COMMENT = Pattern.compile("\\{[^}]*\\}|\\S+");
 
     static final class Game {
         final Map<String, String> tags;
         final List<String> sans;
+        /** Same index as {@link #sans}; {@code ""} where that move has no comment. A
+         *  comment before any move (a game-opening remark) is dropped — there's no move
+         *  yet to attach it to. */
+        final List<String> comments;
+
         Game(Map<String, String> tags, String movetext) {
             this.tags = tags;
-            this.sans = extractSans(movetext);
+            Extracted e = extractSansAndComments(movetext);
+            this.sans = e.sans;
+            this.comments = e.comments;
         }
         /** A tag's value, or {@code fallback} if it's missing or PGN's own "unknown" mark. */
         String tag(String key, String fallback) {
@@ -63,33 +71,58 @@ final class Pgn {
         return games;
     }
 
-    /** Movetext to a flat SAN move list: strips comments, (nested) variations, NAGs, move
-     *  numbers and the game-termination marker, leaving just the moves in order. Variations
-     *  are dropped rather than offered as alternates — this reads a game's mainline only. */
-    private static List<String> extractSans(String movetext) {
+    private static final class Extracted {
+        List<String> sans;
+        List<String> comments;
+    }
+
+    /** Movetext to a flat SAN move list plus a parallel per-move comment list: strips
+     *  (nested) variations and NAGs first — variations are dropped rather than offered as
+     *  alternates, this reads a game's mainline only — then walks what's left token by
+     *  token, attaching each {@code {...}} comment to the move immediately before it
+     *  (standard PGN ordering: "e4 {good move} e5"). Move numbers and the game-termination
+     *  marker are stripped from move tokens as they're read. */
+    private static Extracted extractSansAndComments(String movetext) {
         String s = movetext;
-        s = s.replaceAll("\\{[^}]*\\}", " "); // comments
         String prev;
         do { prev = s; s = s.replaceAll("\\([^()]*\\)", " "); } while (!s.equals(prev)); // variations
         s = s.replaceAll("\\$\\d+", " "); // NAGs
 
-        List<String> out = new ArrayList<>();
-        for (String tok : s.trim().split("\\s+")) {
-            if (tok.isEmpty()) continue;
-            // Move numbers usually arrive glued to the move ("12.e4", "12...Nf6") since the
-            // comment/variation stripping above can leave the dot right where it was.
-            tok = tok.replaceFirst("^\\d+\\.(\\.\\.)?", "");
-            if (tok.isEmpty()) continue;
-            if (tok.equals("1-0") || tok.equals("0-1") || tok.equals("1/2-1/2") || tok.equals("*")) continue;
-            out.add(tok);
+        List<String> sans = new ArrayList<>();
+        List<String> comments = new ArrayList<>();
+        Matcher tokenizer = MOVE_OR_COMMENT.matcher(s);
+        while (tokenizer.find()) {
+            String tok = tokenizer.group();
+            if (tok.startsWith("{")) {
+                String text = tok.substring(1, tok.length() - 1).trim();
+                if (!comments.isEmpty() && comments.get(comments.size() - 1).isEmpty()) {
+                    comments.set(comments.size() - 1, text);
+                }
+                continue;
+            }
+            String move = tok.replaceFirst("^\\d+\\.(\\.\\.)?", "");
+            if (move.isEmpty()) continue;
+            if (move.equals("1-0") || move.equals("0-1") || move.equals("1/2-1/2") || move.equals("*")) continue;
+            sans.add(move);
+            comments.add("");
         }
-        return out;
+        Extracted e = new Extracted();
+        e.sans = sans;
+        e.comments = comments;
+        return e;
     }
 
     /** Writes one game back out as PGN text: the Seven Tag Roster (defaulted to "?" for
      *  anything not supplied, "*" for a still-open result — real PGN readers expect all
      *  seven present even when unknown) followed by numbered movetext and the result. */
     static String write(Map<String, String> tags, List<String> sans, String result) {
+        return write(tags, sans, null, result);
+    }
+
+    /** Same as {@link #write(Map, List, String)}, plus a parallel per-move comment list
+     *  (same index as {@code sans}, {@code null}/{@code ""} entries skipped) emitted as
+     *  standard {@code {comment}} PGN syntax right after the move it belongs to. */
+    static String write(Map<String, String> tags, List<String> sans, List<String> comments, String result) {
         StringBuilder sb = new StringBuilder();
         String[] roster = {"Event", "Site", "Date", "Round", "White", "Black", "Result"};
         for (String key : roster) {
@@ -99,7 +132,9 @@ final class Pgn {
         sb.append('\n');
         int col = 0;
         for (int i = 0; i < sans.size(); i++) {
+            String comment = (comments != null && i < comments.size()) ? comments.get(i) : null;
             String token = (i % 2 == 0) ? ((i / 2) + 1) + ". " + sans.get(i) : sans.get(i);
+            if (comment != null && !comment.isEmpty()) token = token + " {" + comment + "}";
             if (col > 0 && col + token.length() + 1 > 80) { sb.append('\n'); col = 0; }
             else if (col > 0) { sb.append(' '); col++; }
             sb.append(token);

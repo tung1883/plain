@@ -16,6 +16,7 @@ import android.provider.DocumentsContract;
 import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -202,8 +203,22 @@ public class JobService extends Service {
 
     private void runChessPuzzleGen(JobQueue.Job job) {
         Context app = getApplicationContext();
-        int startCursor = Config.getChessPuzzlegenCursor(app);
-        int total = ChessLibrary.lineCount(app);
+        String scope = job.data.getOrDefault("scope", Config.CHESS_PUZZLEGEN_SCOPE_ALL);
+        boolean scoped = !Config.CHESS_PUZZLEGEN_SCOPE_ALL.equals(scope);
+        int startCursor = Config.getChessPuzzlegenCursor(app, scope);
+
+        // Scoped runs (one PGN source) iterate that source's games directly, oldest-first —
+        // small enough not to need scanFrom's streaming. The whole-library run keeps using
+        // scanFrom so it never holds the full file resident.
+        List<ChessLibrary.Entry> scopedEntries = null;
+        int total;
+        if (scoped) {
+            scopedEntries = ChessLibrary.loadBySource(app, scope);
+            Collections.reverse(scopedEntries); // newest-first -> oldest-first, matches scanFrom's order
+            total = scopedEntries.size();
+        } else {
+            total = ChessLibrary.lineCount(app);
+        }
         if (startCursor >= total) {
             JobQueue.clear(app, job.id);
             ChessPuzzleJobs.clearSnapshot();
@@ -225,13 +240,14 @@ public class JobService extends Service {
         PuzzleGenerator generator = new PuzzleGenerator(engine, () -> ChessPuzzleJobs.cancelRequested);
 
         ChessPuzzleJobs.Snapshot snap = new ChessPuzzleJobs.Snapshot();
+        snap.scope = scope;
         snap.gamesTotal = total;
         snap.gamesScanned = startCursor;
-        snap.puzzlesFound = ChessPuzzles.count(app);
+        snap.puzzlesFound = scoped ? ChessPuzzles.countBySource(app, scope) : ChessPuzzles.count(app);
         ChessPuzzleJobs.publish(snap);
 
         int[] sinceCheckpoint = {0};
-        ChessLibrary.scanFrom(app, startCursor, (lineNumber, entry) -> {
+        ChessLibrary.LineCallback callback = (lineNumber, entry) -> {
             if (ChessPuzzleJobs.cancelRequested) return false;
             keepAlive(job);
             try {
@@ -246,19 +262,31 @@ public class JobService extends Service {
             snap.gamesScanned = lineNumber;
             if (++sinceCheckpoint[0] >= PUZZLEGEN_CHECKPOINT_EVERY) {
                 sinceCheckpoint[0] = 0;
-                Config.setChessPuzzlegenCursor(app, lineNumber);
+                Config.setChessPuzzlegenCursor(app, scope, lineNumber);
             }
             ChessPuzzleJobs.publish(snap);
-            throttledNotif(notif("Generating chess puzzles",
+            String label = scoped ? ("Generating puzzles — " + scope) : "Generating chess puzzles";
+            throttledNotif(notif(label,
                     snap.gamesScanned + " of " + snap.gamesTotal + " games · " + snap.puzzlesFound + " found",
                     pct(snap.gamesScanned, snap.gamesTotal)));
             return !ChessPuzzleJobs.cancelRequested;
-        });
-        Config.setChessPuzzlegenCursor(app, snap.gamesScanned);
+        };
+
+        if (scoped) {
+            int n = 0;
+            for (ChessLibrary.Entry entry : scopedEntries) {
+                n++;
+                if (n <= startCursor) continue;
+                if (!callback.onEntry(n, entry)) break;
+            }
+        } else {
+            ChessLibrary.scanFrom(app, startCursor, callback);
+        }
+        Config.setChessPuzzlegenCursor(app, scope, snap.gamesScanned);
         ChessPuzzleJobs.cancelRequested = false;
 
         // Either caught up or stopped — either way the job row is done; a future
-        // ChessPuzzleJobs.start() re-enqueues and picks up from Config's cursor.
+        // ChessPuzzleJobs.start() re-enqueues and picks up from Config's cursor for this scope.
         JobQueue.clear(app, job.id);
         ChessPuzzleJobs.clearSnapshot();
         running = false;

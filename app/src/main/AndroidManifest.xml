@@ -219,7 +219,12 @@
             android:theme="@style/Theme.PlainPhone" />
 
         <activity
-            android:name=".ChessPuzzlesActivity"
+            android:name=".ChessPgnFilesActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
+            android:name=".ChessPuzzleListActivity"
             android:exported="false"
             android:theme="@style/Theme.PlainPhone" />
 
