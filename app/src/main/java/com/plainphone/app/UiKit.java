@@ -224,6 +224,20 @@ class UiKit {
         return t;
     }
 
+    /** Same look as {@link #dialogTitle}, but the text's own case is left alone — for content
+     *  where case is meaningful (chess SAN: "dxc6" and "DXC6" are not the same thing), unlike
+     *  a section header where forcing caps is exactly the point. */
+    static android.widget.TextView dialogTitleExact(Context c, String text) {
+        android.widget.TextView t = new android.widget.TextView(c);
+        t.setText(text);
+        t.setTextColor(Color.GRAY);
+        t.setTextSize(13);
+        t.setLetterSpacing(0.15f);
+        t.setTypeface(Fonts.current(c));
+        t.setPadding(48, 16, 48, 14);
+        return t;
+    }
+
     /** The black "title / input / Save / Cancel" prompt (rename, etc.). */
     static void textPrompt(android.app.Activity host, String title, String initial,
                            String okLabel, java.util.function.Consumer<String> onOk) {

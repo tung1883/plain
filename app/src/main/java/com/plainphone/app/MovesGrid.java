@@ -308,6 +308,15 @@ final class MovesGrid extends LinearLayout {
         return sb;
     }
 
+    /** "6...dxc6" / "6.e4" — the move's own SAN with its move number and dots, the same
+     *  numbering {@link #formatVariation} already uses for the line it sits in. */
+    private String moveLabel(ChessBoardView.MoveNode node) {
+        int ply = node.ply();
+        boolean whiteMove = (ply % 2) == 1;
+        int moveNum = (ply + 1) / 2;
+        return moveNum + (whiteMove ? "." : "...") + node.san;
+    }
+
     /** Standard rounded plainphone popup — same chrome as the chess settings sheet — with
      *  "Promote to mainline" (variations only) and "Delete this move". */
     private void showMoveMenu(Activity host, ChessBoardView.MoveNode node, boolean allowPromote) {
@@ -315,8 +324,12 @@ final class MovesGrid extends LinearLayout {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackground(UiKit.dialogBackground(host));
         UiKit.clipRounded(host, root, UiKit.R_MD);
-        root.setPadding(2, 32, 2, UiKit.dp(host, UiKit.R_MD));
-        root.addView(UiKit.dialogTitle(host, node.san));
+        // Top and bottom insets must both be at least the corner radius, or the title/last
+        // row's own opaque, square-cornered background paints over the rounded corner's
+        // curve there — reads as part of the border being square instead of round.
+        int edgeInset = UiKit.dp(host, UiKit.R_MD);
+        root.setPadding(2, edgeInset, 2, edgeInset);
+        root.addView(UiKit.dialogTitleExact(host, moveLabel(node)));
 
         android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(host).setView(root).create();
         UiKit.clearDialogChrome(dialog);

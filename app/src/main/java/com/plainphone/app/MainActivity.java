@@ -1238,15 +1238,15 @@ public class MainActivity extends Activity implements SelectionHost {
         String[] labels = {"|‹", "‹", "›", "›|"};
         for (int i = 0; i < labels.length; i++) {
             final int action = i;
-            TextView button = chessText(labels[i], 25, Color.WHITE);
+            TextView button = chessText(labels[i], 18, Color.WHITE);
             // First/last icons line up with the moves grid's own left/right margin;
             // the two middle ones stay centered in their share of the row.
             if (i == 0) {
                 button.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
-                button.setTranslationX(-chessInkLeadIn(labels[i], 25f));
+                button.setTranslationX(-chessInkLeadIn(labels[i], 18f));
             } else if (i == labels.length - 1) {
                 button.setGravity(Gravity.CENTER_VERTICAL | Gravity.END);
-                button.setTranslationX(chessInkTrailOut(labels[i], 25f));
+                button.setTranslationX(chessInkTrailOut(labels[i], 18f));
             } else {
                 button.setGravity(Gravity.CENTER);
             }
@@ -1256,7 +1256,7 @@ public class MainActivity extends Activity implements SelectionHost {
                 else if (action == 2) chessBoard.next();
                 else chessBoard.last();
             });
-            transport.addView(button, new LinearLayout.LayoutParams(0, UiKit.dp(this, 42), 1f));
+            transport.addView(button, new LinearLayout.LayoutParams(0, UiKit.dp(this, 34), 1f));
         }
         chessFixedRows.addView(transport);
         chessFixedRows.addView(chessRule(), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1));
@@ -1323,7 +1323,13 @@ public class MainActivity extends Activity implements SelectionHost {
             // — never against whatever the other endpoint happens to be pinched to right now.
             int sizeUpPx = chessResolvedSizeUp(naturalUpPx);
             int sizeDownPx = chessResolvedSizeDown(naturalDownPx, naturalUpPx);
-            float t = headerFullH <= 0f ? 1f : clamp(headerOffset / headerFullH, 0f, 1f);
+            // Two "swiped up" resting points exist — stage 1 (search bar still showing) and
+            // stage 2 (search hidden too) — both should read as fully swiped-up for sizing,
+            // or stage 1 lands short of the ceiling since its headerOffset is less than
+            // headerFullH. Interpolate against stage 1's offset, not the full header height,
+            // so the board is already at sizeUpPx by the time stage 1 is reached.
+            float stage1Offset = Math.max(0f, headerFullH - headerSearchH);
+            float t = stage1Offset <= 0f ? 1f : clamp(headerOffset / stage1Offset, 0f, 1f);
             target = Math.round(sizeDownPx + t * (sizeUpPx - sizeDownPx));
         } else {
             target = chessAutoFitFor(headerOffset);
