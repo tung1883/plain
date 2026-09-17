@@ -891,7 +891,7 @@ class Config {
     }
 
     static void setChessBoardScale(Context context, float scale) {
-        prefs(context).edit().putFloat("chess_board_scale", Math.max(0.55f, Math.min(1.5f, scale))).apply();
+        prefs(context).edit().putFloat("chess_board_scale", Math.max(0.55f, Math.min(1f, scale))).apply();
     }
 
     /** How many lines of the imported-games library the puzzle generator has scanned through
@@ -904,6 +904,39 @@ class Config {
 
     static void setChessPuzzlegenCursor(Context context, int cursor) {
         prefs(context).edit().putInt("chess_puzzlegen_cursor", cursor).apply();
+    }
+
+    /** Whether the board keeps two independent sizes — one for the menu swiped up, one for
+     *  swiped down — interpolating between them as the header drags, instead of one size
+     *  applied uniformly regardless of header state. */
+    static boolean getChessAutoResize(Context context) {
+        return prefs(context).getBoolean("chess_auto_resize", false);
+    }
+
+    static void setChessAutoResize(Context context, boolean on) {
+        prefs(context).edit().putBoolean("chess_auto_resize", on).apply();
+    }
+
+    /** User-picked board size (dp) for the header-swiped-up state, in auto-resize mode —
+     *  {@code -1} means "no override yet, use the natural auto-fit size" (the 100% ceiling
+     *  both states are capped at). */
+    static int getChessSizeUpDp(Context context) {
+        return prefs(context).getInt("chess_size_up_dp", -1);
+    }
+
+    static void setChessSizeUpDp(Context context, int dp) {
+        prefs(context).edit().putInt("chess_size_up_dp", dp).apply();
+    }
+
+    /** Same as {@link #getChessSizeUpDp}, for the header-swiped-down state — {@code -1} means
+     *  "use the default of 150% of that state's own natural auto-fit size, capped at the
+     *  swiped-up ceiling". */
+    static int getChessSizeDownDp(Context context) {
+        return prefs(context).getInt("chess_size_down_dp", -1);
+    }
+
+    static void setChessSizeDownDp(Context context, int dp) {
+        prefs(context).edit().putInt("chess_size_down_dp", dp).apply();
     }
 
     static void setDevLastHostId(Context context, String id) {

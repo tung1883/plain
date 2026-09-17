@@ -123,12 +123,13 @@ public class MainActivity extends Activity implements SelectionHost {
     private TextView chessTurnLine;
     private TextView[] chessEngineLines;
     private MovesGrid chessMovesGrid;
-    private String chessSelectedBoard = "Slate Study";
-    private String chessSelectedPieces = "neo";
+    private String chessSelectedBoard = "Grey";
+    private String chessSelectedPieces = "alpha";
     // Manual override on top of resizeChessBoardIfNeeded's auto-fit width — 1f means "no
     // override, defer to auto-fit". Set by the corner drag handle / pinch, persisted in
     // Config so the size sticks across restarts.
     private float chessManualScale = 1f;
+    private boolean chessAutoResize;
     private android.widget.ImageView chessResizeIcon;
 
     private static final int REQUEST_NOTES_UNLOCK = 4301;
@@ -1168,9 +1169,11 @@ public class MainActivity extends Activity implements SelectionHost {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         chessManualScale = Config.getChessBoardScale(this);
+        chessAutoResize = Config.getChessAutoResize(this);
 
         chessBoard = new ChessBoardView(this, this::updateChessHomeUi);
-        chessBoard.setPieceTheme("neo");
+        chessBoard.setPieceTheme(chessSelectedPieces);
+        chessBoard.setBoardTheme("grey");
         content.addView(buildChessBoardWrap(), new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
@@ -1305,25 +1308,31 @@ public class MainActivity extends Activity implements SelectionHost {
         if (chessPanel == null || chessPanel.getVisibility() != View.VISIBLE) return;
         if (homeFocusSink == null || homeFocusSink.getHeight() <= 0) return;
         if (chessFixedRows.getHeight() <= 0) return;
-        int otherRowsH = chessFixedRows.getHeight() + UiKit.dp(this, CHESS_MOVES_GRID_HEIGHT_DP);
-        float headerNow = headerOffset <= 0f ? headerFullH : Math.max(0f, headerFullH - headerOffset);
-        int viewportH = homeFocusSink.getHeight() - Math.round(headerNow);
-        int available = viewportH - otherRowsH;
-        // The fully-open header (menu swiped down) leaves the tightest fit — nudge the
-        // board a little larger there; the outer panel ScrollView absorbs the rest.
-        if (headerOffset <= 0f) available += UiKit.dp(this, 28);
-        // Same side inset every other row in this panel already uses (status, engine lines,
-        // transport all pad 48px each side) — the board used to run edge-to-edge instead of
-        // matching that margin.
-        int maxW = getResources().getDisplayMetrics().widthPixels - 96;
-        int target = Math.min(maxW, available);
-        target = Math.max(UiKit.dp(this, 160), Math.min(maxW, target));
-        // The drag handle / pinch override is relative to whatever auto-fit just picked for
-        // this header state, so dragging bigger/smaller still respects the header-collapsed
-        // vs. expanded baseline instead of fighting it.
-        if (chessManualScale != 1f) {
-            target = Math.round(target * chessManualScale);
-            target = Math.max(UiKit.dp(this, 120), Math.min(maxW, target));
+
+        int target;
+        if (chessAutoResize) {
+            // Two independent sizes, one per header endpoint — the header's own drag
+            // position (0 = fully open/"swiped down" .. headerFullH = fully
+            // collapsed/"swiped up") interpolates between them, so the board still follows
+            // the header smoothly instead of snapping between two fixed sizes.
+            int naturalUpPx = chessAutoFitFor(headerFullH);
+            int naturalDownPx = chessAutoFitFor(0f);
+            // Both endpoints cap against the same fixed ceiling — the swiped-up NATURAL size
+            // — never against whatever the other endpoint happens to be pinched to right now.
+            int sizeUpPx = chessResolvedSizeUp(naturalUpPx);
+            int sizeDownPx = chessResolvedSizeDown(naturalDownPx, naturalUpPx);
+            float t = headerFullH <= 0f ? 1f : clamp(headerOffset / headerFullH, 0f, 1f);
+            target = Math.round(sizeDownPx + t * (sizeUpPx - sizeDownPx));
+        } else {
+            target = chessAutoFitFor(headerOffset);
+            // The pinch override is relative to whatever auto-fit just picked for this
+            // header state, so dragging bigger/smaller still respects the header-collapsed
+            // vs. expanded baseline instead of fighting it.
+            if (chessManualScale != 1f) {
+                int maxW = getResources().getDisplayMetrics().widthPixels - 96;
+                target = Math.round(target * chessManualScale);
+                target = Math.max(UiKit.dp(this, 120), Math.min(maxW, target));
+            }
         }
         FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) chessBoard.getLayoutParams();
         if (lp.width != target || lp.gravity != Gravity.CENTER_HORIZONTAL) {
@@ -1333,63 +1342,269 @@ public class MainActivity extends Activity implements SelectionHost {
         }
     }
 
-    // Preview board side at chessManualScale == 1f, inside the resize dialog — independent of
-    // the live board's own auto-fit size, since the dialog needs a fixed reference to scale
-    // up/down from regardless of whatever the real board currently measures.
-    private static final int CHESS_RESIZE_PREVIEW_BASE_DP = 200;
+    /** The auto-fit board width for a given (possibly simulated, not necessarily the header's
+     *  actual current) {@code simulatedHeaderOffset} — used both for the real, continuously
+     *  dragged header position and to work out the two fixed endpoints
+     *  {@link #chessResolvedSizeUp}/{@link #chessResolvedSizeDown} scale from. */
+    private int chessAutoFitFor(float simulatedHeaderOffset) {
+        int otherRowsH = chessFixedRows.getHeight() + UiKit.dp(this, CHESS_MOVES_GRID_HEIGHT_DP);
+        float headerNow = simulatedHeaderOffset <= 0f ? headerFullH : Math.max(0f, headerFullH - simulatedHeaderOffset);
+        int viewportH = homeFocusSink.getHeight() - Math.round(headerNow);
+        int available = viewportH - otherRowsH;
+        // The fully-open header (menu swiped down) leaves the tightest fit — nudge the
+        // board a little larger there; the outer panel ScrollView absorbs the rest.
+        if (simulatedHeaderOffset <= 0f) available += UiKit.dp(this, 28);
+        // Same side inset every other row in this panel already uses (status, engine lines,
+        // transport all pad 48px each side) — the board used to run edge-to-edge instead of
+        // matching that margin.
+        int maxW = getResources().getDisplayMetrics().widthPixels - 96;
+        int target = Math.min(maxW, available);
+        return Math.max(UiKit.dp(this, 160), Math.min(maxW, target));
+    }
 
-    /** The resize icon opens an empty preview board sized at {@link #chessManualScale} — pinch
-     *  it there (not the live board) to change size, with a live percentage readout and a
-     *  Reset row alongside an X close button. Nothing is applied to the real board until the
-     *  dialog closes (X, Reset's own effect stays live-preview-only, or a tap outside), at
-     *  which point the dialog's final scale becomes the new {@link #chessManualScale}. */
+    /** The swiped-up board's own size — a user override (dp) if one's been pinched in the
+     *  resize dialog, else its natural auto-fit size — capped at itself (it IS the 100%
+     *  ceiling both states are capped at, so this is really just clamping a stale override
+     *  after e.g. a rotation changed what "natural" means). */
+    private int chessResolvedSizeUp(int naturalUpPx) {
+        int dp = Config.getChessSizeUpDp(this);
+        int px = dp > 0 ? UiKit.dp(this, dp) : naturalUpPx;
+        return Math.max(UiKit.dp(this, 120), Math.min(naturalUpPx, px));
+    }
+
+    /** The swiped-down board's own size — a user override (dp) if one's been pinched, else
+     *  150% of its own natural auto-fit size (point 4 of the design) — either way capped at
+     *  {@code ceilingPx} (the swiped-up size), so it can never grow past it. */
+    private int chessResolvedSizeDown(int naturalDownPx, int ceilingPx) {
+        int dp = Config.getChessSizeDownDp(this);
+        int px = dp > 0 ? UiKit.dp(this, dp) : Math.round(naturalDownPx * 1.5f);
+        return Math.max(UiKit.dp(this, 120), Math.min(ceilingPx, px));
+    }
+
+    /** The resize icon opens this dialog — either a single pinchable preview board
+     *  (Auto-resize off, today's {@link #chessManualScale} behavior) or two independent ones,
+     *  one per header endpoint (Auto-resize on, {@link #chessResolvedSizeUp}/
+     *  {@link #chessResolvedSizeDown}). The "Auto-resize" row and left-aligned "Reset" row
+     *  stay put across both; only the board block beneath them is rebuilt when the toggle
+     *  flips. Nothing touches the real board until the dialog closes (tap outside — there's
+     *  no X), at which point whichever mode's values are current get applied and persisted.
+     *  The body sits in a height-capped {@link ScrollView} so a tall two-board layout scrolls
+     *  internally instead of pushing the dialog's own rounded bottom edge off-screen. */
     private void chessShowResizeDialog() {
+        boolean[] autoResize = {chessAutoResize};
         float[] previewScale = {chessManualScale};
+
+        int naturalUpPx = chessAutoFitFor(headerFullH);
+        int naturalDownPx = chessAutoFitFor(0f);
+        float[] upPx = {chessResolvedSizeUp(naturalUpPx)};
+        float[] downPx = {chessResolvedSizeDown(naturalDownPx, naturalUpPx)};
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackground(UiKit.dialogBackground(this));
         UiKit.clipRounded(this, root, UiKit.R_MD);
+        // Top/bottom padding must be at least the corner radius, or the first/last row's own
+        // opaque, square-cornered background paints straight over the rounded corner's curve
+        // — reads as the border vanishing right at the top (or bottom) edge.
+        int edgeInset = UiKit.dp(this, UiKit.R_MD);
+        root.setPadding(2, edgeInset, 2, edgeInset);
 
         AlertDialog dialog = new AlertDialog.Builder(this).setView(root).create();
         UiKit.clearDialogChrome(dialog);
         dialog.setOnDismissListener(d -> {
-            chessManualScale = previewScale[0];
-            Config.setChessBoardScale(this, chessManualScale);
+            chessAutoResize = autoResize[0];
+            Config.setChessAutoResize(this, chessAutoResize);
+            if (chessAutoResize) {
+                Config.setChessSizeUpDp(this, pxToDp(upPx[0]));
+                Config.setChessSizeDownDp(this, pxToDp(downPx[0]));
+            } else {
+                chessManualScale = previewScale[0];
+                Config.setChessBoardScale(this, chessManualScale);
+            }
             resizeChessBoardIfNeeded();
         });
 
-        FrameLayout header = new FrameLayout(this);
-        TextView close = chessText("✕", 13, 0xFF8A8A8A);
-        close.setPadding(UiKit.dp(this, 12), UiKit.dp(this, 12), UiKit.dp(this, 12), UiKit.dp(this, 12));
-        close.setOnClickListener(v -> dialog.dismiss());
-        FrameLayout.LayoutParams closeLp = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        closeLp.gravity = Gravity.TOP | Gravity.END;
-        header.addView(close, closeLp);
-        root.addView(header, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, UiKit.dp(this, 40)));
+        Runnable[] renderBody = new Runnable[1];
+        TextView toggleRow = chessSettingsRow("", v -> { autoResize[0] = !autoResize[0]; renderBody[0].run(); });
+        root.addView(toggleRow);
+        TextView resetRow = chessSettingsRow("Reset", v -> {
+            if (autoResize[0]) {
+                upPx[0] = naturalUpPx;
+                downPx[0] = Math.min(naturalUpPx, naturalDownPx * 1.5f);
+            } else {
+                previewScale[0] = 1f;
+            }
+            renderBody[0].run();
+        });
+        root.addView(resetRow);
 
-        TextView pct = chessText(Math.round(previewScale[0] * 100) + "%", 14, 0xFF8FBF8F);
-        pct.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams pctLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        pctLp.bottomMargin = UiKit.dp(this, 14);
-        root.addView(pct, pctLp);
+        LinearLayout body = new LinearLayout(this);
+        body.setOrientation(LinearLayout.VERTICAL);
+        // Auto-resize-on's two true-size boards can easily be taller than the screen, so the
+        // body scrolls internally — but a plain ScrollView would also swallow a two-finger
+        // pinch that starts on one of the preview boards (it claims any vertical drag past
+        // touch slop, single- or multi-finger alike). Bailing out of interception the moment
+        // a second pointer shows up hands the whole gesture back to the board's own
+        // ScaleGestureDetector, same fix already used for the piece-drag/moves-grid cases
+        // elsewhere in this file — only here it's conditional on pointer count instead of
+        // unconditional, since single-finger drags on a board must still scroll normally.
+        ScrollView scroller = new ScrollView(this) {
+            @Override public boolean onInterceptTouchEvent(MotionEvent ev) {
+                if (ev.getPointerCount() >= 2) return false;
+                return super.onInterceptTouchEvent(ev);
+            }
+        };
+        scroller.addView(body, new ScrollView.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        // Capped only in auto-resize mode (renderBody below) — off-mode's single short
+        // preview needs no scrolling and would otherwise sit in a tall box with dead space
+        // under it.
+        int maxBodyPx = Math.round(getResources().getDisplayMetrics().heightPixels * 0.55f);
+        root.addView(scroller, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        int maxPreviewDp = Math.round(CHESS_RESIZE_PREVIEW_BASE_DP * 1.5f);
+        renderBody[0] = () -> {
+            toggleRow.setText("Auto-resize: " + (autoResize[0] ? "On" : "Off"));
+            body.removeAllViews();
+            LinearLayout.LayoutParams scrollerLp = (LinearLayout.LayoutParams) scroller.getLayoutParams();
+            scrollerLp.height = autoResize[0] ? maxBodyPx : ViewGroup.LayoutParams.WRAP_CONTENT;
+            scroller.setLayoutParams(scrollerLp);
+            if (autoResize[0]) {
+                body.addView(chessResizeBoardBlock("Swiped up", naturalUpPx, upPx,
+                        UiKit.dp(this, 120), naturalUpPx));
+                body.addView(chessResizeBoardBlock("Swiped down", naturalUpPx, downPx,
+                        UiKit.dp(this, 120), naturalUpPx));
+            } else {
+                body.addView(chessResizeSinglePreview(previewScale));
+            }
+        };
+        renderBody[0].run();
+
+        dialog.show();
+        UiKit.unboxDialog(root);
+        if (dialog.getWindow() != null) {
+            android.view.WindowManager.LayoutParams p = dialog.getWindow().getAttributes();
+            // Wide enough that the preview boards can show at (close to) the real board's own
+            // size instead of a small arbitrary demo square — see chessResizeBoardBlock/
+            // chessResizeSinglePreview, which both cap their preview at this same width.
+            p.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.92);
+            dialog.getWindow().setAttributes(p);
+        }
+    }
+
+    /** How wide a preview board inside this dialog may actually draw at, in real px — the
+     *  block's own 20dp side padding taken out of the dialog's own width above. Both preview
+     *  helpers clamp their "100%" size to this, so a real board wider than the dialog itself
+     *  still shows as large as it can rather than silently shrinking to an arbitrary demo size. */
+    private int chessResizePreviewMaxPx() {
+        int dialogWidthPx = Math.round(getResources().getDisplayMetrics().widthPixels * 0.92f);
+        return dialogWidthPx - UiKit.dp(this, 40);
+    }
+
+    private int pxToDp(float px) {
+        return Math.round(px / getResources().getDisplayMetrics().density);
+    }
+
+    /** A plain info row matching {@link #chessSettingsRow}'s own chrome (same padding, same
+     *  20sp text) but non-interactive and two-part: {@code label} start-aligned, a live value
+     *  end-aligned — {@code valueOut[0]} is stashed so the caller can update the value text
+     *  later without rebuilding the row. */
+    private View chessResizeInfoRow(String label, TextView[] valueOut) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setPadding(48, 32, 48, 32);
+        TextView labelView = chessText(label, 20, Color.WHITE);
+        row.addView(labelView, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        TextView value = chessText("", 20, 0xFF8FBF8F);
+        row.addView(value, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        valueOut[0] = value;
+        return row;
+    }
+
+    /** One pinchable preview board for {@link #chessShowResizeDialog}'s Auto-resize-on body —
+     *  {@code sizePx[0]} is read/written in real device px (the same units
+     *  {@link #resizeChessBoardIfNeeded} works in), clamped to {@code [minPx, ceilingPx]};
+     *  {@code ceilingRefPx} is what the shown percentage and the preview's own max drawn size
+     *  are relative to (always the swiped-up natural size, the fixed 100% reference). */
+    private View chessResizeBoardBlock(String label, int ceilingRefPx, float[] sizePx,
+                                       int minPx, int ceilingPx) {
+        LinearLayout block = new LinearLayout(this);
+        block.setOrientation(LinearLayout.VERTICAL);
+
+        TextView[] pctOut = new TextView[1];
+        block.addView(chessResizeInfoRow(label + ":", pctOut));
+        TextView pct = pctOut[0];
+
         FrameLayout previewBox = new FrameLayout(this);
         View preview = chessResizePreviewBoard();
         FrameLayout.LayoutParams previewLp = new FrameLayout.LayoutParams(0, 0);
         previewLp.gravity = Gravity.CENTER;
         previewBox.addView(preview, previewLp);
-        LinearLayout.LayoutParams previewBoxLp = new LinearLayout.LayoutParams(
-                UiKit.dp(this, maxPreviewDp), UiKit.dp(this, maxPreviewDp));
+        // The 100% reference draws at its true real size (ceilingRefPx), not a shrunk demo
+        // square — only clamped down if it genuinely wouldn't fit the dialog's own width.
+        int maxPreviewPx = Math.min(ceilingRefPx, chessResizePreviewMaxPx());
+        LinearLayout.LayoutParams previewBoxLp = new LinearLayout.LayoutParams(maxPreviewPx, maxPreviewPx);
         previewBoxLp.gravity = Gravity.CENTER_HORIZONTAL;
-        root.addView(previewBox, previewBoxLp);
+        previewBoxLp.topMargin = UiKit.dp(this, 6);
+        previewBoxLp.bottomMargin = UiKit.dp(this, 12);
+        block.addView(previewBox, previewBoxLp);
+
+        Runnable applySize = () -> {
+            int side = Math.round(maxPreviewPx * (sizePx[0] / ceilingRefPx));
+            FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) preview.getLayoutParams();
+            lp.width = side;
+            lp.height = side;
+            preview.setLayoutParams(lp);
+            pct.setText(Math.round(sizePx[0] / ceilingRefPx * 100) + "%");
+        };
+        applySize.run();
+
+        ScaleGestureDetector detector = new ScaleGestureDetector(this,
+                new ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                    @Override public boolean onScale(ScaleGestureDetector d) {
+                        sizePx[0] = clamp(sizePx[0] * d.getScaleFactor(), minPx, ceilingPx);
+                        applySize.run();
+                        return true;
+                    }
+                });
+        previewBox.setOnTouchListener((v, ev) -> {
+            detector.onTouchEvent(ev);
+            return true;
+        });
+        return block;
+    }
+
+    /** The single pinchable preview for Auto-resize-off, {@link #chessManualScale}'s own
+     *  55%–150% range — unchanged range, just factored out so the toggle can swap it in and
+     *  brought in line with the auto-resize blocks: caption below the board, true real size. */
+    private View chessResizeSinglePreview(float[] previewScale) {
+        LinearLayout block = new LinearLayout(this);
+        block.setOrientation(LinearLayout.VERTICAL);
+
+        TextView[] pctOut = new TextView[1];
+        block.addView(chessResizeInfoRow("Board size:", pctOut));
+        TextView pct = pctOut[0];
+
+        // 100% here is the board's own current natural auto-fit size (today's live target,
+        // before chessManualScale) — the same real size the board is actually showing at
+        // right now, not an arbitrary demo constant.
+        int naturalPx = chessAutoFitFor(headerOffset);
+        int maxPreviewPx = Math.min(naturalPx, chessResizePreviewMaxPx());
+
+        FrameLayout previewBox = new FrameLayout(this);
+        View preview = chessResizePreviewBoard();
+        FrameLayout.LayoutParams previewLp = new FrameLayout.LayoutParams(0, 0);
+        previewLp.gravity = Gravity.CENTER;
+        previewBox.addView(preview, previewLp);
+        LinearLayout.LayoutParams previewBoxLp = new LinearLayout.LayoutParams(maxPreviewPx, maxPreviewPx);
+        previewBoxLp.gravity = Gravity.CENTER_HORIZONTAL;
+        previewBoxLp.topMargin = UiKit.dp(this, 6);
+        previewBoxLp.bottomMargin = UiKit.dp(this, 12);
+        block.addView(previewBox, previewBoxLp);
 
         Runnable applyPreviewSize = () -> {
-            int side = UiKit.dp(this, Math.round(CHESS_RESIZE_PREVIEW_BASE_DP * previewScale[0]));
+            int side = Math.round(maxPreviewPx * previewScale[0]);
             FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) preview.getLayoutParams();
             lp.width = side;
             lp.height = side;
@@ -1401,7 +1616,7 @@ public class MainActivity extends Activity implements SelectionHost {
         ScaleGestureDetector detector = new ScaleGestureDetector(this,
                 new ScaleGestureDetector.SimpleOnScaleGestureListener() {
                     @Override public boolean onScale(ScaleGestureDetector d) {
-                        previewScale[0] = clamp(previewScale[0] * d.getScaleFactor(), 0.55f, 1.5f);
+                        previewScale[0] = clamp(previewScale[0] * d.getScaleFactor(), 0.55f, 1f);
                         applyPreviewSize.run();
                         return true;
                     }
@@ -1410,22 +1625,7 @@ public class MainActivity extends Activity implements SelectionHost {
             detector.onTouchEvent(ev);
             return true;
         });
-
-        LinearLayout.LayoutParams gapLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, UiKit.dp(this, 18));
-        root.addView(new View(this), gapLp);
-        root.addView(chessSettingsRow("Reset", v -> {
-            previewScale[0] = 1f;
-            applyPreviewSize.run();
-        }));
-
-        dialog.show();
-        UiKit.unboxDialog(root);
-        if (dialog.getWindow() != null) {
-            android.view.WindowManager.LayoutParams p = dialog.getWindow().getAttributes();
-            p.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.8);
-            dialog.getWindow().setAttributes(p);
-        }
+        return block;
     }
 
     /** An empty (no pieces) checkerboard, same colors as the default board theme — purely a
