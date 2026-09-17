@@ -15,6 +15,7 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
+import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
@@ -1174,6 +1175,7 @@ public class MainActivity extends Activity implements SelectionHost {
         chessBoard = new ChessBoardView(this, this::updateChessHomeUi);
         chessBoard.setPieceTheme(chessSelectedPieces);
         chessBoard.setBoardTheme("grey");
+        UiKit.clipRounded(this, chessBoard, UiKit.R_SM);
         content.addView(buildChessBoardWrap(), new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
@@ -1631,17 +1633,33 @@ public class MainActivity extends Activity implements SelectionHost {
     /** An empty (no pieces) checkerboard, same colors as the default board theme — purely a
      *  size reference inside {@link #chessShowResizeDialog}, never played on. */
     private View chessResizePreviewBoard() {
-        return new View(this) {
-            private final Paint paint = new Paint();
+        View view = new View(this) {
+            private final Paint paint = new Paint(Paint.FILTER_BITMAP_FLAG);
             @Override protected void onDraw(Canvas c) {
                 super.onDraw(c);
                 float cell = getWidth() / 8f;
+                // Same theme the real board is showing (bundled tile art if the theme has
+                // one, else its flat light/dark fill) — not a hardcoded placeholder pattern.
+                Bitmap lightTile = chessBoard.boardLightTile();
+                Bitmap darkTile = chessBoard.boardDarkTile();
+                int lightColor = chessBoard.boardLightColor();
+                int darkColor = chessBoard.boardDarkColor();
                 for (int r = 0; r < 8; r++) for (int col = 0; col < 8; col++) {
-                    paint.setColor(((r + col) & 1) == 0 ? 0xFF3A3B3D : 0xFF1B1C1E);
-                    c.drawRect(col * cell, r * cell, (col + 1) * cell, (r + 1) * cell, paint);
+                    boolean isLight = ((r + col) & 1) == 0;
+                    float l = col * cell, t = r * cell;
+                    if (lightTile != null) {
+                        Bitmap tile = isLight ? lightTile : darkTile;
+                        c.drawBitmap(tile, null, new RectF(l, t, l + cell, t + cell), paint);
+                    } else {
+                        paint.setColor(isLight ? lightColor : darkColor);
+                        c.drawRect(l, t, l + cell, t + cell, paint);
+                    }
                 }
             }
         };
+        // Rounded corners on the preview too, matching the real board (see buildChessPanel).
+        UiKit.clipRounded(this, view, UiKit.R_SM);
+        return view;
     }
 
     private void chessOpenSettings() {

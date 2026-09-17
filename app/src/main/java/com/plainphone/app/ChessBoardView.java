@@ -306,6 +306,16 @@ final class ChessBoardView extends View {
         invalidate();
     }
 
+    /** The current theme's light/dark square art — null when the theme has no bundled
+     *  texture (the "default" slate look), in which case {@link #boardLightColor}/
+     *  {@link #boardDarkColor} are the flat fill to use instead. Exposed so the resize
+     *  dialog's preview board can render the same theme the real board is showing,
+     *  rather than a hardcoded placeholder pattern. */
+    Bitmap boardLightTile() { return boardLightTile; }
+    Bitmap boardDarkTile() { return boardDarkTile; }
+    int boardLightColor() { return light; }
+    int boardDarkColor() { return dark; }
+
     void setPieceTheme(String theme) { pieceTheme = theme; images.clear(); invalidate(); }
 
     @Override protected void onMeasure(int wSpec, int hSpec) {
