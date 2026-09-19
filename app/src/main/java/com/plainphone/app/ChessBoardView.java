@@ -267,6 +267,10 @@ final class ChessBoardView extends View {
                 if (c != null && !c.isEmpty()) current.comment = c;
             }
         }
+        // Replaying leaves `current` at the last move (commitMove always advances it) — the
+        // whole game is still there to step through via the transport row or moves grid, but
+        // a newly-opened game should show its starting position, not jump straight to the end.
+        restoreNode(root);
     }
 
     /** Sets (or clears, with {@code null}/empty) {@code node}'s comment and lets the host

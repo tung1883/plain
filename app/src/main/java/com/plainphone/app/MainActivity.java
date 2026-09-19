@@ -1288,6 +1288,7 @@ public class MainActivity extends Activity implements SelectionHost {
         root.addView(tabs);
 
         chessTabContainer = new FrameLayout(this);
+        chessTabContainer.setPadding(0, UiKit.dp(this, 14), 0, 0);
         chessBoardTabContent = buildChessBoardTabContent();
         chessPuzzlesPanel = new ChessPuzzlesPanel(this, new ChessPuzzlesPanel.Listener() {
             @Override public void onOpenPuzzleList() { startActivity(new Intent(MainActivity.this, ChessPuzzleListActivity.class)); }
