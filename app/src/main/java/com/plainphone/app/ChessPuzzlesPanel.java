@@ -482,6 +482,8 @@ final class ChessPuzzlesPanel {
         toolGroup.addView(toolButton("Retry", v -> loadCurrentPuzzle()), new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         content.addView(toolGroup, toolLp);
 
+        content.addView(moveTransportRow());
+
         movesGrid = new MovesGrid(host, board, this::onBoardChanged);
         movesGrid.setPadding(48, UiKit.dp(host, 16), 48, UiKit.dp(host, 12));
         content.addView(movesGrid, new LinearLayout.LayoutParams(
@@ -511,6 +513,34 @@ final class ChessPuzzlesPanel {
                 ? UiKit.rounded(host, Color.WHITE, 0, 0f, UiKit.R_SM)
                 : UiKit.pressable(host, Color.BLACK, Color.DKGRAY, 0xFF333333, 2f, UiKit.R_SM));
         return t;
+    }
+
+    /** Same "|‹ ‹ › ›|" move transport as the Board tab's — first/prev/next/last through
+     *  whatever's actually on the board (the puzzle's played-out line), separate from the
+     *  "‹ Prev / Next ›" row above, which steps between puzzles in the queue instead. */
+    private View moveTransportRow() {
+        LinearLayout transport = new LinearLayout(host);
+        transport.setGravity(Gravity.CENTER);
+        transport.setPadding(UiKit.dp(host, 20), UiKit.dp(host, 12), UiKit.dp(host, 20), 0);
+        String[] labels = {"|‹", "‹", "›", "›|"};
+        for (int i = 0; i < labels.length; i++) {
+            final int action = i;
+            TextView button = new TextView(host);
+            button.setText(labels[i]);
+            button.setTextSize(18);
+            button.setTextColor(Color.WHITE);
+            button.setTypeface(Fonts.current(host));
+            button.setIncludeFontPadding(false);
+            button.setGravity(Gravity.CENTER);
+            button.setOnClickListener(v -> {
+                if (action == 0) board.first();
+                else if (action == 1) board.previous();
+                else if (action == 2) board.next();
+                else board.last();
+            });
+            transport.addView(button, new LinearLayout.LayoutParams(0, UiKit.dp(host, 34), 1f));
+        }
+        return transport;
     }
 
     private View toolButton(String label, View.OnClickListener onClick) {
@@ -548,7 +578,9 @@ final class ChessPuzzlesPanel {
         // being cut off (no setSingleLine/ellipsize here).
         solveMeta.setText(p.event + " · " + p.date);
         solveCounter.setText("Puzzle " + (queueIndex + 1) + " of " + queue.size());
-        solvedBadge.setVisibility(Config.isChessPuzzleSolved(host, p.id) ? View.VISIBLE : View.GONE);
+        // INVISIBLE, not GONE — keeps this line's height reserved always, so the badge
+        // popping in right after a solve doesn't shove the board/status row down a notch.
+        solvedBadge.setVisibility(Config.isChessPuzzleSolved(host, p.id) ? View.VISIBLE : View.INVISIBLE);
         refreshAutoNextPill();
         applyBoardScale();
         board.loadPuzzle(p.startFen, p.solutionUci, this::onWrongMove, this::onPuzzleSolved);
@@ -581,7 +613,8 @@ final class ChessPuzzlesPanel {
     private void onBoardChanged() {
         // Plain "White/Black to move" (or "Solved!" once it is) — not
         // puzzleStatusText()'s "White to find the best move" wording; the Board tab never
-        // says anything but "White/Black to move" and this screen now matches it.
+        // says anything but "White/Black to move" and this screen now matches it. Any real
+        // move (this only fires on one) overwrites whatever onWrongMove left showing.
         if (board.puzzleStatusText() != null && board.puzzleStatusText().startsWith("Puzzle solved")) {
             statusLine.setText("Solved!");
         } else {
@@ -598,8 +631,12 @@ final class ChessPuzzlesPanel {
         movesGrid.refresh();
     }
 
+    /** A wrong move never calls {@link #onBoardChanged} (no move was actually committed — see
+     *  {@link ChessBoardView#onTouchEvent}), so this is the only place that needs to touch
+     *  {@code statusLine} for it: swaps the normal "White/Black to move" text for "Not quite —
+     *  try again" until the next real move overwrites it in {@link #onBoardChanged}. */
     private void onWrongMove() {
-        android.widget.Toast.makeText(host, "Not quite — try again", android.widget.Toast.LENGTH_SHORT).show();
+        statusLine.setText("Not quite - Try again");
     }
 
     private void onPuzzleSolved() {
