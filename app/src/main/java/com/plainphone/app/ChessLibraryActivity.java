@@ -93,7 +93,7 @@ public class ChessLibraryActivity extends Activity {
             }
         };
         list.setAdapter(adapter);
-        list.setOnItemClickListener((parent, view, position, id) -> pick(shown.get(position)));
+        list.setOnItemClickListener((parent, view, position, id) -> pick(shown.get(position).id));
         content.addView(list, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
@@ -151,14 +151,23 @@ public class ChessLibraryActivity extends Activity {
         countLine.setText(shown.size() + " of " + all.size() + " games");
     }
 
-    private void pick(ChessLibrary.Entry entry) {
-        Intent result = new Intent();
-        result.putExtra(EXTRA_ID, entry.id);
-        result.putExtra(EXTRA_WHITE, entry.white);
-        result.putExtra(EXTRA_BLACK, entry.black);
-        result.putExtra(EXTRA_SANS, entry.sansJoined);
-        setResult(RESULT_OK, result);
-        finish();
+    // shown/all are the lightweight rows loadAll() now returns (no move list — see
+    // ChessLibrary.loadAll); the tapped entry's moves are only ever read back here, for the
+    // one game actually picked, off the UI thread.
+    private void pick(String id) {
+        new Thread(() -> {
+            ChessLibrary.Entry entry = ChessLibrary.findById(this, id);
+            runOnUiThread(() -> {
+                if (entry == null) { finish(); return; }
+                Intent result = new Intent();
+                result.putExtra(EXTRA_ID, entry.id);
+                result.putExtra(EXTRA_WHITE, entry.white);
+                result.putExtra(EXTRA_BLACK, entry.black);
+                result.putExtra(EXTRA_SANS, entry.sansJoined);
+                setResult(RESULT_OK, result);
+                finish();
+            });
+        }).start();
     }
 
     private View row() {

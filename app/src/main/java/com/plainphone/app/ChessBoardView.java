@@ -219,6 +219,7 @@ final class ChessBoardView extends View {
             if (gen != boardGeneration) return; // a new puzzle/game/jump landed before this fired
             int[] mv = uciToSquares(replyUci);
             if (mv != null && in(mv[0], mv[1]) && in(mv[2], mv[3])) commitMove(mv[0], mv[1], mv[2], mv[3]);
+            invalidate();
             puzzleStep++;
             if (puzzleStep >= puzzleSolution.size()) {
                 puzzleSolved = true;

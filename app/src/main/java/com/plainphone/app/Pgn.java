@@ -1,5 +1,8 @@
 package com.plainphone.app;
 
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.Reader;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -39,22 +42,28 @@ final class Pgn {
         }
     }
 
-    /** Splits {@code text} into every game it contains. A game is a run of {@code [Tag
-     *  "value"]} lines followed by movetext; hitting a new tag line once movetext has
-     *  already started closes the previous game off (PGN files don't reliably use blank
-     *  lines as separators, but tags never appear inside movetext, so this boundary is
-     *  the same one real PGN readers use). */
-    static List<Game> parse(String text) {
-        List<Game> games = new ArrayList<>();
-        String[] lines = text.replace("\r\n", "\n").replace('\r', '\n').split("\n", -1);
+    interface GameCallback { void onGame(Game game); }
+
+    /** Streams {@code text} game by game, handing each one to {@code callback} as soon as it's
+     *  complete instead of collecting them all into a list first — a real PGN collection (a
+     *  player's whole career, an opening database) is routinely thousands of games, and every
+     *  one carries its own full move list; materializing all of them at once is what blew the
+     *  heap on a 7000+-game import (see {@link ChessLibrary}). A game is a run of {@code [Tag
+     *  "value"]} lines followed by movetext; hitting a new tag line once movetext has already
+     *  started closes the previous game off (PGN files don't reliably use blank lines as
+     *  separators, but tags never appear inside movetext, so this boundary is the same one real
+     *  PGN readers use). */
+    static void parse(Reader source, GameCallback callback) throws IOException {
+        BufferedReader r = source instanceof BufferedReader ? (BufferedReader) source : new BufferedReader(source);
         Map<String, String> tags = new LinkedHashMap<>();
         StringBuilder movetext = new StringBuilder();
         boolean inMovetext = false;
-        for (String line : lines) {
+        String line;
+        while ((line = r.readLine()) != null) {
             String trimmed = line.trim();
             if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
                 if (inMovetext) {
-                    games.add(new Game(tags, movetext.toString()));
+                    callback.onGame(new Game(tags, movetext.toString()));
                     tags = new LinkedHashMap<>();
                     movetext = new StringBuilder();
                     inMovetext = false;
@@ -67,8 +76,7 @@ final class Pgn {
             inMovetext = true;
             movetext.append(' ').append(trimmed);
         }
-        if (!tags.isEmpty() || movetext.length() > 0) games.add(new Game(tags, movetext.toString()));
-        return games;
+        if (!tags.isEmpty() || movetext.length() > 0) callback.onGame(new Game(tags, movetext.toString()));
     }
 
     private static final class Extracted {

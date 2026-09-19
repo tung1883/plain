@@ -63,31 +63,63 @@ final class ChessLibrary {
 
     /** Appends one line per game. Safe to call off the UI thread (does its own file I/O). */
     static void appendGames(Context context, String sourceLabel, List<Pgn.Game> games) {
-        try (FileOutputStream out = new FileOutputStream(file(context), true)) {
-            long now = System.currentTimeMillis();
-            StringBuilder sb = new StringBuilder();
-            for (Pgn.Game game : games) {
-                JSONObject o = new JSONObject();
-                try {
-                    o.put("id", UUID.randomUUID().toString());
-                    o.put("src", sourceLabel);
-                    o.put("white", game.tag("White", "?"));
-                    o.put("black", game.tag("Black", "?"));
-                    o.put("event", game.tag("Event", "Game"));
-                    o.put("round", game.tag("Round", ""));
-                    o.put("eco", game.tag("ECO", ""));
-                    o.put("date", game.tag("Date", "????.??.??"));
-                    o.put("result", game.tag("Result", "*"));
-                    o.put("sans", String.join(" ", game.sans));
-                    o.put("importedAt", now);
-                } catch (JSONException ignored) { continue; }
-                sb.append(o).append('\n');
-            }
-            out.write(sb.toString().getBytes(StandardCharsets.UTF_8));
+        try (AppendSession session = beginAppend(context, sourceLabel)) {
+            for (Pgn.Game game : games) session.append(game);
         } catch (IOException ignored) { }
     }
 
-    private static Entry parseLine(String line) {
+    /** Streaming counterpart to {@link #appendGames} — writes one game at a time as it's
+     *  handed in, instead of building the whole batch's JSON in memory first (the other half
+     *  of the 7000+-game-import OOM fix: {@link Pgn#parse} now streams games one at a time too,
+     *  so the import path never holds more than one game plus this session's open file handle).
+     *  Callers must close the session (try-with-resources) when done importing. */
+    static AppendSession beginAppend(Context context, String sourceLabel) throws IOException {
+        return new AppendSession(context, sourceLabel);
+    }
+
+    static final class AppendSession implements java.io.Closeable {
+        private final FileOutputStream out;
+        private final String sourceLabel;
+        private final long now;
+
+        private AppendSession(Context context, String sourceLabel) throws IOException {
+            out = new FileOutputStream(file(context), true);
+            this.sourceLabel = sourceLabel;
+            now = System.currentTimeMillis();
+        }
+
+        /** Appends one game and returns the id it was stamped with. */
+        String append(Pgn.Game game) throws IOException {
+            String id = UUID.randomUUID().toString();
+            JSONObject o = new JSONObject();
+            try {
+                o.put("id", id);
+                o.put("src", sourceLabel);
+                o.put("white", game.tag("White", "?"));
+                o.put("black", game.tag("Black", "?"));
+                o.put("event", game.tag("Event", "Game"));
+                o.put("round", game.tag("Round", ""));
+                o.put("eco", game.tag("ECO", ""));
+                o.put("date", game.tag("Date", "????.??.??"));
+                o.put("result", game.tag("Result", "*"));
+                o.put("sans", String.join(" ", game.sans));
+                o.put("importedAt", now);
+            } catch (JSONException e) {
+                throw new IOException(e);
+            }
+            out.write((o.toString() + "\n").getBytes(StandardCharsets.UTF_8));
+            return id;
+        }
+
+        @Override public void close() throws IOException { out.close(); }
+    }
+
+    /** {@code includeSans} false skips the "sans" field — every game's full move list is the
+     *  one big string in each line, and {@link #loadAll} would otherwise hold all of them
+     *  (the whole library, at once, cached indefinitely) just to show white/black/event rows
+     *  that never touch a single move. Only a lookup for one specific game ({@link #findById},
+     *  {@link #scanFrom}'s callers) actually needs it. */
+    private static Entry parseLine(String line, boolean includeSans) {
         try {
             JSONObject o = new JSONObject(line);
             return new Entry(
@@ -100,15 +132,17 @@ final class ChessLibrary {
                     o.optString("eco", ""),
                     o.optString("date", "????.??.??"),
                     o.optString("result", "*"),
-                    o.optString("sans", ""),
+                    includeSans ? o.optString("sans", "") : "",
                     o.optLong("importedAt", 0L));
         } catch (JSONException e) {
             return null;
         }
     }
 
-    /** Reads every game back, newest import first. Runs entirely on the calling thread —
-     *  callers do this off the UI thread, same as {@link Pgn#parse}. */
+    /** Reads every game back, newest import first — {@code sansJoined} empty on every entry
+     *  (see {@link #parseLine}); this is the browsing/filtering list (rows only ever show
+     *  white/black/event/date), never the source of a game's actual moves. Runs entirely on
+     *  the calling thread — callers do this off the UI thread, same as {@link Pgn#parse}. */
     // In-memory cache of the last full parse, keyed by the file's own mtime — a big PGN
     // library (tens of thousands of games) is the same JSONL re-read and re-parsed line by
     // line on every call otherwise, and loadAll gets called a lot (every tab switch, every
@@ -128,7 +162,7 @@ final class ChessLibrary {
                 String line;
                 while ((line = r.readLine()) != null) {
                     if (line.isEmpty()) continue;
-                    Entry e = parseLine(line);
+                    Entry e = parseLine(line, false);
                     if (e != null) out.add(e);
                 }
             } catch (IOException ignored) { }
@@ -146,12 +180,18 @@ final class ChessLibrary {
         return out;
     }
 
-    /** A single entry by its stable id, or {@code null} if it's gone (e.g. its source was
-     *  deleted since the caller last looked it up). */
+    /** A single entry by its stable id, moves included, or {@code null} if it's gone (e.g. its
+     *  source was deleted since the caller last looked it up). Always a fresh streamed read —
+     *  never {@link #loadAll}'s cache, which deliberately drops every entry's moves. */
     static Entry findById(Context context, String id) {
         if (id == null) return null;
-        for (Entry e : loadAll(context)) if (id.equals(e.id)) return e;
-        return null;
+        Entry[] found = new Entry[1];
+        scanFrom(context, 0, (lineNumber, entry) -> {
+            if (!id.equals(entry.id)) return true;
+            found[0] = entry;
+            return false;
+        });
+        return found[0];
     }
 
     /** One row per distinct imported PGN, for the "PGN files" screen and the
@@ -187,7 +227,7 @@ final class ChessLibrary {
             String line;
             while ((line = r.readLine()) != null) {
                 if (line.isEmpty()) continue;
-                Entry e = parseLine(line);
+                Entry e = parseLine(line, false);
                 if (e != null && e.src.equals(sourceLabel)) { removedAny = true; continue; }
                 keep.add(line);
             }
@@ -225,7 +265,7 @@ final class ChessLibrary {
             while ((line = r.readLine()) != null) {
                 n++;
                 if (n <= skipLines || line.isEmpty()) continue;
-                Entry entry = parseLine(line);
+                Entry entry = parseLine(line, true);
                 if (entry != null && !callback.onEntry(n, entry)) return;
             }
         } catch (IOException ignored) { }

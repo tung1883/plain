@@ -120,7 +120,16 @@ final class ChessLibraryPanel {
             }
         };
         list.setAdapter(adapter);
-        list.setOnItemClickListener((parent, view, position, id) -> listener.onGameChosen(shown.get(position)));
+        // shown/all are the lightweight rows loadAll() now returns (no move list — see
+        // ChessLibrary.loadAll); fetch the tapped entry's moves back by id, off the UI thread,
+        // only for the one game actually chosen.
+        list.setOnItemClickListener((parent, view, position, id) -> {
+            String entryId = shown.get(position).id;
+            new Thread(() -> {
+                ChessLibrary.Entry full = ChessLibrary.findById(host, entryId);
+                if (full != null) host.runOnUiThread(() -> listener.onGameChosen(full));
+            }).start();
+        });
         root.addView(list, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
