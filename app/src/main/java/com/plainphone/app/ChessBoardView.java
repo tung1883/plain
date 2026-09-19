@@ -70,7 +70,6 @@ final class ChessBoardView extends View {
     // outlives the position it belonged to.
     private boolean puzzleMode;
     private List<String> puzzleSolution;
-    private int puzzleStep;
     private boolean puzzleSolved;
     private Runnable onPuzzleWrongMove;
     private Runnable onPuzzleSolved;
@@ -139,7 +138,7 @@ final class ChessBoardView extends View {
     /** Loads a puzzle position from a FEN (piece placement + side to move + castling rights —
      *  the same three fields {@link #toFen} writes, everything else in a FEN string is
      *  ignored) and arms puzzle-solving mode: a tap only commits if it matches
-     *  {@code solutionUci[puzzleStep]}; a correct move auto-plays the solution's next
+     *  {@code solutionUci[current.ply()]}; a correct move auto-plays the solution's next
      *  (opponent) move after a short pause, and the puzzle is solved once every move in
      *  {@code solutionUci} has been played. */
     void loadPuzzle(String fen, List<String> solutionUci, Runnable onWrongMove, Runnable onSolved) {
@@ -174,7 +173,6 @@ final class ChessBoardView extends View {
 
         puzzleMode = true;
         puzzleSolution = new ArrayList<>(solutionUci);
-        puzzleStep = 0;
         puzzleSolved = false;
         onPuzzleWrongMove = onWrongMove;
         onPuzzleSolved = onSolved;
@@ -193,35 +191,41 @@ final class ChessBoardView extends View {
         return (whiteTurn ? "White" : "Black") + " to find the best move";
     }
 
+    /** The expected move is read off {@code current}'s own ply (0 at the puzzle's start
+     *  position, same as {@link MoveNode#ply()}) rather than a separately-tracked step
+     *  counter — a counter can only ever advance, so it silently went stale the moment move
+     *  navigation (the transport row, a moves-grid jump) moved {@code current} back to an
+     *  earlier position without it: replaying the exact right move from there was checked
+     *  against a too-far-advanced solution index and rejected as wrong. Ply is intrinsic to
+     *  the node, so there's nothing left to fall out of sync. */
     private boolean matchesPuzzleMove(int fromRow, int fromCol, int toRow, int toCol) {
-        if (puzzleSolution == null || puzzleStep >= puzzleSolution.size()) return false;
-        String expected = puzzleSolution.get(puzzleStep);
+        if (puzzleSolution == null || current.ply() >= puzzleSolution.size()) return false;
+        String expected = puzzleSolution.get(current.ply());
         String actual = uciMove(fromRow, fromCol, toRow, toCol);
         String a = actual.length() > 4 ? actual.substring(0, 4) : actual;
         String e = expected.length() > 4 ? expected.substring(0, 4) : expected;
         return a.equals(e);
     }
 
-    /** Called right after the player's own correct move has been committed: advances past it,
-     *  then — if the puzzle isn't done — auto-plays the solution's next (opponent) move after
-     *  a short pause so it reads as a reply rather than an instant swap. */
+    /** Called right after the player's own correct move has been committed (so {@code current}
+     *  already sits one ply past where {@link #matchesPuzzleMove} checked it): if the puzzle
+     *  isn't done, auto-plays the solution's next (opponent) move after a short pause so it
+     *  reads as a reply rather than an instant swap. */
     private void advancePuzzleAfterPlayerMove() {
-        puzzleStep++;
-        if (puzzleStep >= puzzleSolution.size()) {
+        if (current.ply() >= puzzleSolution.size()) {
             puzzleSolved = true;
             onChanged.run();
             if (onPuzzleSolved != null) onPuzzleSolved.run();
             return;
         }
-        String replyUci = puzzleSolution.get(puzzleStep);
+        String replyUci = puzzleSolution.get(current.ply());
         int gen = boardGeneration;
         postDelayed(() -> {
             if (gen != boardGeneration) return; // a new puzzle/game/jump landed before this fired
             int[] mv = uciToSquares(replyUci);
             if (mv != null && in(mv[0], mv[1]) && in(mv[2], mv[3])) commitMove(mv[0], mv[1], mv[2], mv[3]);
             invalidate();
-            puzzleStep++;
-            if (puzzleStep >= puzzleSolution.size()) {
+            if (current.ply() >= puzzleSolution.size()) {
                 puzzleSolved = true;
                 onChanged.run();
                 if (onPuzzleSolved != null) onPuzzleSolved.run();
@@ -310,6 +314,16 @@ final class ChessBoardView extends View {
     }
 
     List<String> engineSummary() { return engineSummary; }
+
+    /** PGN player names are conventionally "Last, First" — the full form, doubled up for
+     *  both sides in one "White vs Black" line, routinely wraps to two lines in the tight
+     *  header space on both the Board tab and the Puzzles screen. Trims to just the last
+     *  name when a comma's present; left alone otherwise (already short, or not written in
+     *  that convention — e.g. "Deep Blue"). */
+    static String shortName(String raw) {
+        int comma = raw.indexOf(',');
+        return comma < 0 ? raw : raw.substring(0, comma).trim();
+    }
 
     static String pretty(String raw) {
         if (raw.equals("fritz")) return "Fritz";

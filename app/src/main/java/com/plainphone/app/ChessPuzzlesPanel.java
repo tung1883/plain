@@ -48,7 +48,7 @@ final class ChessPuzzlesPanel {
     private ChessBoardView board;
     private FrameLayout boardWrap;
     private MovesGrid movesGrid;
-    private TextView solveTitle, solveMeta, solveCounter, solvedBadge, statusLine, autoNextPill;
+    private TextView solveTitle, solveMeta, solveCounter, statusLine, autoNextPill;
     private TextView[] engineLines;
     private List<ChessPuzzles.Puzzle> queue = new ArrayList<>();
     private int queueIndex;
@@ -341,51 +341,63 @@ final class ChessPuzzlesPanel {
         panel.addView(content, new ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
+        // Two explicit rows (player names + Auto-next, then date + puzzle counter) rather
+        // than two independently-margined columns — sharing one row per line is what
+        // actually guarantees the left and right sides line up; matching margins by hand
+        // on separate columns drifts as soon as one side's line height differs.
         LinearLayout header = new LinearLayout(host);
-        header.setOrientation(LinearLayout.HORIZONTAL);
-        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setOrientation(LinearLayout.VERTICAL);
         header.setPadding(48, UiKit.dp(host, 12), 48, 0);
-        LinearLayout titleCol = new LinearLayout(host);
-        titleCol.setOrientation(LinearLayout.VERTICAL);
+
+        LinearLayout row1 = new LinearLayout(host);
+        row1.setOrientation(LinearLayout.HORIZONTAL);
+        row1.setGravity(Gravity.CENTER_VERTICAL);
         // Just "White vs Black" — whose move it is lives in the left-aligned status row
         // under the board instead, same split as the Board tab (meta block vs. status row).
         solveTitle = new TextView(host);
         solveTitle.setTextColor(Color.WHITE);
         solveTitle.setTypeface(Fonts.current(host), android.graphics.Typeface.BOLD);
         solveTitle.setTextSize(15);
-        titleCol.addView(solveTitle);
-        solveMeta = new TextView(host);
-        solveMeta.setTextColor(0xFF8A8A8A);
-        solveMeta.setTypeface(Fonts.current(host));
-        solveMeta.setTextSize(12);
-        solveMeta.setPadding(0, UiKit.dp(host, 3), 0, 0);
-        titleCol.addView(solveMeta);
-        solveCounter = new TextView(host);
-        solveCounter.setTextColor(0xFF6E6E6E);
-        solveCounter.setTypeface(Fonts.current(host));
-        solveCounter.setTextSize(11);
-        solveCounter.setPadding(0, UiKit.dp(host, 3), 0, 0);
-        titleCol.addView(solveCounter);
-        solvedBadge = new TextView(host);
-        solvedBadge.setText("Solved");
-        solvedBadge.setTextColor(0xFF8A8A8A);
-        solvedBadge.setTypeface(Fonts.current(host));
-        solvedBadge.setTextSize(11);
-        solvedBadge.setPadding(0, UiKit.dp(host, 3), 0, 0);
-        titleCol.addView(solvedBadge);
-        header.addView(titleCol, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-
+        row1.addView(solveTitle, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         autoNextPill = new TextView(host);
         autoNextPill.setTextColor(Color.WHITE);
         autoNextPill.setTypeface(Fonts.current(host));
         autoNextPill.setTextSize(11);
+        // START, not CENTER — a fixed-width box still re-centers shorter text ("On") at a
+        // different x than longer text ("Off"), so the "Auto-next:" prefix itself visibly
+        // slides on every toggle even though the box around it doesn't move.
+        autoNextPill.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
         autoNextPill.setBackground(UiKit.rounded(host, Color.BLACK, 0xFF262626, 2f, UiKit.R_SM));
         autoNextPill.setPadding(UiKit.dp(host, 10), UiKit.dp(host, 5), UiKit.dp(host, 10), UiKit.dp(host, 5));
         autoNextPill.setOnClickListener(v -> {
             Config.setChessAutoNextPuzzle(host, !Config.getChessAutoNextPuzzle(host));
             refreshAutoNextPill();
         });
-        header.addView(autoNextPill);
+        // A fixed LayoutParams width (not WRAP_CONTENT + setMinWidth) — sized to fit the
+        // wider of "On"/"Off" up front, so measuring "On" can't ever come out narrower than
+        // measuring "Off" did and nudge solveTitle's own width side to side on every tap.
+        row1.addView(autoNextPill, new LinearLayout.LayoutParams(
+                autoNextPillWidth(), ViewGroup.LayoutParams.WRAP_CONTENT));
+        header.addView(row1);
+
+        LinearLayout row2 = new LinearLayout(host);
+        row2.setOrientation(LinearLayout.HORIZONTAL);
+        row2.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams row2Lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        row2Lp.topMargin = UiKit.dp(host, 4);
+        solveMeta = new TextView(host);
+        solveMeta.setTextColor(0xFF8A8A8A);
+        solveMeta.setTypeface(Fonts.current(host));
+        solveMeta.setTextSize(12);
+        row2.addView(solveMeta, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        solveCounter = new TextView(host);
+        solveCounter.setTextColor(0xFF6E6E6E);
+        solveCounter.setTypeface(Fonts.current(host));
+        solveCounter.setTextSize(11);
+        row2.addView(solveCounter, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        header.addView(row2, row2Lp);
         content.addView(header);
 
         board = new ChessBoardView(host, this::onBoardChanged);
@@ -395,8 +407,10 @@ final class ChessPuzzlesPanel {
         boardWrap = new FrameLayout(host);
         boardWrap.addView(board, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL));
-        content.addView(boardWrap, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        LinearLayout.LayoutParams boardWrapLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        boardWrapLp.topMargin = UiKit.dp(host, 18);
+        content.addView(boardWrap, boardWrapLp);
 
         // Status row: left-aligned status text + flip/resize/settings icons on the right —
         // the exact layout the Board tab's own status row uses, not centered puzzle-specific
@@ -476,9 +490,10 @@ final class ChessPuzzlesPanel {
             if (engineLinesShown) board.requestAnalysis();
             else for (TextView line : engineLines) line.setVisibility(View.GONE);
         }), new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        // 2 raw px — same width as toolGroup's own 2f-stroke border above.
         View divider = new View(host);
         divider.setBackgroundColor(0xFF1C1C1C);
-        toolGroup.addView(divider, new LinearLayout.LayoutParams(1, ViewGroup.LayoutParams.MATCH_PARENT));
+        toolGroup.addView(divider, new LinearLayout.LayoutParams(2, ViewGroup.LayoutParams.MATCH_PARENT));
         toolGroup.addView(toolButton("Retry", v -> loadCurrentPuzzle()), new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         content.addView(toolGroup, toolLp);
 
@@ -513,6 +528,18 @@ final class ChessPuzzlesPanel {
                 ? UiKit.rounded(host, Color.WHITE, 0, 0f, UiKit.R_SM)
                 : UiKit.pressable(host, Color.BLACK, Color.DKGRAY, 0xFF333333, 2f, UiKit.R_SM));
         return t;
+    }
+
+    /** The wider of "Auto-next: On"/"Auto-next: Off", plus the pill's own horizontal padding
+     *  — a fixed {@code minWidth} for {@link #autoNextPill} so the text swap on tap never
+     *  changes the pill's measured width. */
+    private int autoNextPillWidth() {
+        android.graphics.Paint p = new android.graphics.Paint();
+        p.setTypeface(Fonts.current(host));
+        p.setTextSize(android.util.TypedValue.applyDimension(
+                android.util.TypedValue.COMPLEX_UNIT_SP, 11f, host.getResources().getDisplayMetrics()));
+        float widest = Math.max(p.measureText("Auto-next: On"), p.measureText("Auto-next: Off"));
+        return Math.round(widest) + UiKit.dp(host, 20);
     }
 
     /** Same "|‹ ‹ › ›|" move transport as the Board tab's — first/prev/next/last through
@@ -572,15 +599,10 @@ final class ChessPuzzlesPanel {
         engineLinesShown = false;
         for (TextView line : engineLines) line.setVisibility(View.GONE);
         // Just "White vs Black" — no "to move" here, that's the status row's job now.
-        solveTitle.setText(p.white + " vs " + p.black);
-        // e.g. "25th Politiken Cup · 2003.07.23" — event and date, same fields/format as the
-        // Board tab's own meta line; wraps to a second line on a long event name rather than
-        // being cut off (no setSingleLine/ellipsize here).
-        solveMeta.setText(p.event + " · " + p.date);
+        solveTitle.setText(ChessBoardView.shortName(p.white) + " vs " + ChessBoardView.shortName(p.black));
+        // Date only — no event/tournament name here, unlike the Board tab's own meta line.
+        solveMeta.setText(p.date);
         solveCounter.setText("Puzzle " + (queueIndex + 1) + " of " + queue.size());
-        // INVISIBLE, not GONE — keeps this line's height reserved always, so the badge
-        // popping in right after a solve doesn't shove the board/status row down a notch.
-        solvedBadge.setVisibility(Config.isChessPuzzleSolved(host, p.id) ? View.VISIBLE : View.INVISIBLE);
         refreshAutoNextPill();
         applyBoardScale();
         board.loadPuzzle(p.startFen, p.solutionUci, this::onWrongMove, this::onPuzzleSolved);
@@ -642,7 +664,6 @@ final class ChessPuzzlesPanel {
     private void onPuzzleSolved() {
         ChessPuzzles.Puzzle p = queue.get(queueIndex);
         Config.markChessPuzzleSolved(host, p.id);
-        solvedBadge.setVisibility(View.VISIBLE);
         if (Config.getChessAutoNextPuzzle(host) && queueIndex < queue.size() - 1) {
             board.postDelayed(() -> { queueIndex++; loadCurrentPuzzle(); }, 900);
         }

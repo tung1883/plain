@@ -1203,7 +1203,10 @@ public class MainActivity extends Activity implements SelectionHost {
         chessPgnRow = new LinearLayout(this);
         chessPgnRow.setOrientation(LinearLayout.HORIZONTAL);
         chessPgnRow.setGravity(Gravity.CENTER_VERTICAL);
-        chessPgnRow.setPadding(48, UiKit.dp(this, 10), 48, 0);
+        // Bottom padding here (not a margin on the board wrap below) so the extra gap only
+        // shows up when this row — and the meta block above it — are actually visible, i.e.
+        // a game loaded from the library; a fresh/unloaded board stays as tight as before.
+        chessPgnRow.setPadding(48, UiKit.dp(this, 10), 48, UiKit.dp(this, 18));
 
         chessPgnStepper = chessText("", 12, Color.WHITE);
         chessPgnRow.addView(chessPgnStepper, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
@@ -1233,7 +1236,7 @@ public class MainActivity extends Activity implements SelectionHost {
         chessPgnRow.setVisibility(known ? View.VISIBLE : View.GONE);
         if (!known) return;
 
-        chessMetaPlayers.setText(e.white + " vs " + e.black);
+        chessMetaPlayers.setText(ChessBoardView.shortName(e.white) + " vs " + ChessBoardView.shortName(e.black));
         String eventLine = e.event + (e.round.isEmpty() ? "" : " · Round " + e.round);
         chessMetaEvent.setText(eventLine);
         chessMetaEvent.setVisibility(eventLine.isEmpty() ? View.GONE : View.VISIBLE);
