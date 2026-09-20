@@ -6,6 +6,7 @@ import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
+import android.graphics.Path;
 import android.graphics.RectF;
 import android.view.View;
 
@@ -105,6 +106,21 @@ final class ChessBoardView extends View {
     // index through flip() on the way out and back in, so legality/SAN/history logic never
     // needs to know which way the board is currently drawn.
     private boolean flipped;
+
+    // --- arrow/circle annotations (lichess/chess.com-style board markup) ------------------
+    // One color only — lichess's own default "green" — same idea as chessground's own
+    // arrowMargin/lineWidth ratios (see drawArrow/drawOneAnnotation). Drawing the exact same
+    // arrow (or circle) again removes it; no color picker.
+    private static final int ANNOTATION_COLOR = 0xFF1B4F91;
+    private static final long LONG_PRESS_MS = 320;
+    private final android.os.Handler gestureHandler = new android.os.Handler();
+    private final Runnable armAnnotate = this::onLongPressArm;
+    // True once the long-press timer has fired for the current touch sequence — from then
+    // until ACTION_UP, this touch draws an arrow/circle instead of selecting or moving a
+    // piece, however the down event's own grabbedPiece check may have already started that.
+    private boolean annotating;
+    private int annotateRow = -1, annotateCol = -1;
+    private float annotateX, annotateY; // live drag point while annotating
 
     ChessBoardView(Activity host, Runnable onChanged, Runnable onAnalysisChanged) {
         super(host);
@@ -488,6 +504,7 @@ final class ChessBoardView extends View {
                     drawPiece(canvas, position[row][col], margin + flip(col) * cell, margin + flip(row) * cell, cell);
                 }
             }
+            drawAnnotations(canvas, margin, margin, cell);
             if (draggingPiece && in(dragRow, dragCol) && position[dragRow][dragCol] != 0) {
                 // Hold the piece slightly above the finger, like chess.com, so its destination stays visible.
                 drawPiece(canvas, position[dragRow][dragCol], dragX - cell / 2f, dragY - cell * .70f, cell);
@@ -514,6 +531,87 @@ final class ChessBoardView extends View {
             c.drawCircle(cx, cy, capture ? cell * .34f : cell * .14f, paint);
             paint.setStyle(Paint.Style.FILL);
         }
+    }
+
+    /** Every persisted arrow/circle on {@link #current}, plus a live preview while a
+     *  long-press-drag is in progress — under the pieces, same as the move-hint dots. */
+    private void drawAnnotations(Canvas c, float left, float top, float cell) {
+        int color = withAlpha(ANNOTATION_COLOR, 0xB0);
+        for (Annotation a : current.annotations) {
+            drawOneAnnotation(c, left, top, cell, a.fromRow, a.fromCol, a.toRow, a.toCol, color);
+        }
+        if (annotating) {
+            boolean dragged = Math.abs(annotateX - downX) > UiKit.dp(host, 8)
+                    || Math.abs(annotateY - downY) > UiKit.dp(host, 8);
+            int previewColor = withAlpha(ANNOTATION_COLOR, 0xA0);
+            if (dragged) {
+                float fx = left + (flip(annotateCol) + .5f) * cell, fy = top + (flip(annotateRow) + .5f) * cell;
+                paint.setColor(previewColor);
+                // Following the raw finger position, not snapped to a square center — no
+                // destination inset here, unlike a committed arrow's fixed square-to-square one.
+                drawArrow(c, fx, fy, annotateX, annotateY, cell);
+            } else {
+                float cx = left + (flip(annotateCol) + .5f) * cell, cy = top + (flip(annotateRow) + .5f) * cell;
+                paint.setColor(previewColor);
+                paint.setStyle(Paint.Style.STROKE);
+                paint.setStrokeWidth(cell * .09f);
+                c.drawCircle(cx, cy, cell * .42f, paint);
+                paint.setStyle(Paint.Style.FILL);
+            }
+        }
+    }
+
+    private void drawOneAnnotation(Canvas c, float left, float top, float cell,
+                                   int fromRow, int fromCol, int toRow, int toCol, int color) {
+        float fx = left + (flip(fromCol) + .5f) * cell, fy = top + (flip(fromRow) + .5f) * cell;
+        if (fromRow == toRow && fromCol == toCol) {
+            paint.setColor(color);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(cell * .09f);
+            c.drawCircle(fx, fy, cell * .42f, paint);
+            paint.setStyle(Paint.Style.FILL);
+            return;
+        }
+        float tx = left + (flip(toCol) + .5f) * cell, ty = top + (flip(toRow) + .5f) * cell;
+        // Stops short of the destination square's own center — chessground's own arrowMargin
+        // (~10/64 of a square), so the head doesn't sit dead-center on top of a piece there.
+        float dx = tx - fx, dy = ty - fy;
+        float len = (float) Math.sqrt(dx * dx + dy * dy);
+        if (len > 1) {
+            float margin = cell * .16f;
+            tx -= dx / len * margin;
+            ty -= dy / len * margin;
+        }
+        paint.setColor(color);
+        drawArrow(c, fx, fy, tx, ty, cell);
+    }
+
+    /** A shaft + triangular head from ({@code fx},{@code fy}) to ({@code tx},{@code ty}) —
+     *  {@link Paint#setColor} is the caller's job; this only touches style/stroke/cap. Sized
+     *  off chessground's own ratios: a shaft ~0.15 of a square wide, and a short, blunt head
+     *  (wider than it is long — 3:4 length:width — not a thin needle-shaped dart). */
+    private void drawArrow(Canvas c, float fx, float fy, float tx, float ty, float cell) {
+        float dx = tx - fx, dy = ty - fy;
+        float len = (float) Math.sqrt(dx * dx + dy * dy);
+        if (len < 1) return;
+        float ux = dx / len, uy = dy / len;
+        float headLen = cell * .30f, headWidth = cell * .40f;
+        float shaftEndX = tx - ux * headLen * .85f, shaftEndY = ty - uy * headLen * .85f;
+        paint.setStyle(Paint.Style.FILL);
+        paint.setStrokeWidth(cell * .15f);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        c.drawLine(fx, fy, shaftEndX, shaftEndY, paint);
+        float px = -uy, py = ux;
+        Path path = new Path();
+        path.moveTo(tx, ty);
+        path.lineTo(tx - ux * headLen + px * headWidth / 2, ty - uy * headLen + py * headWidth / 2);
+        path.lineTo(tx - ux * headLen - px * headWidth / 2, ty - uy * headLen - py * headWidth / 2);
+        path.close();
+        c.drawPath(path, paint);
+    }
+
+    private static int withAlpha(int color, int alpha) {
+        return (color & 0x00FFFFFF) | (alpha << 24);
     }
 
     private void drawPiece(Canvas c, char piece, float x, float y, float size) {
@@ -554,6 +652,12 @@ final class ChessBoardView extends View {
         if (event.getAction() == android.view.MotionEvent.ACTION_DOWN) {
             downX = event.getX(); downY = event.getY();
             dragCol = flip((int) ((downX - margin) / cell)); dragRow = flip((int) ((downY - margin) / cell));
+            annotating = false;
+            gestureHandler.removeCallbacks(armAnnotate);
+            // Armed only if the finger is still down, unmoved, past LONG_PRESS_MS — a quick
+            // tap or an immediate drag (piece move) cancels this below, in ACTION_MOVE/UP,
+            // before it ever fires.
+            if (in(dragRow, dragCol)) gestureHandler.postDelayed(armAnnotate, LONG_PRESS_MS);
             boolean grabbedPiece = gameOverText == null && in(dragRow, dragCol) && position[dragRow][dragCol] != 0
                     && Character.isUpperCase(position[dragRow][dragCol]) == whiteTurn;
             if (grabbedPiece) {
@@ -567,9 +671,15 @@ final class ChessBoardView extends View {
             return true;
         }
         if (event.getAction() == android.view.MotionEvent.ACTION_MOVE) {
+            if (annotating) {
+                annotateX = event.getX(); annotateY = event.getY();
+                invalidate();
+                return true;
+            }
             if (in(dragRow, dragCol) && selectedRow == dragRow && selectedCol == dragCol
                     && (Math.abs(event.getX() - downX) > UiKit.dp(host, 8)
                     || Math.abs(event.getY() - downY) > UiKit.dp(host, 8))) {
+                gestureHandler.removeCallbacks(armAnnotate); // a real, fast drag — not a long-press
                 draggingPiece = true;
                 dragX = event.getX(); dragY = event.getY();
                 invalidate();
@@ -577,7 +687,25 @@ final class ChessBoardView extends View {
             return true;
         }
         if (event.getAction() != android.view.MotionEvent.ACTION_UP) return true;
+        gestureHandler.removeCallbacks(armAnnotate);
         int col = flip((int) ((event.getX() - margin) / cell)), row = flip((int) ((event.getY() - margin) / cell));
+        if (annotating) {
+            boolean draggedForArrow = Math.abs(event.getX() - downX) > UiKit.dp(host, 8)
+                    || Math.abs(event.getY() - downY) > UiKit.dp(host, 8);
+            if (in(row, col)) {
+                if (draggedForArrow && (row != annotateRow || col != annotateCol)) {
+                    commitAnnotation(annotateRow, annotateCol, row, col);
+                } else {
+                    commitAnnotation(annotateRow, annotateCol, annotateRow, annotateCol); // a circle
+                }
+            }
+            annotating = false;
+            selectedRow = selectedCol = -1;
+            dragRow = dragCol = -1;
+            draggingPiece = false;
+            invalidate();
+            return true;
+        }
         if (!in(row, col)) {
             dragRow = dragCol = -1;
             draggingPiece = false;
@@ -607,6 +735,40 @@ final class ChessBoardView extends View {
         draggingPiece = false;
         invalidate();
         return true;
+    }
+
+    /** Fires {@link #LONG_PRESS_MS} after ACTION_DOWN if the finger is still down and hasn't
+     *  moved past touch slop (ACTION_MOVE/UP both cancel it first otherwise) — from here on,
+     *  this touch draws an arrow/circle instead of whatever the down event's own
+     *  {@code grabbedPiece} check queued it up for. */
+    private void onLongPressArm() {
+        annotating = true;
+        annotateRow = dragRow; annotateCol = dragCol;
+        annotateX = downX; annotateY = downY;
+        selectedRow = selectedCol = -1; // annotating, not selecting a piece to move
+        invalidate();
+    }
+
+    /** Records one arrow ({@code fromRow/Col != toRow/Col}) or circle (same square) on
+     *  {@link #current} — drawing the exact same one again removes it. */
+    private void commitAnnotation(int fromRow, int fromCol, int toRow, int toCol) {
+        List<Annotation> list = current.annotations;
+        for (int i = 0; i < list.size(); i++) {
+            Annotation a = list.get(i);
+            if (a.fromRow == fromRow && a.fromCol == fromCol && a.toRow == toRow && a.toCol == toCol) {
+                list.remove(i); // drawing the exact same one again removes it
+                invalidate();
+                return;
+            }
+        }
+        list.add(new Annotation(fromRow, fromCol, toRow, toCol));
+        invalidate();
+    }
+
+    /** The status row's "clear" icon — every arrow/circle on the displayed position. */
+    void clearAnnotations() {
+        current.annotations.clear();
+        invalidate();
     }
 
     boolean whiteToMove() { return whiteTurn; }
@@ -1302,9 +1464,14 @@ final class ChessBoardView extends View {
         final List<MoveNode> children = new ArrayList<>();
         /** Freeform annotation on this move ("Add/Edit comment" in the moves grid's
          *  long-press menu — see {@link ChessBoardView#setComment}), {@code null} when
-         *  there isn't one. Session-only: not persisted through {@link ChessLibrary}
-         *  (which stores plain SAN only), only through {@link Pgn#write} export. */
+         *  there isn't one. Persisted through {@link ChessLibrary} and {@link Pgn#write}
+         *  export, same as the move's own SAN. */
         String comment;
+        /** Arrows/circles drawn on this position (long-press-drag / long-press-release on
+         *  the board — see {@link ChessBoardView#commitAnnotation}). Session-only for now:
+         *  redraws when navigating back to this node, but isn't yet part of what gets saved
+         *  to the library or exported. */
+        final List<Annotation> annotations = new ArrayList<>();
 
         MoveNode(String san, char[][] boardSource, boolean turn, int rights, MoveNode parent) {
             this.san = san;
@@ -1320,6 +1487,17 @@ final class ChessBoardView extends View {
             for (MoveNode p = this; p.parent != null; p = p.parent) n++;
             return n;
         }
+    }
+
+    /** One arrow ({@code fromRow/fromCol != toRow/toCol}) or circle (same square both ends)
+     *  drawn on a {@link MoveNode} — always {@link ChessBoardView#ANNOTATION_COLOR}. */
+    static final class Annotation {
+        final int fromRow, fromCol, toRow, toCol;
+        Annotation(int fromRow, int fromCol, int toRow, int toCol) {
+            this.fromRow = fromRow; this.fromCol = fromCol;
+            this.toRow = toRow; this.toCol = toCol;
+        }
+        boolean isCircle() { return fromRow == toRow && fromCol == toCol; }
     }
 
     /** Geometrically legal moves, filtered to drop any that would leave (or put) the

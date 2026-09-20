@@ -1462,6 +1462,15 @@ public class MainActivity extends Activity implements SelectionHost {
         saveIconLp.rightMargin = UiKit.dp(this, 14);
         status.addView(chessSaveIcon, saveIconLp);
 
+        android.widget.ImageView chessClearArrowsIcon = new android.widget.ImageView(this);
+        chessClearArrowsIcon.setImageDrawable(getResources().getDrawable(R.drawable.ic_chess_clear_arrows, getTheme()));
+        chessClearArrowsIcon.setScaleType(android.widget.ImageView.ScaleType.CENTER_INSIDE);
+        chessClearArrowsIcon.setContentDescription("Clear arrows and circles");
+        chessClearArrowsIcon.setOnClickListener(v -> chessBoard.clearAnnotations());
+        LinearLayout.LayoutParams clearArrowsIconLp = new LinearLayout.LayoutParams(UiKit.dp(this, iconBoxDp), UiKit.dp(this, iconBoxDp));
+        clearArrowsIconLp.rightMargin = UiKit.dp(this, 14);
+        status.addView(chessClearArrowsIcon, clearArrowsIconLp);
+
         android.widget.ImageView chessSettingsIcon = new android.widget.ImageView(this);
         chessSettingsIcon.setImageDrawable(getResources().getDrawable(R.drawable.ic_chess_settings, getTheme()));
         chessSettingsIcon.setScaleType(android.widget.ImageView.ScaleType.CENTER_INSIDE);
