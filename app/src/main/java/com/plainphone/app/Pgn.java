@@ -12,7 +12,7 @@ import java.util.regex.Pattern;
 
 /** A minimal PGN reader: splits a file into its games (a PGN file can hold many, back to
  *  back) and, per game, its tag pairs and movetext SAN tokens — everything
- *  {@link ChessBoardView#loadSanMoves} needs to actually play a game back, plus enough of
+ *  {@link ChessBoardView#loadSanMovesAsync} needs to actually play a game back, plus enough of
  *  the tags to show a games list ("choose a game" import picker) without touching the
  *  board yet. */
 final class Pgn {

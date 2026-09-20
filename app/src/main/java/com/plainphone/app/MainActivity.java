@@ -1370,8 +1370,11 @@ public class MainActivity extends Activity implements SelectionHost {
     private void chessLoadEntryOntoBoard(ChessLibrary.Entry entry) {
         chessCurrentEntry = entry;
         updateChessMetaUi();
-        chessBoard.loadSanMoves(entry.sans());
-        chessBoard.setKnownResult(entry.result);
+        // Async — a long game's replay is real synchronous chess-move-generation work, and
+        // running it inline here (this runs on the UI thread) used to freeze all touch input
+        // for a second or more right after the tab switch below. The board fills in a moment
+        // later instead of blocking the switch itself.
+        chessBoard.loadSanMovesAsync(entry.sans(), null, entry.result, null);
         chessSelectTab(0);
         toast("Loaded " + entry.white + " vs " + entry.black);
     }
@@ -1393,7 +1396,7 @@ public class MainActivity extends Activity implements SelectionHost {
         chessManualScale = Config.getChessBoardScale(this);
         chessAutoResize = Config.getChessAutoResize(this);
 
-        chessBoard = new ChessBoardView(this, this::updateChessHomeUi);
+        chessBoard = new ChessBoardView(this, this::updateChessHomeUi, this::updateChessEngineLinesOnly);
         chessBoard.setPieceTheme(chessSelectedPieces);
         chessBoard.setBoardTheme("grey");
         UiKit.clipRounded(this, chessBoard, UiKit.R_SM);
@@ -2146,8 +2149,7 @@ public class MainActivity extends Activity implements SelectionHost {
         if (!sans.isEmpty()) for (String s : sans.split(" ")) if (!s.isEmpty()) moves.add(s);
         chessCurrentEntry = id == null ? null : ChessLibrary.findById(this, id);
         updateChessMetaUi();
-        chessBoard.loadSanMoves(moves);
-        chessBoard.setKnownResult(chessCurrentEntry != null ? chessCurrentEntry.result : null);
+        chessBoard.loadSanMovesAsync(moves, null, chessCurrentEntry != null ? chessCurrentEntry.result : null, null);
         toast(moves.isEmpty() ? "PGN loaded (no moves found)" : "Loaded " + white + " vs " + black);
     }
 
@@ -2257,6 +2259,23 @@ public class MainActivity extends Activity implements SelectionHost {
             if (has) chessEngineLines[i].setText(engineLines.get(i));
         }
         chessMovesGrid.refresh(); // comments render inline in the grid, right under their move
+    }
+
+    /** Just the engine-eval lines — {@link ChessBoardView}'s dedicated callback for a pure
+     *  analysis-progress tick (Stockfish's iterative deepening streams several a second),
+     *  as opposed to {@link #updateChessHomeUi}'s full refresh (status line + moves grid)
+     *  for when the position/move tree itself actually changed. Rebuilding the whole moves
+     *  grid on every one of those ticks — genuinely expensive for a long game — is what used
+     *  to keep the UI thread (and so all scrolling) busy for a second or more right after a
+     *  big game's first real analysis started streaming in. */
+    private void updateChessEngineLinesOnly() {
+        if (chessBoard == null) return;
+        List<String> engineLines = chessBoard.engineSummary();
+        for (int i = 0; i < chessEngineLines.length; i++) {
+            boolean has = i < engineLines.size();
+            chessEngineLines[i].setVisibility(has ? View.VISIBLE : View.GONE);
+            if (has) chessEngineLines[i].setText(engineLines.get(i));
+        }
     }
 
     /** "Add text" icon in the board status row — opens the same comment editor the moves

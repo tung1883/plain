@@ -21,6 +21,16 @@ import java.util.Map;
 final class ChessBoardView extends View {
     private final Activity host;
     private final Runnable onChanged;
+    // Fired instead of onChanged for a pure engine-analysis progress update (Stockfish's
+    // iterative deepening streams several of these a second while a search runs) — those
+    // never touch the position/move tree, but onChanged's own host callbacks all rebuild the
+    // ENTIRE moves grid unconditionally on every fire. For a long game that rebuild is
+    // genuinely expensive (100+ plies measured at 150-200ms each); routing analysis ticks
+    // through onChanged too meant every one of them re-paid that cost just to update a
+    // couple of eval lines, which is what made the whole UI thread — and so all scrolling —
+    // stay busy for a second or more right after a big game finished loading and its first
+    // real analysis started streaming in.
+    private final Runnable onAnalysisChanged;
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     // Kept separate from board/highlight paint: legal-move hints can never tint a piece bitmap.
     private final Paint piecePaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
@@ -96,10 +106,11 @@ final class ChessBoardView extends View {
     // needs to know which way the board is currently drawn.
     private boolean flipped;
 
-    ChessBoardView(Activity host, Runnable onChanged) {
+    ChessBoardView(Activity host, Runnable onChanged, Runnable onAnalysisChanged) {
         super(host);
         this.host = host;
         this.onChanged = onChanged;
+        this.onAnalysisChanged = onAnalysisChanged;
         setFocusable(true);
         textPaint.setTypeface(android.graphics.Typeface.create(android.graphics.Typeface.SERIF, android.graphics.Typeface.NORMAL));
         coordPaint.setTypeface(Fonts.current(host));
@@ -126,7 +137,7 @@ final class ChessBoardView extends View {
 
     /** Discards the game on screen entirely and starts fresh from the standard opening
      *  position — the first step of loading a different game from an imported PGN file
-     *  (see {@link #loadSanMoves}), as opposed to {@link #first}/{@link #jumpToNode} which
+     *  (see {@link #loadSanMovesAsync}), as opposed to {@link #first}/{@link #jumpToNode} which
      *  navigate within the existing tree. */
     void resetToStartPosition() {
         boardGeneration++;
@@ -141,9 +152,15 @@ final class ChessBoardView extends View {
         puzzleMode = false;
         knownResult = "*";
         updateGameOverStatus();
-        onChanged.run();
-        requestAnalysis();
-        invalidate();
+        // Suppressed during loadSanMoves's replay (see bulkLoading) — this is the position's
+        // very first reset, instantly superseded by the loop and the final restoreNode that
+        // follow, so firing a real analysis request for it is pure waste, same reasoning as
+        // commitMove/restoreNode's own guards.
+        if (!bulkLoading) {
+            onChanged.run();
+            requestAnalysis();
+            invalidate();
+        }
     }
 
     /** Loads a puzzle position from a FEN (piece placement + side to move + castling rights —
@@ -252,46 +269,56 @@ final class ChessBoardView extends View {
         return new int[]{fromRow, fromCol, toRow, toCol};
     }
 
-    /** Loads a game parsed from PGN: resets to the start position, then replays each SAN
-     *  move by matching it against the legal moves from the position it lands on — reusing
-     *  the exact same {@link #sanFor} that generates SAN for real moves, so a PGN's own
-     *  notation (disambiguation included) lines up without a separate move-text engine.
-     *  Stops at the first move that doesn't match a legal move (a corrupt or unsupported
-     *  file) rather than leaving the board in a half-applied, potentially illegal state. */
-    void loadSanMoves(List<String> sans) {
-        loadSanMoves(sans, null);
-    }
+    // Serializes loadSanMovesAsync's background replays (a second one starting before the
+    // first finishes would otherwise mutate `position`/`root` from two threads at once) and
+    // lets a newer request recognize an older, still-running or still-queued one as stale.
+    private final Object loadLock = new Object();
+    private volatile int loadRequestGeneration;
 
-    /** Same as {@link #loadSanMoves(List)}, plus a parallel comment list (same index as
-     *  {@code sans}; {@code null} or empty entries mean "no comment on that move") — used
-     *  by the direct-from-PGN import path, where {@link Pgn.Game#comments} is available.
-     *  {@link ChessLibrary}'s own storage doesn't carry comments, so games reloaded from
-     *  the library always come back through the no-comments overload above. */
-    void loadSanMoves(List<String> sans, List<String> comments) {
-        resetToStartPosition();
-        // See bulkLoading's own comment: without this, every one of these commitMove calls
-        // fired a full Stockfish analysis request for a position nobody will ever see — a
-        // 60-move game meant 60 queued engine searches (each one fully run before its
-        // result got discarded by the generation check), which is what made opening a game
-        // from the library take several seconds even after the actual file lookup got fast.
-        bulkLoading = true;
-        for (int i = 0; i < sans.size(); i++) {
-            String san = normalizeSan(sans.get(i));
-            int[] move = findMoveBySan(san);
-            if (move == null) break;
-            commitMove(move[0], move[1], move[2], move[3]);
-            if (comments != null && i < comments.size()) {
-                String c = comments.get(i);
-                if (c != null && !c.isEmpty()) current.comment = c;
+    /** Loads a game parsed from PGN, off the UI thread: resets to the start position, then
+     *  replays each SAN move by matching it against the legal moves from the position it
+     *  lands on — reusing the exact same {@link #sanFor} that generates SAN for real moves,
+     *  so a PGN's own notation (disambiguation included) lines up without a separate
+     *  move-text engine. Stops at the first move that doesn't match a legal move (a corrupt
+     *  or unsupported file) rather than leaving the board in a half-applied, potentially
+     *  illegal state. For a long game, the replay itself (real chess move generation per
+     *  ply, not just I/O) is enough synchronous CPU work that running it inline on the
+     *  caller's thread — the UI thread, for every real caller of this — measurably froze
+     *  touch input for a second or more.
+     *  {@code knownResult} (see {@link #setKnownResult}) is applied as part of the same
+     *  batch, not a separate call after this returns, since this returns before the board
+     *  is actually updated. {@code onDone}, if given, runs on the UI thread right after the
+     *  board does. A newer call before an older one finishes wins — the older one recognizes
+     *  itself as superseded (via {@link #loadRequestGeneration}) and quietly does nothing,
+     *  rather than the two racing to mutate the same position/tree. */
+    void loadSanMovesAsync(List<String> sans, List<String> comments, String knownResult, Runnable onDone) {
+        int myGen = ++loadRequestGeneration;
+        new Thread(() -> {
+            synchronized (loadLock) {
+                if (myGen != loadRequestGeneration) return;
+                bulkLoading = true;
+                resetToStartPosition();
+                for (int i = 0; i < sans.size(); i++) {
+                    if (myGen != loadRequestGeneration) break; // superseded mid-replay
+                    String san = normalizeSan(sans.get(i));
+                    int[] move = findMoveBySan(san);
+                    if (move == null) break;
+                    commitMove(move[0], move[1], move[2], move[3]);
+                    if (comments != null && i < comments.size()) {
+                        String c = comments.get(i);
+                        if (c != null && !c.isEmpty()) current.comment = c;
+                    }
+                }
+                bulkLoading = false;
+                if (myGen != loadRequestGeneration) return;
+                setKnownResult(knownResult);
             }
-        }
-        bulkLoading = false;
-        // Replaying leaves `current` at the last move (commitMove always advances it) — the
-        // whole game is still there to step through via the transport row or moves grid, but
-        // a newly-opened game should show its starting position, not jump straight to the end.
-        // bulkLoading is already false here, so this restoreNode fires the one real analysis
-        // request, for the position actually shown.
-        restoreNode(root);
+            host.runOnUiThread(() -> {
+                if (myGen != loadRequestGeneration) return;
+                restoreNode(root);
+                if (onDone != null) onDone.run();
+            });
+        }).start();
     }
 
     /** Sets (or clears, with {@code null}/empty) {@code node}'s comment and lets the host
@@ -627,7 +654,7 @@ final class ChessBoardView extends View {
      *  over its own checkmate/stalemate guess — {@code null} or empty (no "Result" tag, or
      *  it was PGN's own "?"/"*" placeholder) is treated as "still open", same as never
      *  having called this at all. Cleared back to that by {@link #resetToStartPosition}
-     *  (and so by {@link #loadSanMoves}, which calls it first), so calling this is always
+     *  (and so by {@link #loadSanMovesAsync}, which calls it first), so calling this is always
      *  the caller's job to do again after loading a game whose result it actually knows. */
     void setKnownResult(String result) {
         knownResult = (result == null || result.isEmpty() || result.equals("?")) ? "*" : result;
@@ -917,7 +944,7 @@ final class ChessBoardView extends View {
         host.runOnUiThread(() -> {
             if (generation != analysisGeneration) return;
             engineSummary = summary;
-            onChanged.run();
+            onAnalysisChanged.run();
         });
     }
 

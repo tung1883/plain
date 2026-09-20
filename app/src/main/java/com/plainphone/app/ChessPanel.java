@@ -38,7 +38,7 @@ final class ChessPanel implements PanelContent {
         content.setPadding(UiKit.dp(host, 18), UiKit.dp(host, 8), UiKit.dp(host, 18), UiKit.dp(host, 22));
         content.setBackgroundColor(Color.BLACK);
 
-        board = new ChessBoardView(host, this::updateUi);
+        board = new ChessBoardView(host, this::updateUi, this::updateEngineLinesOnly);
         board.setPieceTheme(selectedPieces);
         content.addView(board, matchWrap());
 
@@ -229,5 +229,20 @@ final class ChessPanel implements PanelContent {
             if (has) engineLines[i].setText(lines.get(i));
         }
         movesGrid.refresh();
+    }
+
+    /** Just the engine-eval lines — {@link ChessBoardView}'s dedicated callback for a pure
+     *  analysis-progress tick, as opposed to {@link #updateUi}'s full refresh (status lines
+     *  + moves grid) for when the position/move tree itself actually changed. See
+     *  {@code MainActivity#updateChessEngineLinesOnly} for why rebuilding the whole moves
+     *  grid on every one of those ticks matters. */
+    private void updateEngineLinesOnly() {
+        if (board == null) return;
+        List<String> lines = board.engineSummary();
+        for (int i = 0; i < engineLines.length; i++) {
+            boolean has = i < lines.size();
+            engineLines[i].setVisibility(has ? View.VISIBLE : View.GONE);
+            if (has) engineLines[i].setText(lines.get(i));
+        }
     }
 }

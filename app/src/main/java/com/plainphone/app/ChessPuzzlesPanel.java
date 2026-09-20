@@ -408,7 +408,7 @@ final class ChessPuzzlesPanel {
         header.addView(row2, row2Lp);
         content.addView(header);
 
-        board = new ChessBoardView(host, this::onBoardChanged);
+        board = new ChessBoardView(host, this::onBoardChanged, this::onAnalysisChanged);
         board.setPieceTheme("alpha");
         board.setBoardTheme("grey");
         UiKit.clipRounded(host, board, UiKit.R_SM);
@@ -659,6 +659,21 @@ final class ChessPuzzlesPanel {
             }
         }
         movesGrid.refresh();
+    }
+
+    /** Just the engine-eval lines, when shown — {@link ChessBoardView}'s dedicated callback
+     *  for a pure analysis-progress tick, as opposed to {@link #onBoardChanged}'s full
+     *  refresh (status line + moves grid) for when the position/move tree itself actually
+     *  changed. See {@code MainActivity#updateChessEngineLinesOnly} for why rebuilding the
+     *  whole moves grid on every one of those ticks matters. */
+    private void onAnalysisChanged() {
+        if (!engineLinesShown) return;
+        List<String> lines = board.engineSummary();
+        for (int i = 0; i < engineLines.length; i++) {
+            boolean has = i < lines.size() && !lines.get(i).isEmpty();
+            engineLines[i].setVisibility(has ? View.VISIBLE : View.GONE);
+            if (has) engineLines[i].setText(lines.get(i));
+        }
     }
 
     /** A wrong move never calls {@link #onBoardChanged} (no move was actually committed — see
