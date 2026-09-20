@@ -180,6 +180,33 @@ final class ChessPuzzles {
         return removedAny && rewrite(context, keep);
     }
 
+    /** Relabels every puzzle generated from {@code oldLabel}'s games to {@code newLabel} —
+     *  called alongside {@code ChessLibrary#renameSource} so a puzzle stays associated with
+     *  its (renamed) source instead of being orphaned from it. Same rewrite-the-whole-file
+     *  trade-off as {@link #deleteBySource}. */
+    static boolean renameSource(Context context, String oldLabel, String newLabel) {
+        File f = file(context);
+        if (!f.exists()) return false;
+        List<String> lines = new ArrayList<>();
+        boolean changed = false;
+        try (BufferedReader r = new BufferedReader(new FileReader(f))) {
+            String line;
+            while ((line = r.readLine()) != null) {
+                if (line.isEmpty()) continue;
+                try {
+                    JSONObject o = new JSONObject(line);
+                    if (oldLabel.equals(o.optString("gameSrc", ""))) {
+                        o.put("gameSrc", newLabel);
+                        line = o.toString();
+                        changed = true;
+                    }
+                } catch (JSONException ignored) { }
+                lines.add(line);
+            }
+        } catch (IOException ignored) { return false; }
+        return changed && rewrite(context, lines);
+    }
+
     /** Cascade-delete: every puzzle generated from {@code sourceLabel}'s games — called when
      *  that PGN source is removed from the library. */
     static boolean deleteBySource(Context context, String sourceLabel) {

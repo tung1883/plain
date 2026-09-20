@@ -166,9 +166,8 @@ public class ChessPuzzleListActivity extends Activity implements SelBarHost {
     private void bindRow(View row, ChessPuzzles.Puzzle p) {
         LinearLayout box = (LinearLayout) row;
         boolean sel = selection.contains(p.id);
-        String toMove = p.winnerWhite ? "White" : "Black";
         TextView title = (TextView) box.getChildAt(0);
-        title.setText(toMove + " to move — " + p.white + " vs " + p.black + (sel ? "  ✓" : ""));
+        title.setText(ChessBoardView.shortName(p.white) + " vs " + ChessBoardView.shortName(p.black) + (sel ? "  ✓" : ""));
         title.setTypeface(Fonts.current(this), sel ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL);
         ((TextView) box.getChildAt(1)).setText(p.category + " · " + p.gameSrc);
     }

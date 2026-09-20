@@ -921,6 +921,17 @@ class Config {
                 .apply();
     }
 
+    /** Called alongside a PGN source rename — line positions within that source's own scoped
+     *  cursor don't change (a rename touches no ordering, unlike a delete), so its progress
+     *  just moves to the new key instead of being reset. */
+    static void renameChessPuzzlegenCursor(Context context, String oldKey, String newKey) {
+        int cursor = getChessPuzzlegenCursor(context, oldKey);
+        android.content.SharedPreferences.Editor e = prefs(context).edit();
+        e.remove("chess_puzzlegen_cursor_" + oldKey);
+        if (cursor > 0) e.putInt("chess_puzzlegen_cursor_" + newKey, cursor);
+        e.apply();
+    }
+
     /** Whether the board keeps two independent sizes — one for the menu swiped up, one for
      *  swiped down — interpolating between them as the header drags, instead of one size
      *  applied uniformly regardless of header state. */

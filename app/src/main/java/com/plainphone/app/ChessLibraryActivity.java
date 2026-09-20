@@ -192,7 +192,7 @@ public class ChessLibraryActivity extends Activity {
         LinearLayout box = (LinearLayout) row;
         boolean current = e.id != null && e.id.equals(currentEntryId);
         TextView title = (TextView) box.getChildAt(0);
-        title.setText(e.white + " vs " + e.black);
+        title.setText(ChessBoardView.shortName(e.white) + " vs " + ChessBoardView.shortName(e.black));
         title.setTypeface(Fonts.current(this), current ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL);
         ((TextView) box.getChildAt(1)).setText(e.event + " · " + e.date + " · " + e.result);
         ((TextView) box.getChildAt(2)).setText(e.src);

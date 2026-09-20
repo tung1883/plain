@@ -16,6 +16,7 @@ import android.provider.DocumentsContract;
 import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
@@ -83,6 +84,8 @@ public class JobService extends Service {
             new Thread(() -> runSearchJob(job), "job-search").start();
         } else if (ChessPuzzleJobs.TYPE_PUZZLEGEN.equals(job.type)) {
             new Thread(() -> runChessPuzzleGen(job), "job-chess-puzzlegen").start();
+        } else if (ChessImportJobs.TYPE_PGN_IMPORT.equals(job.type)) {
+            new Thread(() -> runChessPgnImport(job), "job-chess-pgnimport").start();
         } else {
             android.util.Log.w("JobService", "Dropping unknown job type " + job.type);
             JobQueue.clear(app, job.id);
@@ -213,7 +216,7 @@ public class JobService extends Service {
         List<ChessLibrary.Entry> scopedEntries = null;
         int total;
         if (scoped) {
-            scopedEntries = ChessLibrary.loadBySource(app, scope);
+            scopedEntries = ChessLibrary.loadBySourceWithSans(app, scope);
             Collections.reverse(scopedEntries); // newest-first -> oldest-first, matches scanFrom's order
             total = scopedEntries.size();
         } else {
@@ -246,23 +249,37 @@ public class JobService extends Service {
         snap.puzzlesFound = scoped ? ChessPuzzles.countBySource(app, scope) : ChessPuzzles.count(app);
         ChessPuzzleJobs.publish(snap);
 
+        // Cross-scope dedup: a game already analyzed under one scope (say a whole-library
+        // run) is skipped — not re-run through the engine — if a later scoped run for its
+        // own source's PGN reaches it too, and vice versa. The per-scope cursor above only
+        // decides where each run starts *looking*; this id set is what actually guarantees
+        // no game's (expensive) analysis ever runs twice no matter which scope(s) triggered
+        // it or in what order.
+        Set<String> scannedIds = ChessPuzzleJobs.loadScannedIds(app);
+        List<String> pendingScannedIds = new ArrayList<>();
+
         int[] sinceCheckpoint = {0};
         ChessLibrary.LineCallback callback = (lineNumber, entry) -> {
             if (ChessPuzzleJobs.cancelRequested) return false;
             keepAlive(job);
-            try {
-                Optional<ChessPuzzles.Puzzle> found = generator.analyzeGame(entry);
-                if (found.isPresent()) {
-                    ChessPuzzles.appendPuzzle(app, found.get());
-                    snap.puzzlesFound++;
+            if (scannedIds.add(entry.id)) {
+                try {
+                    Optional<ChessPuzzles.Puzzle> found = generator.analyzeGame(entry);
+                    if (found.isPresent()) {
+                        ChessPuzzles.appendPuzzle(app, found.get());
+                        snap.puzzlesFound++;
+                    }
+                } catch (Exception e) {
+                    android.util.Log.w("JobService", "chess puzzlegen: game failed, skipping", e);
                 }
-            } catch (Exception e) {
-                android.util.Log.w("JobService", "chess puzzlegen: game failed, skipping", e);
+                pendingScannedIds.add(entry.id);
             }
             snap.gamesScanned = lineNumber;
             if (++sinceCheckpoint[0] >= PUZZLEGEN_CHECKPOINT_EVERY) {
                 sinceCheckpoint[0] = 0;
                 Config.setChessPuzzlegenCursor(app, scope, lineNumber);
+                ChessPuzzleJobs.appendScannedIds(app, pendingScannedIds);
+                pendingScannedIds.clear();
             }
             ChessPuzzleJobs.publish(snap);
             String label = scoped ? ("Generating puzzles — " + scope) : "Generating chess puzzles";
@@ -283,12 +300,114 @@ public class JobService extends Service {
             ChessLibrary.scanFrom(app, startCursor, callback);
         }
         Config.setChessPuzzlegenCursor(app, scope, snap.gamesScanned);
+        ChessPuzzleJobs.appendScannedIds(app, pendingScannedIds);
+        boolean stoppedEarly = ChessPuzzleJobs.cancelRequested;
         ChessPuzzleJobs.cancelRequested = false;
 
         // Either caught up or stopped — either way the job row is done; a future
         // ChessPuzzleJobs.start() re-enqueues and picks up from Config's cursor for this scope.
         JobQueue.clear(app, job.id);
-        ChessPuzzleJobs.clearSnapshot();
+        if (stoppedEarly) {
+            ChessPuzzleJobs.clearSnapshot();
+        } else {
+            // Scanned everything without being stopped — keep the snapshot published a few
+            // seconds longer in its "done" state, so the Puzzles tab's job card gets to show
+            // it actually finished instead of just vanishing the instant the last game did.
+            snap.done = true;
+            ChessPuzzleJobs.publish(snap);
+            try { Thread.sleep(2500); } catch (InterruptedException ignored) { }
+            ChessPuzzleJobs.clearSnapshot();
+        }
+        running = false;
+        main.post(this::maybeStart);
+    }
+
+    // --- chess PGN import ---------------------------------------------------
+
+    private static final int PGNIMPORT_CHECKPOINT_EVERY = 25;
+
+    /** Streams a PGN file straight into the library, same {@link Pgn#parse}/
+     *  {@link ChessLibrary.AppendSession} pipeline {@code MainActivity} used to run inline on
+     *  a background {@code Thread} — moved here so a big import (thousands of games) survives
+     *  leaving the screen, or the app dying and this job restarting it. Silent: no "choose a
+     *  game" picker or auto-load onto the board when it finishes, since nothing guarantees the
+     *  app is even open by then — the games just land in the library like any other import. */
+    private void runChessPgnImport(JobQueue.Job job) {
+        Context app = getApplicationContext();
+        String uriString = job.data.get("uri");
+        String sourceLabel = job.data.getOrDefault("label", "Imported PGN");
+        if (uriString == null) {
+            JobQueue.clear(app, job.id);
+            running = false;
+            main.post(this::maybeStart);
+            return;
+        }
+        Uri uri = Uri.parse(uriString);
+
+        ChessImportJobs.Snapshot snap = new ChessImportJobs.Snapshot();
+        snap.sourceLabel = sourceLabel;
+        ChessImportJobs.publish(snap);
+
+        // Cheap first pass — just game boundaries, no tag map or SAN extraction — so the real
+        // pass below can show "N of total" instead of only a running count with no
+        // denominator. Best-effort: a provider that can't reopen the same uri twice, or any
+        // other read failure here, just leaves gamesTotal at 0 (activeLabel's fallback).
+        try (java.io.InputStream in = app.getContentResolver().openInputStream(uri)) {
+            if (in != null) {
+                try (java.io.Reader reader = new java.io.InputStreamReader(in, java.nio.charset.StandardCharsets.UTF_8)) {
+                    snap.gamesTotal = Pgn.countGames(reader);
+                    ChessImportJobs.publish(snap);
+                }
+            }
+        } catch (IOException e) {
+            android.util.Log.w("JobService", "chess pgn import: game count failed, no total shown", e);
+        }
+
+        int[] sinceCheckpoint = {0};
+        boolean ok = false;
+        try (java.io.InputStream in = app.getContentResolver().openInputStream(uri)) {
+            if (in != null) {
+                try (java.io.Reader reader = new java.io.InputStreamReader(in, java.nio.charset.StandardCharsets.UTF_8);
+                     ChessLibrary.AppendSession session = ChessLibrary.beginAppend(app, sourceLabel)) {
+                    Pgn.parse(reader, game -> {
+                        if (ChessImportJobs.cancelRequested) return false;
+                        keepAlive(job);
+                        try {
+                            session.append(game);
+                            snap.gamesImported++;
+                        } catch (IOException e) {
+                            android.util.Log.w("JobService", "chess pgn import: game write failed, skipping", e);
+                        }
+                        if (++sinceCheckpoint[0] >= PGNIMPORT_CHECKPOINT_EVERY) {
+                            sinceCheckpoint[0] = 0;
+                            ChessImportJobs.publish(snap);
+                            int pct = snap.gamesTotal > 0 ? (int) (100L * snap.gamesImported / snap.gamesTotal) : 0;
+                            throttledNotif(notif("Importing " + sourceLabel,
+                                    ChessImportJobs.activeLabel(app), pct));
+                        }
+                        return true;
+                    });
+                    ok = true;
+                }
+            }
+        } catch (IOException e) {
+            android.util.Log.w("JobService", "chess pgn import: read failed", e);
+        }
+
+        boolean stoppedEarly = ChessImportJobs.cancelRequested;
+        ChessImportJobs.cancelRequested = false;
+        JobQueue.clear(app, job.id);
+        if (stoppedEarly || !ok) {
+            ChessImportJobs.clearSnapshot();
+        } else {
+            // Finished reading the whole file without being stopped — keep the snapshot
+            // published a few seconds longer in its "done" state, so the Library tab's job
+            // card gets to show it actually completed instead of just vanishing.
+            snap.done = true;
+            ChessImportJobs.publish(snap);
+            try { Thread.sleep(2500); } catch (InterruptedException ignored) { }
+            ChessImportJobs.clearSnapshot();
+        }
         running = false;
         main.post(this::maybeStart);
     }

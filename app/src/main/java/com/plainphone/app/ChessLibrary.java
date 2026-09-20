@@ -173,10 +173,37 @@ final class ChessLibrary {
         return out;
     }
 
-    /** All games imported from one PGN source, newest first. */
+    /** All games imported from one PGN source, newest first — moves NOT included (see
+     *  {@link #loadAll}); every browsing-list caller only ever shows white/black/event/date.
+     *  {@link #loadBySourceWithSans} is the one other caller actually needs, and it's the
+     *  only one that should ask for it. */
     static List<Entry> loadBySource(Context context, String sourceLabel) {
         List<Entry> out = new ArrayList<>();
         for (Entry e : loadAll(context)) if (e.src.equals(sourceLabel)) out.add(e);
+        return out;
+    }
+
+    /** Same as {@link #loadBySource}, but with each entry's full move list included — the
+     *  puzzle generator's scoped-run path actually has to replay every game, unlike every
+     *  other {@code loadBySource} caller. A fresh streamed read every time (not
+     *  {@link #loadAll}'s cache, which deliberately never carries moves) — this used to just
+     *  be {@code loadBySource}, until that stopped including sans (see {@link #loadAll}) and
+     *  a scoped generation run silently analyzed every game as move-less, "finishing" almost
+     *  instantly without ever calling the engine. */
+    static List<Entry> loadBySourceWithSans(Context context, String sourceLabel) {
+        List<Entry> out = new ArrayList<>();
+        File f = file(context);
+        if (f.exists()) {
+            try (BufferedReader r = new BufferedReader(new FileReader(f))) {
+                String line;
+                while ((line = r.readLine()) != null) {
+                    if (line.isEmpty()) continue;
+                    Entry e = parseLine(line, true);
+                    if (e != null && e.src.equals(sourceLabel)) out.add(e);
+                }
+            } catch (IOException ignored) { }
+            Collections.reverse(out);
+        }
         return out;
     }
 
@@ -237,6 +264,42 @@ final class ChessLibrary {
         try (FileOutputStream out = new FileOutputStream(tmp, false)) {
             StringBuilder sb = new StringBuilder();
             for (String line : keep) sb.append(line).append('\n');
+            out.write(sb.toString().getBytes(StandardCharsets.UTF_8));
+        } catch (IOException ignored) { return false; }
+        return tmp.renameTo(f);
+    }
+
+    /** Renames a PGN source across every game that carries it — rewrites the whole file (read
+     *  all, replace matching "src" values, atomic replace), same trade-off as
+     *  {@link #deleteSource}. Callers are responsible for the puzzle side
+     *  ({@code ChessPuzzles#renameSource}) and the puzzle-generation cursor
+     *  ({@code Config#renameChessPuzzlegenCursor}) — this method only touches the library
+     *  file. */
+    static boolean renameSource(Context context, String oldLabel, String newLabel) {
+        File f = file(context);
+        if (!f.exists()) return false;
+        List<String> lines = new ArrayList<>();
+        boolean changed = false;
+        try (BufferedReader r = new BufferedReader(new FileReader(f))) {
+            String line;
+            while ((line = r.readLine()) != null) {
+                if (line.isEmpty()) continue;
+                try {
+                    JSONObject o = new JSONObject(line);
+                    if (oldLabel.equals(o.optString("src", ""))) {
+                        o.put("src", newLabel);
+                        line = o.toString();
+                        changed = true;
+                    }
+                } catch (JSONException ignored) { }
+                lines.add(line);
+            }
+        } catch (IOException ignored) { return false; }
+        if (!changed) return false;
+        File tmp = new File(context.getFilesDir(), "chess_library.jsonl.tmp");
+        try (FileOutputStream out = new FileOutputStream(tmp, false)) {
+            StringBuilder sb = new StringBuilder();
+            for (String l : lines) sb.append(l).append('\n');
             out.write(sb.toString().getBytes(StandardCharsets.UTF_8));
         } catch (IOException ignored) { return false; }
         return tmp.renameTo(f);

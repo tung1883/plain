@@ -41,7 +41,7 @@ final class ChessPuzzlesPanel {
 
     // --- home state -----------------------------------------------------
     private View jobCard;
-    private TextView jobStat;
+    private TextView jobTitle, jobStat, jobStop;
     private TextView statLine;
 
     // --- solving state ----------------------------------------------------
@@ -95,7 +95,7 @@ final class ChessPuzzlesPanel {
         LinearLayout.LayoutParams jobLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         jobLp.setMargins(UiKit.dp(host, 20), UiKit.dp(host, 20), UiKit.dp(host, 20), 0);
-        TextView jobTitle = new TextView(host);
+        jobTitle = new TextView(host);
         jobTitle.setText("Generating puzzles");
         jobTitle.setTextColor(Color.WHITE);
         jobTitle.setTypeface(Fonts.current(host));
@@ -107,7 +107,7 @@ final class ChessPuzzlesPanel {
         jobStat.setTextSize(12);
         jobStat.setPadding(0, UiKit.dp(host, 6), 0, 0);
         ((LinearLayout) jobCard).addView(jobStat);
-        TextView jobStop = new TextView(host);
+        jobStop = new TextView(host);
         jobStop.setText("Stop");
         jobStop.setTextColor(Color.WHITE);
         jobStop.setTypeface(Fonts.current(host));
@@ -148,9 +148,17 @@ final class ChessPuzzlesPanel {
     }
 
     private void refreshHome() {
-        boolean running = ChessPuzzleJobs.isRunning(host);
-        jobCard.setVisibility(running ? View.VISIBLE : View.GONE);
-        if (running) jobStat.setText(ChessPuzzleJobs.activeLabel(host));
+        // ChessPuzzleJobs.snapshot (not JobQueue/isRunning) drives visibility — a finished
+        // run keeps its snapshot around a few seconds in "done" state (see JobService) so
+        // this card gets to show a completion line instead of just vanishing the instant
+        // the last game finishes scanning.
+        ChessPuzzleJobs.Snapshot snap = ChessPuzzleJobs.snapshot;
+        jobCard.setVisibility(snap != null ? View.VISIBLE : View.GONE);
+        if (snap != null) {
+            jobTitle.setText(snap.done ? "Puzzle generation complete" : "Generating puzzles");
+            jobStat.setText(snap.done ? ChessPuzzleJobs.doneLabel(host) : ChessPuzzleJobs.activeLabel(host));
+            jobStop.setVisibility(snap.done ? View.GONE : View.VISIBLE);
+        }
         new Thread(() -> {
             int total = ChessPuzzles.count(host);
             host.runOnUiThread(() -> statLine.setText(total + (total == 1 ? " puzzle" : " puzzles")));

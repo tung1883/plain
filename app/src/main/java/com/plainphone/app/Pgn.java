@@ -42,7 +42,38 @@ final class Pgn {
         }
     }
 
-    interface GameCallback { void onGame(Game game); }
+    /** Return {@code false} to stop parsing early (a cancelled import job); {@code true} to
+     *  keep going. */
+    interface GameCallback { boolean onGame(Game game); }
+
+    /** How many games {@code source} contains — same boundary rule as {@link #parse}, but
+     *  without building a single {@link Game} (no tag map, no SAN extraction): just enough
+     *  bookkeeping to know when one game ends and the next begins. A cheap first pass so an
+     *  import job can show real "N of total" progress instead of only a running count with no
+     *  denominator. */
+    static int countGames(Reader source) throws IOException {
+        BufferedReader r = source instanceof BufferedReader ? (BufferedReader) source : new BufferedReader(source);
+        int count = 0;
+        boolean hasTags = false;
+        boolean inMovetext = false;
+        String line;
+        while ((line = r.readLine()) != null) {
+            String trimmed = line.trim();
+            if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+                if (inMovetext) {
+                    count++;
+                    hasTags = false;
+                    inMovetext = false;
+                }
+                hasTags = true;
+                continue;
+            }
+            if (trimmed.isEmpty()) continue;
+            inMovetext = true;
+        }
+        if (hasTags || inMovetext) count++;
+        return count;
+    }
 
     /** Streams {@code text} game by game, handing each one to {@code callback} as soon as it's
      *  complete instead of collecting them all into a list first — a real PGN collection (a
@@ -63,7 +94,7 @@ final class Pgn {
             String trimmed = line.trim();
             if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
                 if (inMovetext) {
-                    callback.onGame(new Game(tags, movetext.toString()));
+                    if (!callback.onGame(new Game(tags, movetext.toString()))) return;
                     tags = new LinkedHashMap<>();
                     movetext = new StringBuilder();
                     inMovetext = false;

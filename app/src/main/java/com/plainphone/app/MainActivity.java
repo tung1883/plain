@@ -164,6 +164,11 @@ public class MainActivity extends Activity implements SelectionHost {
     private static final int REQUEST_CHESS_IMPORT = 4313;
     private static final int REQUEST_CHESS_EXPORT = 4314;
     private static final int REQUEST_CHESS_LIBRARY = 4315;
+    private static final int REQUEST_CHESS_EXPORT_SOURCE = 4316;
+    /** Which PGN source {@link #REQUEST_CHESS_EXPORT_SOURCE}'s file picker result is for —
+     *  set right before {@code startActivityForResult}, read back in
+     *  {@link #handleChessExportSource}. */
+    private String chessExportSourceLabel;
     /** Deferred action to run once the vault is unlocked (move-to-vault). */
     private Runnable afterVaultUnlock;
     private FrameLayout artFrame;
@@ -246,6 +251,8 @@ public class MainActivity extends Activity implements SelectionHost {
             handleChessExport(resultCode, data);
         } else if (requestCode == REQUEST_CHESS_LIBRARY) {
             handleChessLibraryPick(resultCode, data);
+        } else if (requestCode == REQUEST_CHESS_EXPORT_SOURCE) {
+            handleChessExportSource(resultCode, data);
         }
     }
 
@@ -1300,6 +1307,7 @@ public class MainActivity extends Activity implements SelectionHost {
             @Override public void onOpenPgnFiles() { startActivity(new Intent(MainActivity.this, ChessPgnFilesActivity.class)); }
             @Override public void onImportPgn() { chessImportPgn(); }
             @Override public void onExportPgn() { chessExportPgn(); }
+            @Override public void onExportSource(String source) { chessExportSource(source); }
         });
         chessTabContainer.addView(chessBoardTabContent, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -2058,63 +2066,38 @@ public class MainActivity extends Activity implements SelectionHost {
         startActivityForResult(save, REQUEST_CHESS_EXPORT);
     }
 
+    /** "Export this PGN" from a Library-tab source group's options menu — every game under
+     *  {@code source}, not just the one on the board. */
+    private void chessExportSource(String source) {
+        chessExportSourceLabel = source;
+        Intent save = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        save.addCategory(Intent.CATEGORY_OPENABLE);
+        save.setType("application/x-chess-pgn");
+        String fileName = source.toLowerCase(java.util.Locale.US).endsWith(".pgn") ? source : source + ".pgn";
+        save.putExtra(Intent.EXTRA_TITLE, fileName);
+        startActivityForResult(save, REQUEST_CHESS_EXPORT_SOURCE);
+    }
+
+    /** Kicks off a background {@link ChessImportJobs} run instead of reading/parsing the file
+     *  right here — a real downloaded PGN collection (a player's whole career, an opening
+     *  database) is routinely thousands of games, and streaming that off a foreground-service
+     *  job (survives navigating away, even the app dying and JobService restarting it) beats
+     *  an inline background {@code Thread} that dies with the Activity. Import is now silent —
+     *  no "choose a game" picker or auto-load onto the board once it finishes, since the app
+     *  may not even be on this screen (or open at all) by then; the imported games just show
+     *  up in the Library tab like any other, same as picking one out afterward always worked. */
     private void handleChessImport(int resultCode, Intent data) {
         if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
         Uri uri = data.getData();
-        // A real downloaded PGN collection (a player's whole career, an opening database) is
-        // routinely thousands of games — reading the whole file into one String, parsing it
-        // into one big in-memory List<Pgn.Game> (every game's full move list, all at once),
-        // then serializing that same list again to append it, used to hold three redundant
-        // full copies of the entire library at once and reliably OOM'd on anything past a
-        // couple thousand games. This streams the file instead: Pgn.parse hands games to the
-        // callback one at a time, each is appended to the library and then only its
-        // white/black/event/date is kept (a PgnRow) for the picker — never the full game.
-        toast("Reading PGN…");
-        new Thread(() -> {
-            String sourceLabel = chessDisplayNameOf(uri);
-            List<PgnRow> rows = new ArrayList<>();
-            int[] count = {0};
-            Pgn.Game[] onlyGame = {null};
-            boolean ok = false;
-            try (InputStream in = getContentResolver().openInputStream(uri)) {
-                if (in != null) {
-                    try (java.io.Reader reader = new java.io.InputStreamReader(in, java.nio.charset.StandardCharsets.UTF_8);
-                         ChessLibrary.AppendSession session = ChessLibrary.beginAppend(this, sourceLabel)) {
-                        Pgn.parse(reader, game -> {
-                            String id;
-                            try { id = session.append(game); } catch (java.io.IOException e) { return; }
-                            count[0]++;
-                            onlyGame[0] = count[0] == 1 ? game : null;
-                            rows.add(new PgnRow(id, game.tag("White", "?"), game.tag("Black", "?"),
-                                    game.tag("Event", "Game"), game.tag("Date", "????.??.??"), game.tag("Result", "*")));
-                        });
-                        ok = true;
-                    }
-                }
-            } catch (java.io.IOException ignored) { }
-            boolean success = ok;
-            int total = count[0];
-            Pgn.Game single = onlyGame[0];
-            runOnUiThread(() -> {
-                if (!success) { toast("Could not read that PGN"); return; }
-                if (total == 0) { toast("No games found in that file"); return; }
-                if (total == 1 && single != null) {
-                    loadPgnGame(single);
-                } else {
-                    showPgnGamePicker(rows);
-                }
-            });
-        }).start();
-    }
-
-    /** Lightweight display row for {@link #showPgnGamePicker} — white/black/event/date/result
-     *  only, never a game's move list (see {@link #handleChessImport}'s streaming rewrite). */
-    private static final class PgnRow {
-        final String id, white, black, event, date, result;
-        PgnRow(String id, String white, String black, String event, String date, String result) {
-            this.id = id; this.white = white; this.black = black;
-            this.event = event; this.date = date; this.result = result;
+        String sourceLabel = chessDisplayNameOf(uri);
+        try {
+            getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        } catch (SecurityException ignored) {
+            // Some providers don't support persistable permissions — the job still works as
+            // long as this process stays alive long enough to finish reading the file.
         }
+        ChessImportJobs.start(this, uri, sourceLabel);
+        toast("Importing " + sourceLabel + "…");
     }
 
     /** The file's display name, for the "Imported games" library's source label — a content
@@ -2133,17 +2116,6 @@ public class MainActivity extends Activity implements SelectionHost {
         return "Imported PGN";
     }
 
-    private void loadPgnGame(Pgn.Game game) {
-        // Not (yet) matched to a library record — it may or may not end up imported, and
-        // even if it does, appendGames doesn't hand back the id it stamped. Metadata block
-        // and PGN stepper just stay hidden for a game loaded this way.
-        chessCurrentEntry = null;
-        updateChessMetaUi();
-        chessBoard.loadSanMoves(game.sans, game.comments);
-        toast(game.sans.isEmpty() ? "PGN loaded (no moves found)"
-                : "Loaded " + game.tag("White", "?") + " vs " + game.tag("Black", "?"));
-    }
-
     private void handleChessLibraryPick(int resultCode, Intent data) {
         if (resultCode != RESULT_OK || data == null) return;
         String id = data.getStringExtra(ChessLibraryActivity.EXTRA_ID);
@@ -2159,94 +2131,6 @@ public class MainActivity extends Activity implements SelectionHost {
         toast(moves.isEmpty() ? "PGN loaded (no moves found)" : "Loaded " + white + " vs " + black);
     }
 
-    /** Standard rounded plainphone popup — same chrome as the chess settings sheet — with
-     *  one two-line row per game (White vs Black, then Event · Date · Result dimmed below)
-     *  and a Cancel row at the bottom. A real downloaded PGN collection is routinely
-     *  thousands of games (a player's whole career, an opening database), so this is a
-     *  {@link ListView}/{@link BaseAdapter} that recycles a handful of row views rather
-     *  than a plain {@code LinearLayout} of thousands built up front — that would mean
-     *  thousands of real View objects before the dialog even shows, an ANR risk on its own. */
-    private void showPgnGamePicker(List<PgnRow> games) {
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackground(UiKit.dialogBackground(this));
-        UiKit.clipRounded(this, root, UiKit.R_MD);
-        root.setPadding(2, 32, 2, UiKit.dp(this, UiKit.R_MD));
-        root.addView(UiKit.dialogTitle(this, "Import PGN — choose a game (" + games.size() + ")"));
-
-        AlertDialog dialog = new AlertDialog.Builder(this).setView(root).create();
-        UiKit.clearDialogChrome(dialog);
-
-        ListView list = new ListView(this);
-        list.setDivider(new ColorDrawable(0xFF303030));
-        list.setDividerHeight(1);
-        list.setCacheColorHint(Color.BLACK);
-        list.setAdapter(new BaseAdapter() {
-            @Override public int getCount() { return games.size(); }
-            @Override public Object getItem(int position) { return games.get(position); }
-            @Override public long getItemId(int position) { return position; }
-            @Override public View getView(int position, View recycled, ViewGroup parent) {
-                View row = recycled != null ? recycled : chessPgnGameRow();
-                bindPgnGameRow(row, games.get(position));
-                return row;
-            }
-        });
-        // The row only carries white/black/event/date — its move list was never kept in
-        // memory (see handleChessImport), so it's re-read from the library, just written,
-        // by id on tap; cheap (one JSONL line) and only ever for the one game picked.
-        list.setOnItemClickListener((parent, view, position, id) -> {
-            dialog.dismiss();
-            PgnRow picked = games.get(position);
-            toast("Loading…");
-            new Thread(() -> {
-                ChessLibrary.Entry entry = ChessLibrary.findById(this, picked.id);
-                runOnUiThread(() -> {
-                    if (entry == null) { toast("Could not load that game"); return; }
-                    chessCurrentEntry = entry;
-                    updateChessMetaUi();
-                    chessBoard.loadSanMoves(entry.sans());
-                    toast(entry.sans().isEmpty() ? "PGN loaded (no moves found)"
-                            : "Loaded " + entry.white + " vs " + entry.black);
-                });
-            }).start();
-        });
-        root.addView(list, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-        root.addView(chessSettingsRow("Cancel", v -> dialog.dismiss()));
-
-        dialog.show();
-        UiKit.unboxDialog(root);
-        if (dialog.getWindow() != null) {
-            android.view.WindowManager.LayoutParams p = dialog.getWindow().getAttributes();
-            p.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.85);
-            p.height = (int) (getResources().getDisplayMetrics().heightPixels * 0.7);
-            dialog.getWindow().setAttributes(p);
-        }
-    }
-
-    /** One recyclable row shape for {@link #showPgnGamePicker} — {@link #bindPgnGameRow}
-     *  fills in a specific game's text each time the adapter reuses it. */
-    private View chessPgnGameRow() {
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.VERTICAL);
-        row.setPadding(UiKit.dp(this, 20), UiKit.dp(this, 12), UiKit.dp(this, 20), UiKit.dp(this, 12));
-        StateListDrawable bg = new StateListDrawable();
-        bg.addState(new int[]{android.R.attr.state_pressed}, new ColorDrawable(Color.DKGRAY));
-        bg.addState(new int[]{}, new ColorDrawable(Color.BLACK));
-        row.setBackground(bg);
-        row.addView(chessText("", 16, Color.WHITE));
-        TextView meta = chessText("", 12, 0xFF6E6E6E);
-        meta.setPadding(0, UiKit.dp(this, 3), 0, 0);
-        row.addView(meta);
-        return row;
-    }
-
-    private void bindPgnGameRow(View row, PgnRow game) {
-        LinearLayout box = (LinearLayout) row;
-        ((TextView) box.getChildAt(0)).setText(game.white + " vs " + game.black);
-        ((TextView) box.getChildAt(1)).setText(game.event + " · " + game.date + " · " + game.result);
-    }
-
     private void handleChessExport(int resultCode, Intent data) {
         if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
         Map<String, String> tags = new LinkedHashMap<>();
@@ -2259,6 +2143,44 @@ public class MainActivity extends Activity implements SelectionHost {
         } catch (Exception e) {
             toast("Could not export PGN");
         }
+    }
+
+    /** Writes every game under {@link #chessExportSourceLabel} to the picked file, one after
+     *  another — {@link ChessLibrary#loadBySourceWithSans} (not the lightweight
+     *  {@code loadBySource} every other Library-tab read uses) since this actually needs each
+     *  game's moves, not just white/black/event/date. Off the UI thread: a big PGN is
+     *  thousands of games. */
+    private void handleChessExportSource(int resultCode, Intent data) {
+        if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
+        Uri uri = data.getData();
+        String source = chessExportSourceLabel;
+        if (source == null) return;
+        toast("Exporting " + source + "…");
+        new Thread(() -> {
+            List<ChessLibrary.Entry> games = ChessLibrary.loadBySourceWithSans(this, source);
+            Collections.reverse(games); // newest-first -> oldest-first, the file's own original order
+            boolean ok = false;
+            try (OutputStream out = getContentResolver().openOutputStream(uri)) {
+                if (out != null) {
+                    for (ChessLibrary.Entry e : games) {
+                        Map<String, String> tags = new LinkedHashMap<>();
+                        tags.put("Event", e.event);
+                        tags.put("Date", e.date);
+                        tags.put("Round", e.round);
+                        tags.put("White", e.white);
+                        tags.put("Black", e.black);
+                        if (!e.eco.isEmpty()) tags.put("ECO", e.eco);
+                        String pgn = Pgn.write(tags, e.sans(), e.result);
+                        out.write(pgn.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                        out.write('\n');
+                    }
+                    ok = true;
+                }
+            } catch (Exception ignored) { }
+            boolean success = ok;
+            int count = games.size();
+            runOnUiThread(() -> toast(success ? ("Exported " + count + " games") : "Could not export PGN"));
+        }).start();
     }
 
     private TextView chessText(String value, float size, int color) {

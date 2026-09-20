@@ -17,9 +17,11 @@ import android.widget.ListView;
 import android.widget.TextView;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 
@@ -34,6 +36,22 @@ final class ChessLibraryPanel {
         void onOpenPgnFiles();
         void onImportPgn();
         void onExportPgn();
+        /** "Export this PGN" from a source group's options menu — every game under
+         *  {@code source}, not just whatever's on the board. */
+        void onExportSource(String source);
+    }
+
+    /** One row in the grouped (unfiltered) list — a collapsible PGN source header, standing
+     *  in for that source's games in {@link #rows} until it's expanded. Never appears when a
+     *  search/filter is active (see {@link #rebuildRows}): a query result is a flat list of
+     *  {@link ChessLibrary.Entry}, same as before grouping existed. */
+    private static final class HeaderRow {
+        final String source;
+        final int count;
+        final long importedAt;
+        HeaderRow(String source, int count, long importedAt) {
+            this.source = source; this.count = count; this.importedAt = importedAt;
+        }
     }
 
     private final Activity host;
@@ -43,8 +61,14 @@ final class ChessLibraryPanel {
     private final TextView countLine;
     private BaseAdapter adapter;
 
+    private View jobCard;
+    private TextView jobTitle, jobStat, jobStop;
+
     private List<ChessLibrary.Entry> all = new ArrayList<>();
     private List<ChessLibrary.Entry> shown = new ArrayList<>();
+    // Object: either a HeaderRow or a ChessLibrary.Entry — see rebuildRows().
+    private List<Object> rows = new ArrayList<>();
+    private final Set<String> expandedSources = new LinkedHashSet<>();
     private final Handler searchHandler = new Handler();
     private Runnable pendingSearch;
 
@@ -68,6 +92,8 @@ final class ChessLibraryPanel {
         headIcons.addView(headIcon(R.drawable.ic_chess_import, "Import PGN", v -> listener.onImportPgn()));
         headIcons.addView(headIcon(R.drawable.ic_chess_export, "Export PGN", v -> listener.onExportPgn()));
         root.addView(headIcons);
+
+        root.addView(buildJobCard());
 
         // The filter button lives inside the search box itself (trailing icon), not as its
         // own header row — one search-and-filter control instead of two separate ones.
@@ -110,21 +136,36 @@ final class ChessLibraryPanel {
         list.setDividerHeight(1);
         list.setCacheColorHint(Color.BLACK);
         adapter = new BaseAdapter() {
-            @Override public int getCount() { return shown.size(); }
-            @Override public Object getItem(int position) { return shown.get(position); }
+            @Override public int getCount() { return rows.size(); }
+            @Override public Object getItem(int position) { return rows.get(position); }
             @Override public long getItemId(int position) { return position; }
+            @Override public int getViewTypeCount() { return 2; }
+            @Override public int getItemViewType(int position) { return rows.get(position) instanceof HeaderRow ? 0 : 1; }
             @Override public View getView(int position, View recycled, ViewGroup parent) {
+                Object item = rows.get(position);
+                if (item instanceof HeaderRow) {
+                    View row = recycled != null ? recycled : headerRow();
+                    bindHeaderRow(row, (HeaderRow) item);
+                    return row;
+                }
                 View row = recycled != null ? recycled : row();
-                bindRow(row, shown.get(position));
+                bindRow(row, (ChessLibrary.Entry) item);
                 return row;
             }
         };
         list.setAdapter(adapter);
-        // shown/all are the lightweight rows loadAll() now returns (no move list — see
-        // ChessLibrary.loadAll); fetch the tapped entry's moves back by id, off the UI thread,
-        // only for the one game actually chosen.
+        // A header tap toggles that source's collapse state; a game tap re-fetches its full
+        // entry (moves included) by id, off the UI thread — rows/shown/all only ever carry
+        // the lightweight rows loadAll() returns (see ChessLibrary.loadAll), never the moves.
         list.setOnItemClickListener((parent, view, position, id) -> {
-            String entryId = shown.get(position).id;
+            Object item = rows.get(position);
+            if (item instanceof HeaderRow) {
+                String source = ((HeaderRow) item).source;
+                if (!expandedSources.remove(source)) expandedSources.add(source);
+                rebuildRows(true); // a HeaderRow only ever appears in the grouped view
+                return;
+            }
+            String entryId = ((ChessLibrary.Entry) item).id;
             new Thread(() -> {
                 ChessLibrary.Entry full = ChessLibrary.findById(host, entryId);
                 if (full != null) host.runOnUiThread(() -> listener.onGameChosen(full));
@@ -138,6 +179,8 @@ final class ChessLibraryPanel {
             @Override public void onTextChanged(CharSequence s, int a, int b, int c) {}
             @Override public void afterTextChanged(Editable s) { scheduleFilter(); }
         });
+
+        ChessImportJobs.addListener(this::refreshJobCard);
     }
 
     View view() { return root; }
@@ -145,6 +188,7 @@ final class ChessLibraryPanel {
     /** Re-reads the library from disk — call whenever the Library tab becomes visible again,
      *  not just once at construction, since a PGN import/delete elsewhere may have changed it. */
     void refresh() {
+        refreshJobCard();
         countLine.setText("Loading…");
         new Thread(() -> {
             List<ChessLibrary.Entry> loaded = ChessLibrary.loadAll(host);
@@ -153,6 +197,62 @@ final class ChessLibraryPanel {
                 applyFilter();
             });
         }).start();
+    }
+
+    // --- import job card ------------------------------------------------------
+
+    /** Same card/Stop/"done" pattern as the Puzzles tab's own job card (see
+     *  {@code ChessPuzzlesPanel}) — {@link ChessImportJobs#snapshot} (not
+     *  {@link JobQueue}/{@code isRunning}) drives visibility, so a finished import gets to
+     *  hold its "done" state on screen for a few seconds instead of vanishing the instant the
+     *  file's last game is read. */
+    private View buildJobCard() {
+        LinearLayout card = new LinearLayout(host);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setBackground(UiKit.rounded(host, Color.BLACK, 0xFF262626, 2f, UiKit.R_MD));
+        card.setPadding(UiKit.dp(host, 16), UiKit.dp(host, 14), UiKit.dp(host, 16), UiKit.dp(host, 14));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.setMargins(UiKit.dp(host, 20), UiKit.dp(host, 12), UiKit.dp(host, 20), 0);
+
+        jobTitle = new TextView(host);
+        jobTitle.setText("Importing PGN");
+        jobTitle.setTextColor(Color.WHITE);
+        jobTitle.setTypeface(Fonts.current(host));
+        jobTitle.setTextSize(13);
+        card.addView(jobTitle);
+
+        jobStat = new TextView(host);
+        jobStat.setTextColor(0xFF8A8A8A);
+        jobStat.setTypeface(Fonts.current(host));
+        jobStat.setTextSize(12);
+        jobStat.setPadding(0, UiKit.dp(host, 6), 0, 0);
+        card.addView(jobStat);
+
+        jobStop = new TextView(host);
+        jobStop.setText("Stop");
+        jobStop.setTextColor(Color.WHITE);
+        jobStop.setTypeface(Fonts.current(host));
+        jobStop.setTextSize(12);
+        jobStop.setPadding(0, UiKit.dp(host, 10), 0, 0);
+        jobStop.setOnClickListener(v -> { ChessImportJobs.stop(host); refreshJobCard(); });
+        card.addView(jobStop);
+
+        jobCard = card;
+        card.setLayoutParams(lp);
+        refreshJobCard();
+        return card;
+    }
+
+    private void refreshJobCard() {
+        ChessImportJobs.Snapshot snap = ChessImportJobs.snapshot;
+        host.runOnUiThread(() -> {
+            jobCard.setVisibility(snap != null ? View.VISIBLE : View.GONE);
+            if (snap == null) return;
+            jobTitle.setText(snap.done ? "Import complete" : "Importing " + snap.sourceLabel);
+            jobStat.setText(snap.done ? ChessImportJobs.doneLabel(host) : ChessImportJobs.activeLabel(host));
+            jobStop.setVisibility(snap.done ? View.GONE : View.VISIBLE);
+        });
     }
 
     private void scheduleFilter() {
@@ -170,6 +270,8 @@ final class ChessLibraryPanel {
     private void applyFilter() {
         int gen = ++filterGeneration;
         String q = search.getText().toString().trim().toLowerCase(Locale.ROOT);
+        boolean noQuery = q.isEmpty();
+        boolean noFilters = filterPlayers.isEmpty() && filterResults.isEmpty() && filterSources.isEmpty();
         // A big library (tens of thousands of games) makes this a real O(n) pass — off the
         // UI thread, same as the initial load, so typing in the search box never stutters.
         new Thread(() -> {
@@ -186,12 +288,43 @@ final class ChessLibraryPanel {
             host.runOnUiThread(() -> {
                 if (gen != filterGeneration) return;
                 shown = matched;
-                adapter.notifyDataSetChanged();
+                // Grouped-by-PGN headers only make sense browsing the whole library — a
+                // search/filter result is a flat list of matches, same as before grouping
+                // existed (a header for a source with 1 match out of 3,000 games would be
+                // pure noise, and "how many of this source's games matched" isn't the same
+                // number as HeaderRow's own count anyway).
+                rebuildRows(noQuery && noFilters);
                 int activeFilters = (filterPlayers.isEmpty() ? 0 : 1) + (filterResults.isEmpty() ? 0 : 1) + (filterSources.isEmpty() ? 0 : 1);
                 countLine.setText(shown.size() + " of " + all.size() + " games"
                         + (activeFilters > 0 ? " · " + activeFilters + " filter" + (activeFilters == 1 ? "" : "s") : ""));
             });
         }).start();
+    }
+
+    /** Rebuilds {@link #rows} from {@link #shown} — grouped into per-source {@link HeaderRow}s
+     *  (each followed by its games only if {@link #expandedSources} has it) when
+     *  {@code grouped}, otherwise the flat entry list as-is. Call directly (no new background
+     *  pass needed) after something that only changes grouping/expand state, not the
+     *  underlying data — a header tap, or a rename/delete's {@link #refresh}. */
+    private void rebuildRows(boolean grouped) {
+        List<Object> out = new ArrayList<>();
+        if (!grouped) {
+            out.addAll(shown);
+        } else {
+            Map<String, List<ChessLibrary.Entry>> bySource = new LinkedHashMap<>();
+            for (ChessLibrary.Entry e : shown) bySource.computeIfAbsent(e.src, k -> new ArrayList<>()).add(e);
+            for (Map.Entry<String, List<ChessLibrary.Entry>> group : bySource.entrySet()) {
+                String source = group.getKey();
+                List<ChessLibrary.Entry> games = group.getValue();
+                long importedAt = Long.MAX_VALUE;
+                for (ChessLibrary.Entry e : games) if (e.importedAt > 0) importedAt = Math.min(importedAt, e.importedAt);
+                if (importedAt == Long.MAX_VALUE) importedAt = 0;
+                out.add(new HeaderRow(source, games.size(), importedAt));
+                if (expandedSources.contains(source)) out.addAll(games);
+            }
+        }
+        rows = out;
+        adapter.notifyDataSetChanged();
     }
 
     // --- Filters dialog -----------------------------------------------------
@@ -401,9 +534,175 @@ final class ChessLibraryPanel {
     private void bindRow(View row, ChessLibrary.Entry e) {
         LinearLayout box = (LinearLayout) row;
         LinearLayout lines = (LinearLayout) box.getChildAt(0);
-        ((TextView) lines.getChildAt(0)).setText(e.white + " vs " + e.black);
+        ((TextView) lines.getChildAt(0)).setText(ChessBoardView.shortName(e.white) + " vs " + ChessBoardView.shortName(e.black));
         ((TextView) lines.getChildAt(1)).setText(e.event + " · " + e.date);
         ((TextView) box.getChildAt(1)).setText(e.result);
+    }
+
+    // --- PGN group headers ----------------------------------------------------
+
+    /** Outer vertical wrapper — [top border, the actual horizontal content row, bottom
+     *  border] — so the header visually separates from the plain game rows above and below
+     *  it, not just via its own fill color. {@link #bindHeaderRow} reaches through to the
+     *  content row (index 1) for chevron/lines/kebab. */
+    private View headerRow() {
+        LinearLayout wrap = new LinearLayout(host);
+        wrap.setOrientation(LinearLayout.VERTICAL);
+
+        View topBorder = new View(host);
+        topBorder.setBackgroundColor(0xFF333333);
+        wrap.addView(topBorder, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1));
+
+        LinearLayout row = new LinearLayout(host);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setBackgroundColor(0xFF1C1C1C);
+        row.setPadding(UiKit.dp(host, 20), UiKit.dp(host, 14), UiKit.dp(host, 10), UiKit.dp(host, 14));
+
+        TextView chevron = text(12, 0xFF8A8A8A);
+        row.addView(chevron, new LinearLayout.LayoutParams(UiKit.dp(host, 16), ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        LinearLayout lines = new LinearLayout(host);
+        lines.setOrientation(LinearLayout.VERTICAL);
+        TextView title = text(15, Color.WHITE);
+        title.setTypeface(Fonts.current(host), android.graphics.Typeface.BOLD);
+        lines.addView(title);
+        TextView meta = text(11, 0xFF6E6E6E);
+        meta.setPadding(0, UiKit.dp(host, 3), 0, 0);
+        lines.addView(meta);
+        row.addView(lines, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        TextView kebab = text(18, 0xFF8A8A8A);
+        kebab.setText("⋮");
+        kebab.setGravity(Gravity.CENTER);
+        kebab.setBackground(UiKit.pressable(host, 0xFF1C1C1C, Color.DKGRAY, 0, 0f, UiKit.R_SM));
+        row.addView(kebab, new LinearLayout.LayoutParams(UiKit.dp(host, 40), UiKit.dp(host, 40)));
+
+        wrap.addView(row);
+
+        View bottomBorder = new View(host);
+        bottomBorder.setBackgroundColor(0xFF333333);
+        wrap.addView(bottomBorder, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1));
+
+        return wrap;
+    }
+
+    private void bindHeaderRow(View row, HeaderRow h) {
+        LinearLayout content = (LinearLayout) ((LinearLayout) row).getChildAt(1);
+        ((TextView) content.getChildAt(0)).setText(expandedSources.contains(h.source) ? "v" : ">");
+        LinearLayout lines = (LinearLayout) content.getChildAt(1);
+        ((TextView) lines.getChildAt(0)).setText(h.source);
+        String imported = h.importedAt > 0
+                ? " · imported " + new java.text.SimpleDateFormat("MMM d", Locale.US).format(new java.util.Date(h.importedAt))
+                : "";
+        ((TextView) lines.getChildAt(1)).setText(h.count + (h.count == 1 ? " game" : " games") + imported);
+        content.getChildAt(2).setOnClickListener(v -> openSourceOptions(h.source));
+    }
+
+    /** The "⋮" bottom-sheet-style popup for one PGN source: rename it, export just its games,
+     *  generate puzzles from just it, or delete it (with its puzzles) entirely. */
+    private void openSourceOptions(String source) {
+        LinearLayout box = new LinearLayout(host);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setBackground(UiKit.dialogBackground(host));
+        UiKit.clipRounded(host, box, UiKit.R_MD);
+        box.setPadding(2, 32, 2, UiKit.dp(host, UiKit.R_MD));
+        box.addView(UiKit.dialogTitle(host, source));
+
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(host).setView(box).create();
+        UiKit.clearDialogChrome(dialog);
+
+        box.addView(optionRow("Rename", Color.WHITE, v -> { dialog.dismiss(); promptRename(source); }));
+        box.addView(optionRow("Export this PGN", Color.WHITE, v -> { dialog.dismiss(); listener.onExportSource(source); }));
+        box.addView(optionRow("Generate puzzles", Color.WHITE, v -> {
+            dialog.dismiss();
+            ChessPuzzleJobs.start(host, source);
+            android.widget.Toast.makeText(host, "Generating puzzles — " + source, android.widget.Toast.LENGTH_SHORT).show();
+        }));
+        box.addView(optionRow("Delete this PGN", 0xFFE05C5C, v -> { dialog.dismiss(); confirmDeleteSource(source); }));
+        box.addView(optionRow("Cancel", 0xFF8A8A8A, v -> dialog.dismiss()));
+
+        dialog.show();
+        UiKit.unboxDialog(box);
+        if (dialog.getWindow() != null) {
+            android.view.WindowManager.LayoutParams p = dialog.getWindow().getAttributes();
+            p.width = (int) (host.getResources().getDisplayMetrics().widthPixels * 0.85);
+            dialog.getWindow().setAttributes(p);
+        }
+    }
+
+    private View optionRow(String label, int color, View.OnClickListener onClick) {
+        TextView row = text(17, color);
+        row.setText(label);
+        row.setPadding(48, 28, 48, 28);
+        StateListDrawable bg = new StateListDrawable();
+        bg.addState(new int[]{android.R.attr.state_pressed}, new ColorDrawable(Color.DKGRAY));
+        bg.addState(new int[]{}, new ColorDrawable(Color.BLACK));
+        row.setBackground(bg);
+        row.setOnClickListener(onClick);
+        return row;
+    }
+
+    private void promptRename(String source) {
+        LinearLayout box = new LinearLayout(host);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setBackground(UiKit.dialogBackground(host));
+        UiKit.clipRounded(host, box, UiKit.R_MD);
+        box.setPadding(2, 32, 2, UiKit.dp(host, UiKit.R_MD));
+        box.addView(UiKit.dialogTitle(host, "Rename PGN"));
+
+        EditText input = new EditText(host);
+        input.setBackground(UiKit.rounded(host, Color.BLACK, Color.WHITE, 2f, UiKit.R_SM));
+        input.setTextColor(Color.WHITE);
+        input.setTypeface(Fonts.current(host));
+        input.setSingleLine(true);
+        input.setText(source);
+        input.setSelection(source.length());
+        input.setPadding(UiKit.dp(host, 14), UiKit.dp(host, 10), UiKit.dp(host, 14), UiKit.dp(host, 10));
+        LinearLayout.LayoutParams inputLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        inputLp.leftMargin = UiKit.dp(host, 16);
+        inputLp.rightMargin = UiKit.dp(host, 16);
+        inputLp.bottomMargin = UiKit.dp(host, 10);
+        box.addView(input, inputLp);
+
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(host).setView(box).create();
+        UiKit.clearDialogChrome(dialog);
+
+        box.addView(optionRow("Rename", Color.WHITE, v -> {
+            String newName = input.getText().toString().trim();
+            dialog.dismiss();
+            if (newName.isEmpty() || newName.equals(source)) return;
+            new Thread(() -> {
+                ChessLibrary.renameSource(host, source, newName);
+                ChessPuzzles.renameSource(host, source, newName);
+                Config.renameChessPuzzlegenCursor(host, source, newName);
+                if (expandedSources.remove(source)) expandedSources.add(newName);
+                host.runOnUiThread(this::refresh);
+            }).start();
+        }));
+        box.addView(optionRow("Cancel", 0xFF8A8A8A, v -> dialog.dismiss()));
+
+        dialog.show();
+        UiKit.unboxDialog(box);
+        if (dialog.getWindow() != null) {
+            android.view.WindowManager.LayoutParams p = dialog.getWindow().getAttributes();
+            p.width = (int) (host.getResources().getDisplayMetrics().widthPixels * 0.85);
+            dialog.getWindow().setAttributes(p);
+        }
+    }
+
+    private void confirmDeleteSource(String source) {
+        VaultUi.confirm(host, "Delete " + source,
+                "This also removes any puzzles generated from it.",
+                "Delete", () -> new Thread(() -> {
+                    ChessLibrary.deleteSource(host, source);
+                    ChessPuzzles.deleteBySource(host, source);
+                    Config.clearChessPuzzlegenCursor(host, source);
+                    expandedSources.remove(source);
+                    host.runOnUiThread(this::refresh);
+                }).start(),
+                "Cancel", () -> { });
     }
 
     private TextView text(float size, int color) {
