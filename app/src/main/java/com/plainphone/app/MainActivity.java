@@ -165,10 +165,15 @@ public class MainActivity extends Activity implements SelectionHost {
     private static final int REQUEST_CHESS_EXPORT = 4314;
     private static final int REQUEST_CHESS_LIBRARY = 4315;
     private static final int REQUEST_CHESS_EXPORT_SOURCE = 4316;
+    private static final int REQUEST_CHESS_EXPORT_SELECTED = 4317;
     /** Which PGN source {@link #REQUEST_CHESS_EXPORT_SOURCE}'s file picker result is for —
      *  set right before {@code startActivityForResult}, read back in
      *  {@link #handleChessExportSource}. */
     private String chessExportSourceLabel;
+    /** Same idea as {@link #chessExportSourceLabel}, for {@link #REQUEST_CHESS_EXPORT_SELECTED}
+     *  (the Library tab's multi-select "Export"), read back in
+     *  {@link #handleChessExportSelected}. */
+    private java.util.Set<String> chessExportSelectedIds;
     /** Deferred action to run once the vault is unlocked (move-to-vault). */
     private Runnable afterVaultUnlock;
     private FrameLayout artFrame;
@@ -253,6 +258,8 @@ public class MainActivity extends Activity implements SelectionHost {
             handleChessLibraryPick(resultCode, data);
         } else if (requestCode == REQUEST_CHESS_EXPORT_SOURCE) {
             handleChessExportSource(resultCode, data);
+        } else if (requestCode == REQUEST_CHESS_EXPORT_SELECTED) {
+            handleChessExportSelected(resultCode, data);
         }
     }
 
@@ -1326,6 +1333,7 @@ public class MainActivity extends Activity implements SelectionHost {
             @Override public void onImportPgn() { chessImportPgn(); }
             @Override public void onExportPgn() { chessExportPgn(); }
             @Override public void onExportSource(String source) { chessExportSource(source); }
+            @Override public void onExportSelected(java.util.Set<String> ids) { chessExportSelected(ids); }
         });
         chessTabContainer.addView(chessBoardTabContent, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -1374,7 +1382,7 @@ public class MainActivity extends Activity implements SelectionHost {
         // running it inline here (this runs on the UI thread) used to freeze all touch input
         // for a second or more right after the tab switch below. The board fills in a moment
         // later instead of blocking the switch itself.
-        chessBoard.loadSanMovesAsync(entry.sans(), null, entry.result, null);
+        chessBoard.loadSanMovesAsync(entry.sans(), entry.commentsForSans(), entry.result, null);
         chessSelectTab(0);
         toast("Loaded " + entry.white + " vs " + entry.black);
     }
@@ -1443,6 +1451,15 @@ public class MainActivity extends Activity implements SelectionHost {
         LinearLayout.LayoutParams resizeIconLp = new LinearLayout.LayoutParams(UiKit.dp(this, iconBoxDp), UiKit.dp(this, iconBoxDp));
         resizeIconLp.rightMargin = UiKit.dp(this, 14);
         status.addView(chessResizeIcon, resizeIconLp);
+
+        android.widget.ImageView chessSaveIcon = new android.widget.ImageView(this);
+        chessSaveIcon.setImageDrawable(getResources().getDrawable(R.drawable.ic_chess_save, getTheme()));
+        chessSaveIcon.setScaleType(android.widget.ImageView.ScaleType.CENTER_INSIDE);
+        chessSaveIcon.setContentDescription("Save game to library");
+        chessSaveIcon.setOnClickListener(v -> chessShowSaveSheet());
+        LinearLayout.LayoutParams saveIconLp = new LinearLayout.LayoutParams(UiKit.dp(this, iconBoxDp), UiKit.dp(this, iconBoxDp));
+        saveIconLp.rightMargin = UiKit.dp(this, 14);
+        status.addView(chessSaveIcon, saveIconLp);
 
         android.widget.ImageView chessSettingsIcon = new android.widget.ImageView(this);
         chessSettingsIcon.setImageDrawable(getResources().getDrawable(R.drawable.ic_chess_settings, getTheme()));
@@ -1971,6 +1988,125 @@ public class MainActivity extends Activity implements SelectionHost {
         return CHESS_DEPTH_STEPS[0];
     }
 
+    /** The status row's save icon — writes the board's current moves/comments/result back to
+     *  the library: either overwriting {@link #chessCurrentEntry} (if this game was loaded
+     *  from one) or appending it as a new game into an existing or brand-new PGN. */
+    private void chessShowSaveSheet() {
+        if (chessBoard.mainlineSans().isEmpty()) { toast("No moves to save"); return; }
+        new Thread(() -> {
+            List<ChessLibrary.SourceSummary> sources = ChessLibrary.listSources(this);
+            runOnUiThread(() -> chessShowSaveSheetWith(sources));
+        }).start();
+    }
+
+    private void chessShowSaveSheetWith(List<ChessLibrary.SourceSummary> sources) {
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackground(UiKit.dialogBackground(this));
+        UiKit.clipRounded(this, root, UiKit.R_MD);
+        root.setPadding(2, 32, 2, UiKit.dp(this, UiKit.R_MD));
+        root.addView(UiKit.dialogTitle(this, "Save Game"));
+
+        String[] selectedSource = { chessCurrentEntry != null ? chessCurrentEntry.src
+                : (sources.isEmpty() ? null : sources.get(0).label) };
+
+        android.widget.FrameLayout scrim = UiKit.wrapScrim(this, root, 0.85f);
+        AlertDialog dialog = new AlertDialog.Builder(this, R.style.Theme_PlainPhone_RoundedDialog)
+                .setView(scrim).create();
+
+        if (chessCurrentEntry != null) {
+            root.addView(chessSettingsRow("Update this game", v -> {
+                dialog.dismiss();
+                chessUpdateCurrentEntry();
+            }));
+        }
+
+        TextView pgnRow = chessSettingsRow(chessSaveTargetLabel(selectedSource[0]), v -> {});
+        pgnRow.setOnClickListener(v -> chessPickSaveTarget(sources, chosen -> {
+            selectedSource[0] = chosen;
+            pgnRow.setText(chessSaveTargetLabel(chosen));
+        }));
+        root.addView(pgnRow);
+
+        root.addView(chessSettingsRow("Save", v -> {
+            dialog.dismiss();
+            if (selectedSource[0] == null) { toast("Choose a PGN first"); return; }
+            chessSaveAsNewGame(selectedSource[0]);
+        }));
+
+        UiKit.finishCentered(dialog, scrim);
+    }
+
+    private String chessSaveTargetLabel(String source) {
+        return "Save as new game in: " + (source == null ? "choose a PGN…" : source);
+    }
+
+    /** {@link #chessOptionSheet}'s pick-one list, sources plus a trailing "+ New PGN…" —
+     *  picking that prompts a name, declares it (see {@link ChessLibrary#createSource}) so it
+     *  shows up in the Library even before this game is actually saved into it, then hands the
+     *  new name back the same way an existing source would be. */
+    private void chessPickSaveTarget(List<ChessLibrary.SourceSummary> sources, java.util.function.Consumer<String> onPicked) {
+        String[] labels = new String[sources.size() + 1];
+        for (int i = 0; i < sources.size(); i++) labels[i] = sources.get(i).label;
+        labels[sources.size()] = "+ New PGN…";
+        chessOptionSheet("Save into", labels, index -> {
+            if (index == sources.size()) {
+                UiKit.textPrompt(this, "New PGN", "", "Create", true, name -> {
+                    new Thread(() -> ChessLibrary.createSource(this, name)).start();
+                    onPicked.accept(name);
+                });
+            } else {
+                onPicked.accept(sources.get(index).label);
+            }
+        });
+    }
+
+    private void chessUpdateCurrentEntry() {
+        ChessLibrary.Entry entry = chessCurrentEntry;
+        if (entry == null) return;
+        List<String> sans = chessBoard.mainlineSans();
+        List<String> comments = chessBoard.mainlineComments();
+        String result = chessBoard.pgnResult();
+        new Thread(() -> {
+            boolean ok = ChessLibrary.updateEntry(this, entry.id, sans, comments, result);
+            runOnUiThread(() -> toast(ok ? "Game updated" : "Could not update game"));
+        }).start();
+    }
+
+    /** Appends the board's current game as a brand-new library entry under {@code source} —
+     *  reusing {@link #chessCurrentEntry}'s own player/event tags when this game started as a
+     *  copy of one (a natural "save as" for a variation explored from a loaded game), plain
+     *  defaults otherwise. */
+    private void chessSaveAsNewGame(String source) {
+        List<String> sans = chessBoard.mainlineSans();
+        List<String> comments = chessBoard.mainlineComments();
+        String result = chessBoard.pgnResult();
+        Map<String, String> tags = new LinkedHashMap<>();
+        if (chessCurrentEntry != null) {
+            tags.put("White", chessCurrentEntry.white);
+            tags.put("Black", chessCurrentEntry.black);
+            tags.put("Event", chessCurrentEntry.event);
+            tags.put("Round", chessCurrentEntry.round);
+            tags.put("ECO", chessCurrentEntry.eco);
+            tags.put("Date", chessCurrentEntry.date);
+        } else {
+            tags.put("Event", "Plainphone study");
+            tags.put("Date", new java.text.SimpleDateFormat("yyyy.MM.dd", java.util.Locale.US).format(new java.util.Date()));
+        }
+        new Thread(() -> {
+            String id = ChessLibrary.saveGame(this, source, tags, sans, comments, result);
+            runOnUiThread(() -> {
+                if (id != null) {
+                    chessCurrentEntry = ChessLibrary.findById(this, id);
+                    updateChessMetaUi();
+                    toast("Saved to " + source);
+                } else {
+                    toast("Could not save game");
+                }
+            });
+        }).start();
+    }
+
     /** Matches {@code UiKit.promptRow}'s look — the app's one standard popup-row style. */
     private TextView chessSettingsRow(String label, View.OnClickListener listener) {
         TextView row = chessText(label, 20, Color.WHITE);
@@ -2121,7 +2257,8 @@ public class MainActivity extends Activity implements SelectionHost {
         if (!sans.isEmpty()) for (String s : sans.split(" ")) if (!s.isEmpty()) moves.add(s);
         chessCurrentEntry = id == null ? null : ChessLibrary.findById(this, id);
         updateChessMetaUi();
-        chessBoard.loadSanMovesAsync(moves, null, chessCurrentEntry != null ? chessCurrentEntry.result : null, null);
+        List<String> comments = chessCurrentEntry != null ? chessCurrentEntry.commentsForSans() : null;
+        chessBoard.loadSanMovesAsync(moves, comments, chessCurrentEntry != null ? chessCurrentEntry.result : null, null);
         toast(moves.isEmpty() ? "PGN loaded (no moves found)" : "Loaded " + white + " vs " + black);
     }
 
@@ -2164,7 +2301,7 @@ public class MainActivity extends Activity implements SelectionHost {
                         tags.put("White", e.white);
                         tags.put("Black", e.black);
                         if (!e.eco.isEmpty()) tags.put("ECO", e.eco);
-                        String pgn = Pgn.write(tags, e.sans(), e.result);
+                        String pgn = Pgn.write(tags, e.sans(), e.commentsForSans(), e.result);
                         out.write(pgn.getBytes(java.nio.charset.StandardCharsets.UTF_8));
                         out.write('\n');
                     }
@@ -2174,6 +2311,35 @@ public class MainActivity extends Activity implements SelectionHost {
             boolean success = ok;
             int count = games.size();
             runOnUiThread(() -> toast(success ? ("Exported " + count + " games") : "Could not export PGN"));
+        }).start();
+    }
+
+    /** "Export" from the Library tab's multi-select toolbar — an arbitrary set of games,
+     *  possibly spanning several PGNs, as opposed to {@link #chessExportSource}'s whole-PGN
+     *  export. */
+    private void chessExportSelected(java.util.Set<String> ids) {
+        chessExportSelectedIds = ids;
+        Intent save = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        save.addCategory(Intent.CATEGORY_OPENABLE);
+        save.setType("application/x-chess-pgn");
+        save.putExtra(Intent.EXTRA_TITLE, ids.size() + "-games.pgn");
+        startActivityForResult(save, REQUEST_CHESS_EXPORT_SELECTED);
+    }
+
+    private void handleChessExportSelected(int resultCode, Intent data) {
+        if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
+        Uri uri = data.getData();
+        java.util.Set<String> ids = chessExportSelectedIds;
+        if (ids == null) return;
+        toast("Exporting " + ids.size() + " games…");
+        new Thread(() -> {
+            String pgn = ChessLibrary.writePgn(this, ids);
+            boolean ok = false;
+            try (OutputStream out = getContentResolver().openOutputStream(uri)) {
+                if (out != null) { out.write(pgn.getBytes(java.nio.charset.StandardCharsets.UTF_8)); ok = true; }
+            } catch (Exception ignored) { }
+            boolean success = ok;
+            runOnUiThread(() -> toast(success ? ("Exported " + ids.size() + " games") : "Could not export PGN"));
         }).start();
     }
 

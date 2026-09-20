@@ -31,18 +31,34 @@ final class ChessLibrary {
     static final class Entry {
         final String id, src, white, black, event, round, eco, date, result, sansJoined;
         final long importedAt;
+        // Parallel to sans(), "" = no comment on that move. Only populated when the line was
+        // parsed with includeSans (see parseLine) — same reasoning as sansJoined itself: most
+        // callers (the browsing list) never touch moves or comments, so skip the cost for them.
+        final List<String> comments;
 
         Entry(String id, String src, String white, String black, String event, String round,
-              String eco, String date, String result, String sansJoined, long importedAt) {
+              String eco, String date, String result, String sansJoined, long importedAt,
+              List<String> comments) {
             this.id = id; this.src = src; this.white = white; this.black = black;
             this.event = event; this.round = round; this.eco = eco; this.date = date;
             this.result = result; this.sansJoined = sansJoined; this.importedAt = importedAt;
+            this.comments = comments;
         }
 
         List<String> sans() {
             if (sansJoined.isEmpty()) return new ArrayList<>();
             List<String> out = new ArrayList<>();
             for (String s : sansJoined.split(" ")) if (!s.isEmpty()) out.add(s);
+            return out;
+        }
+
+        /** {@link #comments}, padded/truncated to exactly {@link #sans()}'s length so callers
+         *  can zip the two without bounds-checking (a legacy entry saved before comments were
+         *  tracked has none at all; a truncated line, none either). */
+        List<String> commentsForSans() {
+            List<String> sans = sans();
+            List<String> out = new ArrayList<>(sans.size());
+            for (int i = 0; i < sans.size(); i++) out.add(i < comments.size() ? comments.get(i) : "");
             return out;
         }
     }
@@ -62,11 +78,95 @@ final class ChessLibrary {
         return new File(context.getFilesDir(), "chess_library.jsonl");
     }
 
+    // --- declared (possibly still-empty) sources ------------------------------------------
+
+    /** Sources a game already carries (its "src" field) show up in {@link #listSources}
+     *  automatically. An empty PGN just created via "New PGN" has no game to carry its name
+     *  anywhere — this is that name's only home until its first game is saved into it. One
+     *  JSON-Lines file, same append-then-merge shape as the library itself. */
+    private static File sourcesFile(Context context) {
+        return new File(context.getFilesDir(), "chess_sources.jsonl");
+    }
+
+    /** Declares a source name so it shows up in {@link #listSources} before it has any games
+     *  — a no-op if that name is already known (declared, or already carried by a game). */
+    static void createSource(Context context, String name) {
+        for (SourceSummary s : listSources(context)) if (s.label.equals(name)) return;
+        File f = sourcesFile(context);
+        JSONObject o = new JSONObject();
+        try {
+            o.put("name", name);
+            o.put("createdAt", System.currentTimeMillis());
+        } catch (JSONException ignored) { return; }
+        try (FileOutputStream out = new FileOutputStream(f, true)) {
+            out.write((o.toString() + "\n").getBytes(StandardCharsets.UTF_8));
+        } catch (IOException ignored) { }
+    }
+
+    /** Declared source names still with zero games — {@code name -> createdAt}. */
+    private static Map<String, Long> loadDeclaredSources(Context context) {
+        Map<String, Long> out = new LinkedHashMap<>();
+        File f = sourcesFile(context);
+        if (!f.exists()) return out;
+        try (BufferedReader r = new BufferedReader(new FileReader(f))) {
+            String line;
+            while ((line = r.readLine()) != null) {
+                if (line.isEmpty()) continue;
+                try {
+                    JSONObject o = new JSONObject(line);
+                    out.put(o.optString("name", ""), o.optLong("createdAt", 0L));
+                } catch (JSONException ignored) { }
+            }
+        } catch (IOException ignored) { }
+        out.remove("");
+        return out;
+    }
+
+    /** Removes a declared-source record, if one exists — called alongside {@code deleteSource}/
+     *  {@code renameSource} so an empty PGN's own record doesn't outlive (or keep the stale
+     *  name of) the PGN it was declared for. Rewrites the whole (typically tiny) file. */
+    private static boolean removeDeclaredSource(Context context, String name) {
+        File f = sourcesFile(context);
+        if (!f.exists()) return false;
+        List<String> keep = new ArrayList<>();
+        boolean removedAny = false;
+        try (BufferedReader r = new BufferedReader(new FileReader(f))) {
+            String line;
+            while ((line = r.readLine()) != null) {
+                if (line.isEmpty()) continue;
+                try {
+                    JSONObject o = new JSONObject(line);
+                    if (name.equals(o.optString("name", ""))) { removedAny = true; continue; }
+                } catch (JSONException ignored) { }
+                keep.add(line);
+            }
+        } catch (IOException ignored) { return false; }
+        if (!removedAny) return false;
+        File tmp = new File(context.getFilesDir(), "chess_sources.jsonl.tmp");
+        try (FileOutputStream out = new FileOutputStream(tmp, false)) {
+            StringBuilder sb = new StringBuilder();
+            for (String line : keep) sb.append(line).append('\n');
+            out.write(sb.toString().getBytes(StandardCharsets.UTF_8));
+        } catch (IOException ignored) { return false; }
+        return tmp.renameTo(f);
+    }
+
     /** Appends one line per game. Safe to call off the UI thread (does its own file I/O). */
     static void appendGames(Context context, String sourceLabel, List<Pgn.Game> games) {
         try (AppendSession session = beginAppend(context, sourceLabel)) {
             for (Pgn.Game game : games) session.append(game);
         } catch (IOException ignored) { }
+    }
+
+    /** Appends one game built directly from board state (no raw PGN text to reparse) — the
+     *  "Save game" flow. Returns the new entry's id, or {@code null} on I/O failure. */
+    static String saveGame(Context context, String sourceLabel, Map<String, String> tags,
+                           List<String> sans, List<String> comments, String result) {
+        try (AppendSession session = beginAppend(context, sourceLabel)) {
+            return session.append(tags, sans, comments, result);
+        } catch (IOException e) {
+            return null;
+        }
     }
 
     /** Streaming counterpart to {@link #appendGames} — writes one game at a time as it's
@@ -104,6 +204,37 @@ final class ChessLibrary {
                 o.put("date", game.tag("Date", "????.??.??"));
                 o.put("result", game.tag("Result", "*"));
                 o.put("sans", String.join(" ", game.sans));
+                if (game.comments != null && !game.comments.isEmpty()) {
+                    o.put("comments", new org.json.JSONArray(game.comments));
+                }
+                o.put("importedAt", now);
+            } catch (JSONException e) {
+                throw new IOException(e);
+            }
+            out.write((o.toString() + "\n").getBytes(StandardCharsets.UTF_8));
+            return id;
+        }
+
+        /** Same as {@link #append(Pgn.Game)}, built from already-known fields instead of a
+         *  parsed {@link Pgn.Game} — for saving the board's current game, which has no raw PGN
+         *  movetext to hand a {@code Game} to reparse. {@code comments} is same-length as
+         *  {@code sans}, {@code ""} where a move has none. */
+        String append(Map<String, String> tags, List<String> sans, List<String> comments, String result)
+                throws IOException {
+            String id = UUID.randomUUID().toString();
+            JSONObject o = new JSONObject();
+            try {
+                o.put("id", id);
+                o.put("src", sourceLabel);
+                o.put("white", tags.getOrDefault("White", "?"));
+                o.put("black", tags.getOrDefault("Black", "?"));
+                o.put("event", tags.getOrDefault("Event", "Game"));
+                o.put("round", tags.getOrDefault("Round", ""));
+                o.put("eco", tags.getOrDefault("ECO", ""));
+                o.put("date", tags.getOrDefault("Date", "????.??.??"));
+                o.put("result", result == null || result.isEmpty() ? "*" : result);
+                o.put("sans", String.join(" ", sans));
+                if (comments != null && !comments.isEmpty()) o.put("comments", new org.json.JSONArray(comments));
                 o.put("importedAt", now);
             } catch (JSONException e) {
                 throw new IOException(e);
@@ -123,6 +254,11 @@ final class ChessLibrary {
     private static Entry parseLine(String line, boolean includeSans) {
         try {
             JSONObject o = new JSONObject(line);
+            List<String> comments = new ArrayList<>();
+            if (includeSans) {
+                org.json.JSONArray arr = o.optJSONArray("comments");
+                if (arr != null) for (int i = 0; i < arr.length(); i++) comments.add(arr.optString(i, ""));
+            }
             return new Entry(
                     o.optString("id", ""),
                     o.optString("src", "Imported PGN"),
@@ -134,7 +270,8 @@ final class ChessLibrary {
                     o.optString("date", "????.??.??"),
                     o.optString("result", "*"),
                     includeSans ? o.optString("sans", "") : "",
-                    o.optLong("importedAt", 0L));
+                    o.optLong("importedAt", 0L),
+                    comments);
         } catch (JSONException e) {
             return null;
         }
@@ -254,9 +391,10 @@ final class ChessLibrary {
     }
 
     /** One row per distinct imported PGN, for the "PGN files" screen and the
-     *  generate/play-from pickers. {@code importedAt} is the earliest timestamp seen for that
-     *  source (imports only ever append, so that's stable even if the same source label is
-     *  imported into more than once). */
+     *  generate/play-from pickers — plus any {@link #createSource}-declared name that has no
+     *  games yet. {@code importedAt} is the earliest timestamp seen for that source (imports
+     *  only ever append, so that's stable even if the same source label is imported into more
+     *  than once); a still-empty declared source uses its own {@code createdAt}. */
     static List<SourceSummary> listSources(Context context) {
         Map<String, int[]> counts = new LinkedHashMap<>(); // label -> {count}
         Map<String, Long> earliest = new LinkedHashMap<>();
@@ -264,6 +402,10 @@ final class ChessLibrary {
             counts.computeIfAbsent(e.src, k -> new int[1])[0]++;
             Long cur = earliest.get(e.src);
             if (cur == null || (e.importedAt > 0 && e.importedAt < cur)) earliest.put(e.src, e.importedAt);
+        }
+        for (Map.Entry<String, Long> declared : loadDeclaredSources(context).entrySet()) {
+            counts.computeIfAbsent(declared.getKey(), k -> new int[1]);
+            earliest.putIfAbsent(declared.getKey(), declared.getValue());
         }
         List<SourceSummary> out = new ArrayList<>();
         for (Map.Entry<String, int[]> en : counts.entrySet()) {
@@ -278,8 +420,10 @@ final class ChessLibrary {
      *  {@link Config#clearChessPuzzlegenCursor}) and for cascade-deleting that source's puzzles
      *  (see {@link ChessPuzzles#deleteBySource}) — this method only touches the library file. */
     static boolean deleteSource(Context context, String sourceLabel) {
+        // An empty PGN's only record of itself — declared but no games ever saved into it.
+        boolean removedDeclared = removeDeclaredSource(context, sourceLabel);
         File f = file(context);
-        if (!f.exists()) return false;
+        if (!f.exists()) return removedDeclared;
         List<String> keep = new ArrayList<>();
         boolean removedAny = false;
         try (BufferedReader r = new BufferedReader(new FileReader(f))) {
@@ -290,15 +434,9 @@ final class ChessLibrary {
                 if (e != null && e.src.equals(sourceLabel)) { removedAny = true; continue; }
                 keep.add(line);
             }
-        } catch (IOException ignored) { return false; }
-        if (!removedAny) return false;
-        File tmp = new File(context.getFilesDir(), "chess_library.jsonl.tmp");
-        try (FileOutputStream out = new FileOutputStream(tmp, false)) {
-            StringBuilder sb = new StringBuilder();
-            for (String line : keep) sb.append(line).append('\n');
-            out.write(sb.toString().getBytes(StandardCharsets.UTF_8));
-        } catch (IOException ignored) { return false; }
-        return tmp.renameTo(f);
+        } catch (IOException ignored) { return removedDeclared; }
+        if (!removedAny) return removedDeclared;
+        return writeLines(context, keep);
     }
 
     /** Renames a PGN source across every game that carries it — rewrites the whole file (read
@@ -308,8 +446,12 @@ final class ChessLibrary {
      *  ({@code Config#renameChessPuzzlegenCursor}) — this method only touches the library
      *  file. */
     static boolean renameSource(Context context, String oldLabel, String newLabel) {
+        // An empty PGN's own record — rename it too, so it doesn't keep the stale name
+        // once games (if any get saved later) would carry the new one.
+        boolean renamedDeclared = removeDeclaredSource(context, oldLabel);
+        if (renamedDeclared) createSource(context, newLabel);
         File f = file(context);
-        if (!f.exists()) return false;
+        if (!f.exists()) return renamedDeclared;
         List<String> lines = new ArrayList<>();
         boolean changed = false;
         try (BufferedReader r = new BufferedReader(new FileReader(f))) {
@@ -326,15 +468,118 @@ final class ChessLibrary {
                 } catch (JSONException ignored) { }
                 lines.add(line);
             }
-        } catch (IOException ignored) { return false; }
-        if (!changed) return false;
+        } catch (IOException ignored) { return renamedDeclared; }
+        if (!changed) return renamedDeclared;
+        return writeLines(context, lines);
+    }
+
+    /** Shared atomic-rewrite tail for every whole-file mutation (delete/rename a source,
+     *  update/move/delete a game): write {@code lines} to a tmp file, then rename over the
+     *  real one. */
+    private static boolean writeLines(Context context, List<String> lines) {
         File tmp = new File(context.getFilesDir(), "chess_library.jsonl.tmp");
         try (FileOutputStream out = new FileOutputStream(tmp, false)) {
             StringBuilder sb = new StringBuilder();
-            for (String l : lines) sb.append(l).append('\n');
+            for (String line : lines) sb.append(line).append('\n');
             out.write(sb.toString().getBytes(StandardCharsets.UTF_8));
         } catch (IOException ignored) { return false; }
-        return tmp.renameTo(f);
+        return tmp.renameTo(file(context));
+    }
+
+    /** Overwrites one game's moves/comments/result in place — the "update this game" save
+     *  flow. Rewrites the whole file (see {@link #deleteSource}'s own note on why) filtered to
+     *  the one line whose id matches; every other line passes through untouched. */
+    static boolean updateEntry(Context context, String id, List<String> sans, List<String> comments, String result) {
+        File f = file(context);
+        if (!f.exists()) return false;
+        List<String> lines = new ArrayList<>();
+        boolean changed = false;
+        try (BufferedReader r = new BufferedReader(new FileReader(f))) {
+            String line;
+            while ((line = r.readLine()) != null) {
+                if (line.isEmpty()) continue;
+                try {
+                    JSONObject o = new JSONObject(line);
+                    if (id.equals(o.optString("id", ""))) {
+                        o.put("sans", String.join(" ", sans));
+                        if (comments != null && !comments.isEmpty()) o.put("comments", new org.json.JSONArray(comments));
+                        else o.remove("comments");
+                        o.put("result", result == null || result.isEmpty() ? "*" : result);
+                        line = o.toString();
+                        changed = true;
+                    }
+                } catch (JSONException ignored) { }
+                lines.add(line);
+            }
+        } catch (IOException ignored) { return false; }
+        if (!changed) return false;
+        return writeLines(context, lines);
+    }
+
+    /** Reassigns {@code ids}' "src" to {@code toSource} — moving games between PGNs. */
+    static boolean moveGames(Context context, java.util.Set<String> ids, String toSource) {
+        File f = file(context);
+        if (!f.exists()) return false;
+        List<String> lines = new ArrayList<>();
+        boolean changed = false;
+        try (BufferedReader r = new BufferedReader(new FileReader(f))) {
+            String line;
+            while ((line = r.readLine()) != null) {
+                if (line.isEmpty()) continue;
+                try {
+                    JSONObject o = new JSONObject(line);
+                    if (ids.contains(o.optString("id", ""))) {
+                        o.put("src", toSource);
+                        line = o.toString();
+                        changed = true;
+                    }
+                } catch (JSONException ignored) { }
+                lines.add(line);
+            }
+        } catch (IOException ignored) { return false; }
+        if (!changed) return false;
+        return writeLines(context, lines);
+    }
+
+    /** Removes {@code ids} — deleting individual games, as opposed to {@link #deleteSource}'s
+     *  whole-PGN delete. Callers are responsible for cascade-deleting those games' puzzles,
+     *  same caveat as {@code deleteSource}. */
+    static boolean deleteGames(Context context, java.util.Set<String> ids) {
+        File f = file(context);
+        if (!f.exists()) return false;
+        List<String> keep = new ArrayList<>();
+        boolean removedAny = false;
+        try (BufferedReader r = new BufferedReader(new FileReader(f))) {
+            String line;
+            while ((line = r.readLine()) != null) {
+                if (line.isEmpty()) continue;
+                Entry e = parseLine(line, false);
+                if (e != null && ids.contains(e.id)) { removedAny = true; continue; }
+                keep.add(line);
+            }
+        } catch (IOException ignored) { return false; }
+        if (!removedAny) return false;
+        return writeLines(context, keep);
+    }
+
+    /** PGN text for an arbitrary set of games (multi-select export) — tags, moves and comments
+     *  for each, one game after another, same {@link Pgn#write} round-trip a single-game
+     *  export already uses. */
+    static String writePgn(Context context, java.util.Set<String> ids) {
+        StringBuilder sb = new StringBuilder();
+        for (String id : ids) {
+            Entry full = findById(context, id);
+            if (full == null) continue;
+            Map<String, String> tags = new LinkedHashMap<>();
+            tags.put("White", full.white);
+            tags.put("Black", full.black);
+            tags.put("Event", full.event);
+            tags.put("Round", full.round);
+            tags.put("Date", full.date);
+            sb.append(Pgn.write(tags, full.sans(), full.commentsForSans(), full.result));
+            sb.append('\n');
+        }
+        return sb.toString();
     }
 
     interface LineCallback {

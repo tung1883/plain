@@ -39,6 +39,9 @@ final class ChessLibraryPanel {
         /** "Export this PGN" from a source group's options menu — every game under
          *  {@code source}, not just whatever's on the board. */
         void onExportSource(String source);
+        /** "Export" from the multi-select toolbar — an arbitrary set of games, possibly
+         *  spanning several PGNs, as opposed to {@link #onExportSource}'s whole-PGN export. */
+        void onExportSelected(Set<String> ids);
     }
 
     /** One row in the grouped (unfiltered) list — a collapsible PGN source header, standing
@@ -76,6 +79,12 @@ final class ChessLibraryPanel {
     private final Set<String> filterResults = new LinkedHashSet<>();
     private final Set<String> filterSources = new LinkedHashSet<>();
 
+    // --- multi-select (move / export / delete games) ---------------------------------
+    private boolean selectMode = false;
+    private final Set<String> selectedIds = new LinkedHashSet<>();
+    private View selectBar;
+    private TextView selectCountLabel;
+
     ChessLibraryPanel(Activity host, Listener listener) {
         this.host = host;
         this.listener = listener;
@@ -91,6 +100,7 @@ final class ChessLibraryPanel {
         headIcons.addView(headIcon(R.drawable.ic_chess_folder, "PGN files", v -> listener.onOpenPgnFiles()));
         headIcons.addView(headIcon(R.drawable.ic_chess_import, "Import PGN", v -> listener.onImportPgn()));
         headIcons.addView(headIcon(R.drawable.ic_chess_export, "Export PGN", v -> listener.onExportPgn()));
+        headIcons.addView(headIcon(R.drawable.ic_chess_new_pgn, "New PGN", v -> promptCreatePgn()));
         root.addView(headIcons);
 
         root.addView(buildJobCard());
@@ -165,14 +175,35 @@ final class ChessLibraryPanel {
                 rebuildRows(true); // a HeaderRow only ever appears in the grouped view
                 return;
             }
-            String entryId = ((ChessLibrary.Entry) item).id;
+            ChessLibrary.Entry entry = (ChessLibrary.Entry) item;
+            if (selectMode) { toggleSelected(entry.id); return; }
             new Thread(() -> {
-                ChessLibrary.Entry full = ChessLibrary.findById(host, entryId);
+                ChessLibrary.Entry full = ChessLibrary.findById(host, entry.id);
                 if (full != null) host.runOnUiThread(() -> listener.onGameChosen(full));
             }).start();
         });
+        // Long-press enters multi-select (for move/export/delete): a game row selects just
+        // itself, a PGN header selects every game currently shown under it.
+        list.setOnItemLongClickListener((parent, view, position, id) -> {
+            Object item = rows.get(position);
+            enterSelectMode();
+            if (item instanceof HeaderRow) {
+                String source = ((HeaderRow) item).source;
+                for (ChessLibrary.Entry e : shown) if (e.src.equals(source)) selectedIds.add(e.id);
+                expandedSources.add(source);
+                rebuildRows(true);
+            } else {
+                selectedIds.add(((ChessLibrary.Entry) item).id);
+                adapter.notifyDataSetChanged();
+            }
+            updateSelectBar();
+            return true;
+        });
         root.addView(list, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+
+        selectBar = buildSelectBar();
+        root.addView(selectBar);
 
         search.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
@@ -529,9 +560,166 @@ final class ChessLibraryPanel {
     private void bindRow(View row, ChessLibrary.Entry e) {
         LinearLayout box = (LinearLayout) row;
         LinearLayout lines = (LinearLayout) box.getChildAt(0);
-        ((TextView) lines.getChildAt(0)).setText(ChessBoardView.shortName(e.white) + " vs " + ChessBoardView.shortName(e.black));
+        String marker = selectMode ? (selectedIds.contains(e.id) ? "[x] " : "[ ] ") : "";
+        ((TextView) lines.getChildAt(0)).setText(marker + ChessBoardView.shortName(e.white) + " vs " + ChessBoardView.shortName(e.black));
         ((TextView) lines.getChildAt(1)).setText(e.event + " · " + e.date);
         ((TextView) box.getChildAt(1)).setText(e.result);
+    }
+
+    // --- multi-select: move / export / delete games ---------------------------------
+
+    private void enterSelectMode() {
+        if (selectMode) return;
+        selectMode = true;
+        selectedIds.clear();
+        selectBar.setVisibility(View.VISIBLE);
+    }
+
+    private void exitSelectMode() {
+        selectMode = false;
+        selectedIds.clear();
+        selectBar.setVisibility(View.GONE);
+        adapter.notifyDataSetChanged();
+    }
+
+    private void toggleSelected(String id) {
+        if (!selectedIds.remove(id)) selectedIds.add(id);
+        if (selectedIds.isEmpty()) exitSelectMode();
+        else { updateSelectBar(); adapter.notifyDataSetChanged(); }
+    }
+
+    private void updateSelectBar() {
+        selectCountLabel.setText(selectedIds.size() + " selected");
+    }
+
+    private View buildSelectBar() {
+        LinearLayout bar = new LinearLayout(host);
+        bar.setOrientation(LinearLayout.HORIZONTAL);
+        bar.setGravity(Gravity.CENTER_VERTICAL);
+        bar.setBackgroundColor(0xFF0A0A0A);
+        bar.setPadding(UiKit.dp(host, 20), UiKit.dp(host, 12), UiKit.dp(host, 20), UiKit.dp(host, 12));
+
+        selectCountLabel = text(14, Color.WHITE);
+        bar.addView(selectCountLabel, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        bar.addView(selectBarAction("Move", Color.WHITE, v -> promptMoveSelected()));
+        bar.addView(selectBarAction("Export", Color.WHITE, v -> exportSelected()));
+        bar.addView(selectBarAction("Delete", 0xFFE05C5C, v -> confirmDeleteSelected()));
+        bar.addView(selectBarAction("Cancel", 0xFF8A8A8A, v -> exitSelectMode()));
+
+        bar.setVisibility(View.GONE);
+        return bar;
+    }
+
+    private TextView selectBarAction(String label, int color, View.OnClickListener onClick) {
+        TextView t = text(14, color);
+        t.setText(label);
+        t.setPadding(UiKit.dp(host, 14), UiKit.dp(host, 8), UiKit.dp(host, 14), UiKit.dp(host, 8));
+        t.setOnClickListener(onClick);
+        return t;
+    }
+
+    private void promptMoveSelected() {
+        Set<String> ids = new LinkedHashSet<>(selectedIds);
+        if (ids.isEmpty()) return;
+        new Thread(() -> {
+            List<ChessLibrary.SourceSummary> sources = ChessLibrary.listSources(host);
+            host.runOnUiThread(() -> showMoveDialog(ids, sources));
+        }).start();
+    }
+
+    private void showMoveDialog(Set<String> ids, List<ChessLibrary.SourceSummary> sources) {
+        LinearLayout box = new LinearLayout(host);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setBackground(UiKit.dialogBackground(host));
+        UiKit.clipRounded(host, box, UiKit.R_MD);
+        box.setPadding(2, 32, 2, UiKit.dp(host, UiKit.R_MD));
+        box.addView(UiKit.dialogTitle(host, "Move " + ids.size() + (ids.size() == 1 ? " game to" : " games to")));
+
+        android.widget.FrameLayout scrim = UiKit.wrapScrim(host, box, 0.85f);
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(
+                host, R.style.Theme_PlainPhone_RoundedDialog).setView(scrim).create();
+
+        for (ChessLibrary.SourceSummary s : sources) {
+            box.addView(optionRow(s.label + " (" + s.gameCount + ")", Color.WHITE, v -> {
+                dialog.dismiss();
+                moveSelectedTo(ids, s.label);
+            }));
+        }
+        box.addView(optionRow("+ New PGN…", 0xFF4A9EFF, v -> {
+            dialog.dismiss();
+            UiKit.textPrompt(host, "New PGN", "", "Create", true, name -> {
+                new Thread(() -> ChessLibrary.createSource(host, name)).start();
+                moveSelectedTo(ids, name);
+            });
+        }));
+        box.addView(optionRow("Cancel", 0xFF8A8A8A, v -> dialog.dismiss()));
+
+        UiKit.finishCentered(dialog, scrim);
+    }
+
+    private void moveSelectedTo(Set<String> ids, String toSource) {
+        new Thread(() -> {
+            ChessLibrary.moveGames(host, ids, toSource);
+            host.runOnUiThread(() -> { exitSelectMode(); refresh(); });
+        }).start();
+    }
+
+    private void exportSelected() {
+        Set<String> ids = new LinkedHashSet<>(selectedIds);
+        if (ids.isEmpty()) return;
+        exitSelectMode();
+        listener.onExportSelected(ids);
+    }
+
+    private void confirmDeleteSelected() {
+        Set<String> ids = new LinkedHashSet<>(selectedIds);
+        if (ids.isEmpty()) return;
+        VaultUi.confirm(host, "Delete " + ids.size() + (ids.size() == 1 ? " game?" : " games?"), null,
+                "Delete", () -> new Thread(() -> {
+                    ChessLibrary.deleteGames(host, ids);
+                    host.runOnUiThread(() -> { exitSelectMode(); refresh(); });
+                }).start(),
+                "Cancel", () -> { });
+    }
+
+    private void promptCreatePgn() {
+        LinearLayout box = new LinearLayout(host);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setBackground(UiKit.dialogBackground(host));
+        UiKit.clipRounded(host, box, UiKit.R_MD);
+        box.setPadding(2, 32, 2, UiKit.dp(host, UiKit.R_MD));
+        box.addView(UiKit.dialogTitle(host, "New PGN"));
+
+        EditText input = new EditText(host);
+        input.setBackground(UiKit.rounded(host, Color.BLACK, Color.WHITE, 2f, UiKit.R_SM));
+        input.setTextColor(Color.WHITE);
+        input.setTypeface(Fonts.current(host));
+        input.setSingleLine(true);
+        input.setPadding(UiKit.dp(host, 14), UiKit.dp(host, 10), UiKit.dp(host, 14), UiKit.dp(host, 10));
+        LinearLayout.LayoutParams inputLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        inputLp.leftMargin = UiKit.dp(host, 16);
+        inputLp.rightMargin = UiKit.dp(host, 16);
+        inputLp.bottomMargin = UiKit.dp(host, 10);
+        box.addView(input, inputLp);
+
+        android.widget.FrameLayout scrim = UiKit.wrapScrim(host, box, 0.85f);
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(
+                host, R.style.Theme_PlainPhone_RoundedDialog).setView(scrim).create();
+
+        box.addView(optionRow("Create", Color.WHITE, v -> {
+            String name = input.getText().toString().trim();
+            dialog.dismiss();
+            if (name.isEmpty()) return;
+            new Thread(() -> {
+                ChessLibrary.createSource(host, name);
+                host.runOnUiThread(this::refresh);
+            }).start();
+        }));
+        box.addView(optionRow("Cancel", 0xFF8A8A8A, v -> dialog.dismiss()));
+
+        UiKit.finishCentered(dialog, scrim);
     }
 
     // --- PGN group headers ----------------------------------------------------
