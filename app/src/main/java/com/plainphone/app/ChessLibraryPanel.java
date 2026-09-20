@@ -524,6 +524,16 @@ final class ChessLibraryPanel {
         return row;
     }
 
+    /** A small "⋮" tap target, plain symmetric CENTER_INSIDE — box is sized to hug the icon so
+     *  the press highlight sits centered on the dots instead of offset into dead space. */
+    private ImageView kebabIcon() {
+        ImageView kebab = new ImageView(host);
+        kebab.setImageResource(R.drawable.ic_kebab);
+        kebab.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        kebab.setBackground(UiKit.pressable(host, Color.TRANSPARENT, Color.DKGRAY, 0, 0f, 4f));
+        return kebab;
+    }
+
     private View headIcon(int drawableRes, String description, View.OnClickListener onClick) {
         android.widget.ImageView icon = new android.widget.ImageView(host);
         icon.setImageDrawable(host.getResources().getDrawable(drawableRes, host.getTheme()));
@@ -540,7 +550,8 @@ final class ChessLibraryPanel {
     private View row() {
         LinearLayout row = new LinearLayout(host);
         row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setPadding(UiKit.dp(host, 24), UiKit.dp(host, 12), UiKit.dp(host, 24), UiKit.dp(host, 12));
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(UiKit.dp(host, 24), UiKit.dp(host, 12), UiKit.dp(host, 20), UiKit.dp(host, 12));
         StateListDrawable bg = new StateListDrawable();
         bg.addState(new int[]{android.R.attr.state_pressed}, new ColorDrawable(Color.DKGRAY));
         bg.addState(new int[]{}, new ColorDrawable(Color.BLACK));
@@ -551,15 +562,12 @@ final class ChessLibraryPanel {
         TextView meta = text(12, 0xFF8A8A8A);
         meta.setPadding(0, UiKit.dp(host, 3), 0, 0);
         lines.addView(meta);
-        row.addView(lines, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        LinearLayout.LayoutParams linesLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        linesLp.rightMargin = UiKit.dp(host, 30);
+        row.addView(lines, linesLp);
         TextView result = text(13, 0xFF8A8A8A);
-        result.setPadding(UiKit.dp(host, 10), 0, 0, 0);
         row.addView(result);
-        TextView kebab = text(18, 0xFF8A8A8A);
-        kebab.setText("⋮");
-        kebab.setGravity(Gravity.CENTER);
-        kebab.setBackground(UiKit.pressable(host, Color.BLACK, Color.DKGRAY, 0, 0f, UiKit.R_SM));
-        row.addView(kebab, new LinearLayout.LayoutParams(UiKit.dp(host, 36), UiKit.dp(host, 36)));
+        row.addView(kebabIcon(), new LinearLayout.LayoutParams(UiKit.dp(host, 20), UiKit.dp(host, 20)));
         return row;
     }
 
@@ -778,7 +786,7 @@ final class ChessLibraryPanel {
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setBackgroundColor(0xFF1C1C1C);
-        row.setPadding(UiKit.dp(host, 20), UiKit.dp(host, 14), UiKit.dp(host, 10), UiKit.dp(host, 14));
+        row.setPadding(UiKit.dp(host, 20), UiKit.dp(host, 14), UiKit.dp(host, 20), UiKit.dp(host, 14));
 
         ImageView chevron = new ImageView(host);
         chevron.setImageResource(R.drawable.ic_chevron_right);
@@ -796,11 +804,7 @@ final class ChessLibraryPanel {
         lines.addView(meta);
         row.addView(lines, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
-        TextView kebab = text(18, 0xFF8A8A8A);
-        kebab.setText("⋮");
-        kebab.setGravity(Gravity.CENTER);
-        kebab.setBackground(UiKit.pressable(host, 0xFF1C1C1C, Color.DKGRAY, 0, 0f, UiKit.R_SM));
-        row.addView(kebab, new LinearLayout.LayoutParams(UiKit.dp(host, 40), UiKit.dp(host, 40)));
+        row.addView(kebabIcon(), new LinearLayout.LayoutParams(UiKit.dp(host, 20), UiKit.dp(host, 20)));
 
         wrap.addView(row);
 
