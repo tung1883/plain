@@ -62,6 +62,10 @@ final class ChessBoardView extends View {
     // newer one.
     private List<String> engineSummary = new ArrayList<>();
     private int analysisGeneration;
+    // True only inside loadSanMoves's replay loop — suppresses commitMove/restoreNode's own
+    // per-move onChanged/requestAnalysis so replaying a whole game doesn't queue one engine
+    // analysis request per ply (see the comments at each call site).
+    private boolean bulkLoading;
 
     // --- puzzle-solving mode ---------------------------------------------
     // While active, a tap only commits if it matches the next expected move in
@@ -257,6 +261,12 @@ final class ChessBoardView extends View {
      *  the library always come back through the no-comments overload above. */
     void loadSanMoves(List<String> sans, List<String> comments) {
         resetToStartPosition();
+        // See bulkLoading's own comment: without this, every one of these commitMove calls
+        // fired a full Stockfish analysis request for a position nobody will ever see — a
+        // 60-move game meant 60 queued engine searches (each one fully run before its
+        // result got discarded by the generation check), which is what made opening a game
+        // from the library take several seconds even after the actual file lookup got fast.
+        bulkLoading = true;
         for (int i = 0; i < sans.size(); i++) {
             String san = normalizeSan(sans.get(i));
             int[] move = findMoveBySan(san);
@@ -267,9 +277,12 @@ final class ChessBoardView extends View {
                 if (c != null && !c.isEmpty()) current.comment = c;
             }
         }
+        bulkLoading = false;
         // Replaying leaves `current` at the last move (commitMove always advances it) — the
         // whole game is still there to step through via the transport row or moves grid, but
         // a newly-opened game should show its starting position, not jump straight to the end.
+        // bulkLoading is already false here, so this restoreNode fires the one real analysis
+        // request, for the position actually shown.
         restoreNode(root);
     }
 
@@ -716,8 +729,14 @@ final class ChessBoardView extends View {
         castleRights = node.castleRights;
         selectedRow = selectedCol = -1;
         updateGameOverStatus();
-        onChanged.run();
-        requestAnalysis();
+        // Suppressed during loadSanMoves's replay (see bulkLoading) — a move already in the
+        // tree lands here via commitMove's own reuse-existing-child branch, and firing a
+        // full engine analysis request for every one of those, mid-replay, is the same
+        // wasted-Stockfish-searches problem commitMove's own guard below exists for.
+        if (!bulkLoading) {
+            onChanged.run();
+            requestAnalysis();
+        }
         invalidate();
     }
 
@@ -1139,8 +1158,17 @@ final class ChessBoardView extends View {
         }
         selectedRow = selectedCol = -1;
         updateGameOverStatus();
-        onChanged.run();
-        requestAnalysis();
+        // Suppressed during loadSanMoves's whole-game replay (see bulkLoading) — firing a
+        // full engine analysis request per ply there meant a 60-move game queued 60
+        // sequential Stockfish searches, all but the last discarded on arrival (the
+        // generation guard in paintAnalysis), before the position actually worth analyzing
+        // (the one loadSanMoves settles on afterward) got its turn. The single-move paths
+        // that still want this every time (touch input, transport buttons, puzzle
+        // auto-reply) are unaffected — bulkLoading is only ever true inside that one loop.
+        if (!bulkLoading) {
+            onChanged.run();
+            requestAnalysis();
+        }
     }
 
     private String coordinate(int row, int col) { return "" + (char)('a' + col) + (char)('8' - row); }

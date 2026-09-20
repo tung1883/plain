@@ -1235,6 +1235,11 @@ public class MainActivity extends Activity implements SelectionHost {
     /** Refreshes the meta block + PGN stepper from {@link #chessCurrentEntry} — called
      *  whenever a game is (re)loaded onto the board. Cheap enough to just re-run in full
      *  rather than diffing what changed. */
+    /** Bumped every call — a background stepper computation (below) that finishes after a
+     *  newer one started (rapid game-to-game taps) recognizes itself as stale and drops its
+     *  result instead of overwriting the stepper with a wrong game's numbers. */
+    private int chessMetaStepperGeneration;
+
     private void updateChessMetaUi() {
         if (chessMetaBlock == null) return;
         ChessLibrary.Entry e = chessCurrentEntry;
@@ -1250,16 +1255,29 @@ public class MainActivity extends Activity implements SelectionHost {
         chessMetaOpening.setText(e.eco);
         chessMetaOpening.setVisibility(e.eco.isEmpty() ? View.GONE : View.VISIBLE);
         chessMetaResult.setText(e.result);
-
-        List<ChessLibrary.Entry> siblings = ChessLibrary.loadBySource(this, e.src);
-        int index = -1;
-        for (int i = 0; i < siblings.size(); i++) if (siblings.get(i).id.equals(e.id)) { index = i; break; }
-        // siblings is newest-first; show the PGN's own file order (oldest-first) to match
-        // how a human reading the source file would count games in it.
-        int total = siblings.size();
-        int posFromEnd = index < 0 ? 0 : total - index;
-        chessPgnStepper.setText(index < 0 ? "" : "‹ Game " + posFromEnd + " of " + total + " ›");
         chessPgnSourceChip.setText(e.src + " ›");
+
+        // "Game N of M" needs every sibling from the same source (ChessLibrary.loadBySource,
+        // an O(library size) filter) just to find this one entry's position — on the UI
+        // thread, that's a multi-second block on every single game load once the library
+        // has thousands of games. Off-thread instead; the stepper just appears a moment
+        // after everything else, rather than the board/toast waiting on it too.
+        chessPgnStepper.setText("");
+        int gen = ++chessMetaStepperGeneration;
+        new Thread(() -> {
+            List<ChessLibrary.Entry> siblings = ChessLibrary.loadBySource(this, e.src);
+            int index = -1;
+            for (int i = 0; i < siblings.size(); i++) if (siblings.get(i).id.equals(e.id)) { index = i; break; }
+            // siblings is newest-first; show the PGN's own file order (oldest-first) to match
+            // how a human reading the source file would count games in it.
+            int total = siblings.size();
+            int posFromEnd = index < 0 ? 0 : total - index;
+            String stepperText = index < 0 ? "" : "‹ Game " + posFromEnd + " of " + total + " ›";
+            runOnUiThread(() -> {
+                if (gen != chessMetaStepperGeneration) return;
+                chessPgnStepper.setText(stepperText);
+            });
+        }).start();
     }
 
     private static float clamp(float v, float lo, float hi) {

@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -210,11 +211,42 @@ final class ChessLibrary {
     /** A single entry by its stable id, moves included, or {@code null} if it's gone (e.g. its
      *  source was deleted since the caller last looked it up). Always a fresh streamed read —
      *  never {@link #loadAll}'s cache, which deliberately drops every entry's moves. */
+    // id -> 1-based line number, keyed by the file's own mtime — same cache-until-changed
+    // pattern as loadAll's own cache. Without this, findById had to scanFrom(0) and stream
+    // the WHOLE file oldest-first on every single tap; the Library list shows newest-first,
+    // so tapping a just-imported game (the common case — it's at the top) meant parsing
+    // nearly every line, moves included, in a 12,000+-game library before reaching a match.
+    // The index build itself is still one full pass, but it only re-runs when the file
+    // actually changes (a new import, a delete, a rename) — every tap in between is one
+    // HashMap lookup plus a single-line read via scanFrom's skip-fast-path.
+    private static Map<String, Integer> idIndex;
+    private static long idIndexMtime = -1;
+
+    private static synchronized void ensureIdIndex(Context context) {
+        File f = file(context);
+        long mtime = f.exists() ? f.lastModified() : -1;
+        if (idIndex != null && mtime == idIndexMtime) return;
+        Map<String, Integer> out = new HashMap<>();
+        scanFrom(context, 0, (lineNumber, entry) -> {
+            out.put(entry.id, lineNumber);
+            return true;
+        });
+        idIndex = out;
+        idIndexMtime = mtime;
+    }
+
+    /** A single entry by its stable id, moves included, or {@code null} if it's gone (e.g. its
+     *  source was deleted since the caller last looked it up). Always a fresh streamed
+     *  single-line read for the entry itself — never {@link #loadAll}'s cache, which
+     *  deliberately drops every entry's moves — but the id-to-line lookup that gets it there
+     *  is indexed (see {@link #ensureIdIndex}), not a full-file scan. */
     static Entry findById(Context context, String id) {
         if (id == null) return null;
+        ensureIdIndex(context);
+        Integer line = idIndex.get(id);
+        if (line == null) return null;
         Entry[] found = new Entry[1];
-        scanFrom(context, 0, (lineNumber, entry) -> {
-            if (!id.equals(entry.id)) return true;
+        scanFrom(context, line - 1, (lineNumber, entry) -> {
             found[0] = entry;
             return false;
         });
