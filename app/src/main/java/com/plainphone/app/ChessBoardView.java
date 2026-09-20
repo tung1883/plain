@@ -54,6 +54,12 @@ final class ChessBoardView extends View {
     private int light = 0xFF393A3C, dark = 0xFF1D1E20;
     private Bitmap boardLightTile, boardDarkTile;
     private String gameOverText; // null while the game (at the displayed position) is ongoing
+    // The imported/pasted game's own recorded PGN result ("1-0"/"0-1"/"1/2-1/2"), set via
+    // setKnownResult once a library entry or a freshly-parsed PGN carries one — most real
+    // games end by resignation/draw agreement/time, not an actual mate or stalemate on the
+    // board, so pgnResult() can't derive those from gameOverText the way it does for a game
+    // played out live here. "*" (PGN's own "still open" token) means none is known.
+    private String knownResult = "*";
     // Latest background-analysis result as display lines ("+0.34 d14  Nf3 Nc6 Bb5 Bb4 O-O"),
     // one per MultiPV candidate — kept as separate strings rather than one joined blob so the
     // UI can ellipsize each line on its own instead of letting a long one wrap to a second
@@ -133,6 +139,7 @@ final class ChessBoardView extends View {
         draggingPiece = false;
         dragRow = dragCol = -1;
         puzzleMode = false;
+        knownResult = "*";
         updateGameOverStatus();
         onChanged.run();
         requestAnalysis();
@@ -178,6 +185,7 @@ final class ChessBoardView extends View {
         puzzleMode = true;
         puzzleSolution = new ArrayList<>(solutionUci);
         puzzleSolved = false;
+        knownResult = "*"; // a puzzle position has no PGN game result to show
         onPuzzleWrongMove = onWrongMove;
         onPuzzleSolved = onSolved;
 
@@ -615,11 +623,23 @@ final class ChessBoardView extends View {
         return out;
     }
 
-    /** The PGN Result tag for the mainline's own ending — "*" (still open, or the board
-     *  isn't currently sitting at the mainline's tip so there's nothing decisive to read)
-     *  unless {@code current} is actually there and {@link #gameOverText} says the game
-     *  ended. */
+    /** Records the imported/pasted game's own PGN result, for {@link #pgnResult} to prefer
+     *  over its own checkmate/stalemate guess — {@code null} or empty (no "Result" tag, or
+     *  it was PGN's own "?"/"*" placeholder) is treated as "still open", same as never
+     *  having called this at all. Cleared back to that by {@link #resetToStartPosition}
+     *  (and so by {@link #loadSanMoves}, which calls it first), so calling this is always
+     *  the caller's job to do again after loading a game whose result it actually knows. */
+    void setKnownResult(String result) {
+        knownResult = (result == null || result.isEmpty() || result.equals("?")) ? "*" : result;
+    }
+
+    /** The PGN Result tag for the mainline's own ending: the imported/pasted game's own
+     *  recorded result if {@link #setKnownResult} was told one, else "*" (still open, or the
+     *  board isn't currently sitting at the mainline's tip so there's nothing decisive to
+     *  read) unless {@code current} is actually there and {@link #gameOverText} says a game
+     *  played out live here just ended. */
     String pgnResult() {
+        if (!knownResult.equals("*")) return knownResult;
         if (current != mainTip(root) || gameOverText == null) return "*";
         if (gameOverText.startsWith("Checkmate")) {
             return gameOverText.contains("White wins") ? "1-0" : "0-1";

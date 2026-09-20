@@ -1371,6 +1371,7 @@ public class MainActivity extends Activity implements SelectionHost {
         chessCurrentEntry = entry;
         updateChessMetaUi();
         chessBoard.loadSanMoves(entry.sans());
+        chessBoard.setKnownResult(entry.result);
         chessSelectTab(0);
         toast("Loaded " + entry.white + " vs " + entry.black);
     }
@@ -2146,6 +2147,7 @@ public class MainActivity extends Activity implements SelectionHost {
         chessCurrentEntry = id == null ? null : ChessLibrary.findById(this, id);
         updateChessMetaUi();
         chessBoard.loadSanMoves(moves);
+        chessBoard.setKnownResult(chessCurrentEntry != null ? chessCurrentEntry.result : null);
         toast(moves.isEmpty() ? "PGN loaded (no moves found)" : "Loaded " + white + " vs " + black);
     }
 

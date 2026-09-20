@@ -53,6 +53,12 @@ final class MovesGrid extends LinearLayout {
         ChessBoardView.DisplayLine mainLine = lines.get(0);
         addMainLineGrid(host, mainLine.nodes, currentNode);
 
+        // Standard PGN placement: the result token right after the mainline's last move,
+        // ahead of any variations. Hidden while it's still "*" (ChessBoardView#pgnResult's
+        // own "unknown/still open" sentinel) — most positions loaded here never get one.
+        String result = board.pgnResult();
+        if (!"*".equals(result)) addView(resultRow(host, result));
+
         for (int i = 1; i < lines.size(); i++) {
             addView(buildVariationRow(host, lines.get(i), currentNode));
         }
@@ -173,6 +179,21 @@ final class MovesGrid extends LinearLayout {
             if (whiteNode.comment != null) { addView(commentRow(host, moveLabel(whiteNode), whiteNode.comment)); forceNewRow = true; }
             if (blackNode != null && blackNode.comment != null) { addView(commentRow(host, moveLabel(blackNode), blackNode.comment)); forceNewRow = true; }
         }
+    }
+
+    /** "1-0" / "0-1" / "1/2-1/2" right after the mainline's last move — see
+     *  {@link ChessBoardView#pgnResult}. Not clickable, just text. */
+    private View resultRow(Activity host, String result) {
+        TextView t = new TextView(host);
+        t.setText(result);
+        t.setTypeface(Fonts.current(host), android.graphics.Typeface.BOLD);
+        t.setTextSize(TEXT_SP);
+        t.setTextColor(Color.WHITE);
+        // No left padding — flush with the move cells above it, which start right at the
+        // grid's own edge (same reason commentRow's own indent is deliberate: it's meant to
+        // read as offset under its move, not aligned with the grid).
+        t.setPadding(0, UiKit.dp(host, 4), 0, UiKit.dp(host, 10));
+        return t;
     }
 
     /** One mainline move's comment, right under the row it's on — "5. Nc3 — A model
