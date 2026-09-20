@@ -181,8 +181,9 @@ public class WebTargetsActivity extends Activity {
 
         card.addView(buttons, topMargin(32));
 
-        AlertDialog dialog = new AlertDialog.Builder(this).setView(card).create();
-        UiKit.clearDialogChrome(dialog);
+        android.widget.FrameLayout scrim = UiKit.wrapScrim(this, card, 0.85f);
+        AlertDialog dialog = new AlertDialog.Builder(this, R.style.Theme_PlainPhone_RoundedDialog)
+                .setView(scrim).create();
 
         close.setOnClickListener(v -> dialog.dismiss());
         cancel.setOnClickListener(v -> dialog.dismiss());
@@ -212,7 +213,7 @@ public class WebTargetsActivity extends Activity {
             dialog.dismiss();
             render();
         });
-        dialog.show();
+        UiKit.finishCentered(dialog, scrim);
     }
 
     private void confirmDelete(WebTarget target) {
@@ -247,8 +248,9 @@ public class WebTargetsActivity extends Activity {
 
         card.addView(buttons, topMargin(28));
 
-        AlertDialog dialog = new AlertDialog.Builder(this).setView(card).create();
-        UiKit.clearDialogChrome(dialog);
+        android.widget.FrameLayout scrim = UiKit.wrapScrim(this, card, 0.85f);
+        AlertDialog dialog = new AlertDialog.Builder(this, R.style.Theme_PlainPhone_RoundedDialog)
+                .setView(scrim).create();
 
         cancel.setOnClickListener(v -> dialog.dismiss());
         remove.setOnClickListener(v -> {
@@ -259,7 +261,7 @@ public class WebTargetsActivity extends Activity {
             dialog.dismiss();
             render();
         });
-        dialog.show();
+        UiKit.finishCentered(dialog, scrim);
     }
 
     private boolean onRowDrag(View view, DragEvent event) {

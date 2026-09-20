@@ -150,18 +150,16 @@ public class TipsSettingsActivity extends Activity {
     private void confirmReset(boolean quotes) {
         LinearLayout popup = new LinearLayout(this);
         popup.setOrientation(LinearLayout.VERTICAL);
-        GradientDrawable box = new GradientDrawable();
-        box.setColor(Color.BLACK);
-        popup.setBackground(box);
-        popup.setPadding(0, 32, 0, 8);
+        popup.setBackground(UiKit.dialogBackground(this));
+        UiKit.clipRounded(this, popup, UiKit.R_MD);
+        popup.setPadding(2, 32, 2, UiKit.dp(this, UiKit.R_MD));
 
         popup.addView(UiKit.dialogTitle(this, "Reset " + (quotes ? "quotes" : "tips")
                 + " to default?"));
 
-        AlertDialog dialog = new AlertDialog.Builder(this).setView(popup).create();
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-        }
+        android.widget.FrameLayout scrim = UiKit.wrapScrim(this, popup, 0.85f);
+        AlertDialog dialog = new AlertDialog.Builder(this, R.style.Theme_PlainPhone_RoundedDialog)
+                .setView(scrim).create();
 
         popup.addView(optionRow("Reset", v -> {
             dialog.dismiss();
@@ -174,12 +172,7 @@ public class TipsSettingsActivity extends Activity {
         }));
         popup.addView(optionRow("Cancel", v -> dialog.dismiss()));
 
-        dialog.show();
-        if (dialog.getWindow() != null) {
-            WindowManager.LayoutParams params = dialog.getWindow().getAttributes();
-            params.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.85);
-            dialog.getWindow().setAttributes(params);
-        }
+        UiKit.finishCentered(dialog, scrim);
     }
 
     private TextView optionRow(String label, View.OnClickListener listener) {

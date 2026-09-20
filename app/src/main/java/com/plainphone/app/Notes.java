@@ -37,8 +37,9 @@ class Notes {
 
         LinearLayout root = new LinearLayout(host);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackground(popupBackground());
-        root.setPadding(0, 32, 0, 8);
+        root.setBackground(UiKit.dialogBackground(host));
+        UiKit.clipRounded(host, root, UiKit.R_MD);
+        root.setPadding(2, 32, 2, UiKit.dp(host, UiKit.R_MD));
 
         root.addView(UiKit.dialogTitle(host, "Delete this note?"));
 
@@ -52,10 +53,9 @@ class Notes {
         body.setPadding(48, 0, 48, 16);
         root.addView(body);
 
-        AlertDialog dialog = new AlertDialog.Builder(host).setView(root).create();
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-        }
+        android.widget.FrameLayout scrim = UiKit.wrapScrim(host, root, 0.85f);
+        AlertDialog dialog = new AlertDialog.Builder(host, R.style.Theme_PlainPhone_RoundedDialog)
+                .setView(scrim).create();
 
         root.addView(optionRow(host, font, "Delete", v -> {
             dialog.dismiss();
@@ -69,12 +69,7 @@ class Notes {
         }));
         root.addView(optionRow(host, font, "Cancel", v -> dialog.dismiss()));
 
-        dialog.show();
-        if (dialog.getWindow() != null) {
-            WindowManager.LayoutParams params = dialog.getWindow().getAttributes();
-            params.width = (int) (host.getResources().getDisplayMetrics().widthPixels * 0.85);
-            dialog.getWindow().setAttributes(params);
-        }
+        UiKit.finishCentered(dialog, scrim);
     }
 
     static String exportBaseName(Note note) {
@@ -307,15 +302,15 @@ class Notes {
 
         LinearLayout root = new LinearLayout(host);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackground(popupBackground());
-        root.setPadding(0, 32, 0, 8);
+        root.setBackground(UiKit.dialogBackground(host));
+        UiKit.clipRounded(host, root, UiKit.R_MD);
+        root.setPadding(2, 32, 2, UiKit.dp(host, UiKit.R_MD));
 
         root.addView(UiKit.dialogTitle(host, "Default export folder"));
 
-        AlertDialog dialog = new AlertDialog.Builder(host).setView(root).create();
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-        }
+        android.widget.FrameLayout scrim = UiKit.wrapScrim(host, root, 0.85f);
+        AlertDialog dialog = new AlertDialog.Builder(host, R.style.Theme_PlainPhone_RoundedDialog)
+                .setView(scrim).create();
 
         root.addView(optionRow(host, font, set ? "Change folder" : "Choose folder", v -> {
             dialog.dismiss();
@@ -330,12 +325,7 @@ class Notes {
         }
         root.addView(optionRow(host, font, "Cancel", v -> dialog.dismiss()));
 
-        dialog.show();
-        if (dialog.getWindow() != null) {
-            WindowManager.LayoutParams params = dialog.getWindow().getAttributes();
-            params.width = (int) (host.getResources().getDisplayMetrics().widthPixels * 0.85);
-            dialog.getWindow().setAttributes(params);
-        }
+        UiKit.finishCentered(dialog, scrim);
     }
 
     static boolean exportToTree(Context context, Note note) {
@@ -391,15 +381,15 @@ class Notes {
 
         LinearLayout root = new LinearLayout(host);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackground(popupBackground());
-        root.setPadding(0, 32, 0, 8);
+        root.setBackground(UiKit.dialogBackground(host));
+        UiKit.clipRounded(host, root, UiKit.R_MD);
+        root.setPadding(2, 32, 2, UiKit.dp(host, UiKit.R_MD));
 
         root.addView(UiKit.dialogTitle(host, "Export note"));
 
-        AlertDialog dialog = new AlertDialog.Builder(host).setView(root).create();
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-        }
+        android.widget.FrameLayout scrim = UiKit.wrapScrim(host, root, 0.85f);
+        AlertDialog dialog = new AlertDialog.Builder(host, R.style.Theme_PlainPhone_RoundedDialog)
+                .setView(scrim).create();
 
         if (hasExportFolder(host)) {
             root.addView(optionRow(host, font, "Export to " + exportFolderLabel(host), v -> {
@@ -420,12 +410,7 @@ class Notes {
         }));
         root.addView(optionRow(host, font, "Cancel", v -> dialog.dismiss()));
 
-        dialog.show();
-        if (dialog.getWindow() != null) {
-            WindowManager.LayoutParams params = dialog.getWindow().getAttributes();
-            params.width = (int) (host.getResources().getDisplayMetrics().widthPixels * 0.85);
-            dialog.getWindow().setAttributes(params);
-        }
+        UiKit.finishCentered(dialog, scrim);
     }
 
     static String exportText(Note note) {
@@ -459,9 +444,4 @@ class Notes {
         return row;
     }
 
-    private static GradientDrawable popupBackground() {
-        GradientDrawable box = new GradientDrawable();
-        box.setColor(Color.BLACK);
-        return box;
-    }
 }

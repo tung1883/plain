@@ -49,10 +49,9 @@ final class VaultUi {
             box.addView(body);
         }
 
-        AlertDialog dialog = new AlertDialog.Builder(host).setView(box).create();
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-        }
+        android.widget.FrameLayout scrim = UiKit.wrapScrim(host, box, 0.85f);
+        AlertDialog dialog = new AlertDialog.Builder(host, R.style.Theme_PlainPhone_RoundedDialog)
+                .setView(scrim).create();
 
         box.addView(option(host, font, okLabel, () -> {
             dialog.dismiss();
@@ -63,13 +62,7 @@ final class VaultUi {
             if (onCancel != null) onCancel.run();
         }));
 
-        dialog.show();
-        UiKit.unboxDialog(box);
-        if (dialog.getWindow() != null) {
-            WindowManager.LayoutParams params = dialog.getWindow().getAttributes();
-            params.width = (int) (host.getResources().getDisplayMetrics().widthPixels * 0.85);
-            dialog.getWindow().setAttributes(params);
-        }
+        UiKit.finishCentered(dialog, scrim);
     }
 
     /** A plain option menu: title + one row per label, no message body. */
@@ -83,10 +76,9 @@ final class VaultUi {
 
         box.addView(titleRow(host, font, title));
 
-        AlertDialog dialog = new AlertDialog.Builder(host).setView(box).create();
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-        }
+        android.widget.FrameLayout scrim = UiKit.wrapScrim(host, box, 0.85f);
+        AlertDialog dialog = new AlertDialog.Builder(host, R.style.Theme_PlainPhone_RoundedDialog)
+                .setView(scrim).create();
 
         for (int i = 0; i < labels.length; i++) {
             Choice c = choices[i];
@@ -96,13 +88,7 @@ final class VaultUi {
             }));
         }
 
-        dialog.show();
-        UiKit.unboxDialog(box);
-        if (dialog.getWindow() != null) {
-            WindowManager.LayoutParams params = dialog.getWindow().getAttributes();
-            params.width = (int) (host.getResources().getDisplayMetrics().widthPixels * 0.85);
-            dialog.getWindow().setAttributes(params);
-        }
+        UiKit.finishCentered(dialog, scrim);
     }
 
     /**
@@ -135,10 +121,9 @@ final class VaultUi {
         scroller.addView(list);
         box.addView(scroller);
 
-        AlertDialog dialog = new AlertDialog.Builder(host).setView(box).create();
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-        }
+        android.widget.FrameLayout scrim = UiKit.wrapScrim(host, box, 0.85f);
+        AlertDialog dialog = new AlertDialog.Builder(host, R.style.Theme_PlainPhone_RoundedDialog)
+                .setView(scrim).create();
 
         for (int i = 0; i < labels.length; i++) {
             Choice c = choices[i];
@@ -148,13 +133,7 @@ final class VaultUi {
             }));
         }
 
-        dialog.show();
-        UiKit.unboxDialog(box);
-        if (dialog.getWindow() != null) {
-            WindowManager.LayoutParams params = dialog.getWindow().getAttributes();
-            params.width = (int) (host.getResources().getDisplayMetrics().widthPixels * 0.85);
-            dialog.getWindow().setAttributes(params);
-        }
+        UiKit.finishCentered(dialog, scrim);
     }
 
     private static class BoundedScrollView extends ScrollView {

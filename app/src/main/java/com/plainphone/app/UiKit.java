@@ -260,21 +260,16 @@ class UiKit {
         input.setPadding(48, 8, 48, 16);
         root.addView(input);
 
-        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(host).setView(root).create();
-        clearDialogChrome(dialog);
+        android.widget.FrameLayout scrim = wrapScrim(host, root, 0.85f);
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(
+                host, R.style.Theme_PlainPhone_RoundedDialog).setView(scrim).create();
         root.addView(promptRow(host, font, okLabel, () -> {
             String s = input.getText().toString().trim();
             if (!s.isEmpty()) onOk.accept(s);
             dialog.dismiss();
         }));
         root.addView(promptRow(host, font, "Cancel", dialog::dismiss));
-        dialog.show();
-        unboxDialog(root); // drop the AlertDialog's square panel behind the rounded box
-        if (dialog.getWindow() != null) {
-            android.view.WindowManager.LayoutParams p = dialog.getWindow().getAttributes();
-            p.width = (int) (host.getResources().getDisplayMetrics().widthPixels * 0.85);
-            dialog.getWindow().setAttributes(p);
-        }
+        finishCentered(dialog, scrim);
         focusAndShowKeyboard(host, input);
     }
 
@@ -306,15 +301,117 @@ class UiKit {
         return row;
     }
 
+    /**
+     * Show {@code content} as a full-screen dialog: a hand-drawn scrim (not the system's
+     * dim-behind) fills the entire window, with {@code content} centered over it at
+     * {@code widthFraction} of the screen's width. A small floating AlertDialog window (the
+     * old approach) sits centered within its OWN small rectangular bounds — the system's
+     * dim-behind can only darken the screen OUTSIDE that rectangle, never the corner notches
+     * INSIDE it where the rounded content doesn't paint, so those notches always show a
+     * different shade (opaque window background) than the dimmed area just past the window's
+     * edge — a square seam right behind the rounded curve. A full-screen window with the
+     * scrim as part of our own content removes that seam entirely: there's only one
+     * continuous canvas, no window-bounds edge inside the visible dialog area at all.
+     * Tapping the scrim (outside {@code content}) dismisses, matching the old
+     * setCanceledOnTouchOutside behavior a small floating window gave for free.
+     *
+     * <p>Step 1: {@link #wrapScrim} builds the scrim, ready to pass to
+     * {@code new AlertDialog.Builder(host, R.style.Theme_PlainPhone_RoundedDialog).setView(...)}.
+     * Split from {@link #finishCentered} so callers whose rows need a {@code dialog} reference
+     * (to call dismiss()) can create the dialog from the returned scrim first, populate
+     * {@code content} afterward, then call finishCentered.
+     */
+    static android.widget.FrameLayout wrapScrim(android.app.Activity host, View content, float widthFraction) {
+        android.widget.FrameLayout scrim = new android.widget.FrameLayout(host);
+        scrim.setBackgroundColor(0x99000000); // ~0.6 dim, matching the old dimAmount
+        // Center within the status/nav-bar-safe area, not the raw full-screen window bounds —
+        // otherwise the status bar's height alone visibly pushes content off vertical-center.
+        scrim.setFitsSystemWindows(true);
+        content.setClickable(true); // stop taps on content's own padding from reaching scrim
+        int widthPx = (int) (host.getResources().getDisplayMetrics().widthPixels * widthFraction);
+        android.widget.FrameLayout.LayoutParams lp = new android.widget.FrameLayout.LayoutParams(
+                widthPx, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.gravity = android.view.Gravity.CENTER;
+        scrim.addView(content, lp);
+        return scrim;
+    }
+
+    /** Step 2, once {@code dialog} was created from {@link #wrapScrim}'s return value and
+     *  {@code content} has been fully populated — shows it and finishes window setup. */
+    static void finishCentered(android.app.AlertDialog dialog, android.widget.FrameLayout scrim) {
+        scrim.setOnClickListener(v -> dialog.dismiss());
+        dialog.show();
+        unboxDialog(scrim);
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            dialog.getWindow().setElevation(0f);
+            android.view.WindowManager.LayoutParams p = dialog.getWindow().getAttributes();
+            p.width = ViewGroup.LayoutParams.MATCH_PARENT;
+            p.height = ViewGroup.LayoutParams.MATCH_PARENT;
+            dialog.getWindow().setAttributes(p);
+            // The window itself being MATCH_PARENT doesn't guarantee AlertDialog's own
+            // internal content wrapper stretches scrim to fill it — that wrapper defaults to
+            // wrapping its child tightly for a "floating" dialog theme, which is why the whole
+            // popup (scrim's own bounds, background included) was rendering pinned near
+            // whatever position that wrapper's default gravity places a wrap-sized child,
+            // instead of covering the full screen the window itself now spans.
+            // scrim's actual immediate parent inside AlertDialog's decor is a FrameLayout,
+            // which casts its child's LayoutParams to FrameLayout.LayoutParams specifically —
+            // both the plain base type and generic MarginLayoutParams crash here.
+            scrim.setLayoutParams(new android.widget.FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            // scrim's own parent isn't the only wrap-sized panel in the chain — the "floating"
+            // dialog theme's chrome nests another panel or two above that, each wrapping
+            // tightly around its child by default regardless of the window's own size. Widen
+            // every one of them up to (not including) the DecorView, mutating each ancestor's
+            // OWN LayoutParams object in place so its type always matches what that ancestor's
+            // parent expects — a freshly constructed LayoutParams guesses wrong and crashes.
+            android.view.ViewParent anc = scrim.getParent();
+            while (anc instanceof View && !"DecorView".equals(anc.getClass().getSimpleName())) {
+                View av = (View) anc;
+                ViewGroup.LayoutParams lp = av.getLayoutParams();
+                if (lp != null) {
+                    lp.width = ViewGroup.LayoutParams.MATCH_PARENT;
+                    lp.height = ViewGroup.LayoutParams.MATCH_PARENT;
+                    av.setLayoutParams(lp);
+                }
+                anc = av.getParent();
+            }
+        }
+    }
+
+    /** Convenience for the common case where nothing inside {@code content} needs a
+     *  {@code dialog} reference while being built (e.g. it was already wired via a
+     *  self-contained click listener, or doesn't need to dismiss itself). */
+    static android.app.AlertDialog showCentered(android.app.Activity host, View content, float widthFraction) {
+        android.widget.FrameLayout scrim = wrapScrim(host, content, widthFraction);
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(
+                host, R.style.Theme_PlainPhone_RoundedDialog).setView(scrim).create();
+        finishCentered(dialog, scrim);
+        return dialog;
+    }
+
     static void clearDialogChrome(android.app.AlertDialog dialog) {
         if (dialog.getWindow() != null) {
+            // Opaque, not transparent. Our content view only paints pixels inside its own
+            // rounded-outline clip — the four little square notches between that curve and
+            // the window's own rectangular bounds are otherwise never painted by anything.
+            // A transparent window background leaves them showing raw, undimmed background
+            // (a board tile, a divider) right at the popup's corner — reading as a square
+            // border poking out from behind the curve. Opaque black paints those notches
+            // black instead, so the box's own rounded stroke is the only edge visible.
             dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(
-                    Color.TRANSPARENT));
-            // A transparent window background still leaves the window's own Material
-            // elevation shadow — a faint square halo around the rounded box, on top of the
-            // box's own rounded stroke, reading as "two borders" at once. Zeroing it removes
-            // that outer square entirely; the box's own rounded stroke is the only border.
+                    Color.BLACK));
+            // Elevation would still leave the window's own Material shadow — a faint square
+            // halo around the rounded box, on top of the box's own rounded stroke, reading as
+            // "two borders" at once. Zeroing it removes that outer square entirely.
             dialog.getWindow().setElevation(0f);
+            // Dim behind the window's own rectangular bounds too, so the live board/list past
+            // the popup's edges doesn't stay at full brightness right next to a dimmed box.
+            android.view.WindowManager.LayoutParams p = dialog.getWindow().getAttributes();
+            p.dimAmount = 0.6f;
+            p.flags |= android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND;
+            dialog.getWindow().setAttributes(p);
         }
     }
 
@@ -327,6 +424,12 @@ class UiKit {
         android.view.ViewParent p = content.getParent();
         while (p instanceof View) {
             View v = (View) p;
+            // The walk's top is the window's own DecorView — stripping ITS background undoes
+            // clearDialogChrome's opaque black window background (set moments earlier, before
+            // show()), leaving the four corner notches outside the rounded clip transparent
+            // again and the raw screen behind showing through undimmed. Every other ancestor
+            // panel in between still gets stripped as before; only the decor itself is spared.
+            if ("DecorView".equals(v.getClass().getSimpleName())) break;
             v.setBackground(null);
             v.setPadding(0, 0, 0, 0);
             v.setElevation(0f); // each panel ancestor can carry its own shadow, not just the window

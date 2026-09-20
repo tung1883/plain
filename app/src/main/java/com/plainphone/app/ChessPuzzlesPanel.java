@@ -227,8 +227,9 @@ final class ChessPuzzlesPanel {
         randomizeRow.setOnClickListener(v -> { randomize[0] = !randomize[0]; renderRandomize[0].run(); });
         box.addView(randomizeRow);
 
-        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(host).setView(box).create();
-        UiKit.clearDialogChrome(dialog);
+        android.widget.FrameLayout scrim = UiKit.wrapScrim(host, box, 0.85f);
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(
+                host, R.style.Theme_PlainPhone_RoundedDialog).setView(scrim).create();
         TextView play = new TextView(host);
         play.setText("Play");
         play.setTextColor(Color.WHITE);
@@ -244,13 +245,7 @@ final class ChessPuzzlesPanel {
             startQueueFor(selected.isEmpty() ? null : selected, randomize[0]);
         });
         box.addView(play);
-        dialog.show();
-        UiKit.unboxDialog(box);
-        if (dialog.getWindow() != null) {
-            android.view.WindowManager.LayoutParams p = dialog.getWindow().getAttributes();
-            p.width = (int) (host.getResources().getDisplayMetrics().widthPixels * 0.85);
-            dialog.getWindow().setAttributes(p);
-        }
+        UiKit.finishCentered(dialog, scrim);
     }
 
     private View pickRow(String label, boolean selected, View.OnClickListener onClick) {
@@ -295,8 +290,9 @@ final class ChessPuzzlesPanel {
         box.setPadding(2, 32, 2, UiKit.dp(host, UiKit.R_MD));
         box.addView(UiKit.dialogTitle(host, "Generate puzzles from"));
 
-        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(host).setView(box).create();
-        UiKit.clearDialogChrome(dialog);
+        android.widget.FrameLayout scrim = UiKit.wrapScrim(host, box, 0.85f);
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(
+                host, R.style.Theme_PlainPhone_RoundedDialog).setView(scrim).create();
 
         box.addView(genRow("All games", v -> {
             dialog.dismiss();
@@ -312,13 +308,7 @@ final class ChessPuzzlesPanel {
         }
         box.addView(genRow("Cancel", v -> dialog.dismiss()));
 
-        dialog.show();
-        UiKit.unboxDialog(box);
-        if (dialog.getWindow() != null) {
-            android.view.WindowManager.LayoutParams p = dialog.getWindow().getAttributes();
-            p.width = (int) (host.getResources().getDisplayMetrics().widthPixels * 0.85);
-            dialog.getWindow().setAttributes(p);
-        }
+        UiKit.finishCentered(dialog, scrim);
     }
 
     private View genRow(String label, View.OnClickListener onClick) {

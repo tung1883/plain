@@ -1155,10 +1155,11 @@ public class VaultActivity extends Activity {
     private LinearLayout popupBox() {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
-        GradientDrawable bg = new GradientDrawable();
-        bg.setColor(Color.BLACK);
-        box.setBackground(bg);
-        box.setPadding(0, 24, 0, 8);
+        box.setBackground(UiKit.dialogBackground(this));
+        UiKit.clipRounded(this, box, UiKit.R_MD);
+        // Bottom inset must be at least the corner radius, or the last row's own opaque,
+        // square-cornered background paints straight over the rounded corner's curve.
+        box.setPadding(2, 24, 2, UiKit.dp(this, UiKit.R_MD));
         return box;
     }
 
@@ -1179,23 +1180,18 @@ public class VaultActivity extends Activity {
         return t;
     }
 
+    // Set by popupDialog, consumed by showPopup right after — sequential, never concurrent.
+    private android.widget.FrameLayout lastPopupScrim;
+
     private android.app.AlertDialog popupDialog(View content) {
-        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
-                .setView(content).create();
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-        }
-        return dialog;
+        lastPopupScrim = UiKit.wrapScrim(this, content, 0.85f);
+        return new android.app.AlertDialog.Builder(this, R.style.Theme_PlainPhone_RoundedDialog)
+                .setView(lastPopupScrim).create();
     }
 
     private void showPopup(android.app.AlertDialog dialog) {
         if (isFinishing() || isDestroyed()) return;   // vault locked / left while work ran
-        dialog.show();
-        if (dialog.getWindow() != null) {
-            WindowManager.LayoutParams params = dialog.getWindow().getAttributes();
-            params.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.85);
-            dialog.getWindow().setAttributes(params);
-        }
+        UiKit.finishCentered(dialog, lastPopupScrim);
     }
 
     // --- small ui helpers --------------------------------------

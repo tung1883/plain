@@ -300,18 +300,18 @@ class Todos {
 
         LinearLayout root = new LinearLayout(host);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackground(popupBackground());
-        root.setPadding(0, 32, 0, 8);
+        root.setBackground(UiKit.dialogBackground(host));
+        UiKit.clipRounded(host, root, UiKit.R_MD);
+        root.setPadding(2, 32, 2, UiKit.dp(host, UiKit.R_MD));
 
         TextView title = UiKit.dialogTitle(host, linked ? fileLabel(host) : "Todo file");
         title.setSingleLine(true);
         title.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
         root.addView(title);
 
-        AlertDialog dialog = new AlertDialog.Builder(host).setView(root).create();
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-        }
+        android.widget.FrameLayout scrim = UiKit.wrapScrim(host, root, 0.85f);
+        AlertDialog dialog = new AlertDialog.Builder(host, R.style.Theme_PlainPhone_RoundedDialog)
+                .setView(scrim).create();
 
         root.addView(optionRow(host, font, linked ? "Change file" : "Link file", v -> {
             dialog.dismiss();
@@ -326,12 +326,7 @@ class Todos {
         }
         root.addView(optionRow(host, font, "Cancel", v -> dialog.dismiss()));
 
-        dialog.show();
-        if (dialog.getWindow() != null) {
-            WindowManager.LayoutParams params = dialog.getWindow().getAttributes();
-            params.width = (int) (host.getResources().getDisplayMetrics().widthPixels * 0.85);
-            dialog.getWindow().setAttributes(params);
-        }
+        UiKit.finishCentered(dialog, scrim);
     }
 
     // --- io ------------------------------------------------------------
@@ -395,8 +390,9 @@ class Todos {
 
         LinearLayout root = new LinearLayout(host);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackground(popupBackground());
-        root.setPadding(0, 32, 0, 8);
+        root.setBackground(UiKit.dialogBackground(host));
+        UiKit.clipRounded(host, root, UiKit.R_MD);
+        root.setPadding(2, 32, 2, UiKit.dp(host, UiKit.R_MD));
         root.addView(UiKit.dialogTitle(host, "New task"));
 
         EditText input = new EditText(host);
@@ -413,10 +409,9 @@ class Todos {
         input.setPadding(48, 8, 48, 24);
         root.addView(input);
 
-        AlertDialog dialog = new AlertDialog.Builder(host).setView(root).create();
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-        }
+        android.widget.FrameLayout scrim = UiKit.wrapScrim(host, root, 0.85f);
+        AlertDialog dialog = new AlertDialog.Builder(host, R.style.Theme_PlainPhone_RoundedDialog)
+                .setView(scrim).create();
 
         Runnable add = () -> {
             String text = input.getText().toString().trim();
@@ -434,12 +429,7 @@ class Todos {
         root.addView(optionRow(host, font, "Add", v -> add.run()));
         root.addView(optionRow(host, font, "Cancel", v -> dialog.dismiss()));
 
-        dialog.show();
-        if (dialog.getWindow() != null) {
-            WindowManager.LayoutParams params = dialog.getWindow().getAttributes();
-            params.width = (int) (host.getResources().getDisplayMetrics().widthPixels * 0.85);
-            dialog.getWindow().setAttributes(params);
-        }
+        UiKit.finishCentered(dialog, scrim);
     }
 
     // --- popup chrome (mirrors Notes) --------------------------------
@@ -461,9 +451,4 @@ class Todos {
         return row;
     }
 
-    private static GradientDrawable popupBackground() {
-        GradientDrawable box = new GradientDrawable();
-        box.setColor(Color.BLACK);
-        return box;
-    }
 }

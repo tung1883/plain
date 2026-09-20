@@ -375,8 +375,9 @@ final class MovesGrid extends LinearLayout {
         root.setPadding(2, edgeInset, 2, edgeInset);
         root.addView(UiKit.dialogTitleExact(host, moveLabel(node)));
 
-        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(host).setView(root).create();
-        UiKit.clearDialogChrome(dialog);
+        android.widget.FrameLayout scrim = UiKit.wrapScrim(host, root, 0.85f);
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(
+                host, R.style.Theme_PlainPhone_RoundedDialog).setView(scrim).create();
         // Both already trigger the board's own onChanged callback (updateChessHomeUi, which
         // calls this.refresh() itself), so nothing further is needed here.
         if (allowPromote) {
@@ -402,13 +403,7 @@ final class MovesGrid extends LinearLayout {
         }));
         root.addView(menuRow(host, "Cancel", v -> dialog.dismiss()));
 
-        dialog.show();
-        UiKit.unboxDialog(root);
-        if (dialog.getWindow() != null) {
-            android.view.WindowManager.LayoutParams p = dialog.getWindow().getAttributes();
-            p.width = (int) (host.getResources().getDisplayMetrics().widthPixels * 0.85);
-            dialog.getWindow().setAttributes(p);
-        }
+        UiKit.finishCentered(dialog, scrim);
     }
 
     private TextView menuRow(Activity host, String label, View.OnClickListener listener) {

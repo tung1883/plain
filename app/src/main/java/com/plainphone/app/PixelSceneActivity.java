@@ -238,10 +238,9 @@ public class PixelSceneActivity extends Activity {
     private void optionsDialog(String title, List<String[]> opts, OptionPick onPick) {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        GradientDrawable bg = new GradientDrawable();
-        bg.setColor(Color.BLACK);
-        root.setBackground(bg);
-        root.setPadding(0, 8, 0, 8);
+        root.setBackground(UiKit.dialogBackground(this));
+        UiKit.clipRounded(this, root, UiKit.R_MD);
+        root.setPadding(2, 8, 2, UiKit.dp(this, UiKit.R_MD));
 
         TextView t = new TextView(this);
         t.setText(title.toUpperCase());
@@ -252,9 +251,10 @@ public class PixelSceneActivity extends Activity {
         t.setPadding(48, 24, 48, 12);
         root.addView(t);
 
-        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
-                .setView(root).create();
-        UiKit.clearDialogChrome(dialog);
+        android.widget.FrameLayout scrim = UiKit.wrapScrim(this, root, 0.85f);
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(
+                this, R.style.Theme_PlainPhone_RoundedDialog)
+                .setView(scrim).create();
 
         for (String[] o : opts) {
             TextView row = new TextView(this);
@@ -268,12 +268,7 @@ public class PixelSceneActivity extends Activity {
             root.addView(row);
         }
 
-        dialog.show();
-        if (dialog.getWindow() != null) {
-            android.view.WindowManager.LayoutParams p = dialog.getWindow().getAttributes();
-            p.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.85);
-            dialog.getWindow().setAttributes(p);
-        }
+        UiKit.finishCentered(dialog, scrim);
     }
 
     // --- rows ------------------------------------------

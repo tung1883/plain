@@ -1667,8 +1667,9 @@ public class MainActivity extends Activity implements SelectionHost {
         int edgeInset = UiKit.dp(this, UiKit.R_MD);
         root.setPadding(2, edgeInset, 2, edgeInset);
 
-        AlertDialog dialog = new AlertDialog.Builder(this).setView(root).create();
-        UiKit.clearDialogChrome(dialog);
+        android.widget.FrameLayout scrim = UiKit.wrapScrim(this, root, 0.92f);
+        AlertDialog dialog = new AlertDialog.Builder(this, R.style.Theme_PlainPhone_RoundedDialog)
+                .setView(scrim).create();
         dialog.setOnDismissListener(d -> {
             chessAutoResize = autoResize[0];
             Config.setChessAutoResize(this, chessAutoResize);
@@ -1738,16 +1739,7 @@ public class MainActivity extends Activity implements SelectionHost {
         };
         renderBody[0].run();
 
-        dialog.show();
-        UiKit.unboxDialog(root);
-        if (dialog.getWindow() != null) {
-            android.view.WindowManager.LayoutParams p = dialog.getWindow().getAttributes();
-            // Wide enough that the preview boards can show at (close to) the real board's own
-            // size instead of a small arbitrary demo square — see chessResizeBoardBlock/
-            // chessResizeSinglePreview, which both cap their preview at this same width.
-            p.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.92);
-            dialog.getWindow().setAttributes(p);
-        }
+        UiKit.finishCentered(dialog, scrim);
     }
 
     /** How wide a preview board inside this dialog may actually draw at, in real px — the
@@ -1919,14 +1911,14 @@ public class MainActivity extends Activity implements SelectionHost {
     }
 
     private void chessOpenSettings() {
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
+        RoundedBox root = new RoundedBox(this);
         root.setBackground(UiKit.dialogBackground(this));
-        UiKit.clipRounded(this, root, UiKit.R_MD);
+        root.setRadiusDp(UiKit.R_MD);
         root.setPadding(2, 32, 2, UiKit.dp(this, UiKit.R_MD));
 
-        AlertDialog dialog = new AlertDialog.Builder(this).setView(root).create();
-        UiKit.clearDialogChrome(dialog);
+        android.widget.FrameLayout scrim = UiKit.wrapScrim(this, root, 0.85f);
+        AlertDialog dialog = new AlertDialog.Builder(this, R.style.Theme_PlainPhone_RoundedDialog)
+                .setView(scrim).create();
 
         // Title and close share one top line — Import/Export/Imported games/Puzzles/Generate
         // all moved to the Library and Puzzles tabs, so there's no longer a bottom "Close"
@@ -1949,13 +1941,7 @@ public class MainActivity extends Activity implements SelectionHost {
         root.addView(scroller);
 
         renderChessSettingsRows(rows, dialog);
-        dialog.show();
-        UiKit.unboxDialog(root);
-        if (dialog.getWindow() != null) {
-            android.view.WindowManager.LayoutParams p = dialog.getWindow().getAttributes();
-            p.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.85);
-            dialog.getWindow().setAttributes(p);
-        }
+        UiKit.finishCentered(dialog, scrim);
     }
 
     private void renderChessSettingsRows(LinearLayout rows, AlertDialog dialog) {
@@ -2020,23 +2006,18 @@ public class MainActivity extends Activity implements SelectionHost {
         ScrollView scroller = new ScrollView(this);
         scroller.addView(rows, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        root.addView(scroller);
+        int maxScrollerPx = (int) (getResources().getDisplayMetrics().heightPixels * 0.6f);
+        root.addView(scroller, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, maxScrollerPx));
 
-        AlertDialog dialog = new AlertDialog.Builder(this).setView(root).create();
-        UiKit.clearDialogChrome(dialog);
+        android.widget.FrameLayout scrim = UiKit.wrapScrim(this, root, 0.85f);
+        AlertDialog dialog = new AlertDialog.Builder(this, R.style.Theme_PlainPhone_RoundedDialog)
+                .setView(scrim).create();
         for (int i = 0; i < labels.length; i++) {
             final int index = i;
             rows.addView(chessSettingsRow(labels[i], v -> { dialog.dismiss(); onPick.accept(index); }));
         }
-        dialog.show();
-        UiKit.unboxDialog(root);
-        if (dialog.getWindow() != null) {
-            android.view.WindowManager.LayoutParams p = dialog.getWindow().getAttributes();
-            p.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.85);
-            android.view.WindowManager.LayoutParams attrs = p;
-            attrs.height = (int) (getResources().getDisplayMetrics().heightPixels * 0.7);
-            dialog.getWindow().setAttributes(attrs);
-        }
+        UiKit.finishCentered(dialog, scrim);
     }
 
     private void chessChooseBoard() {
@@ -3224,12 +3205,11 @@ public class MainActivity extends Activity implements SelectionHost {
 
         root.addView(UiKit.dialogTitle(this, label.toString()));
 
-        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
-                .setView(root)
+        android.widget.FrameLayout scrim = UiKit.wrapScrim(this, root, 0.85f);
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(
+                this, R.style.Theme_PlainPhone_RoundedDialog)
+                .setView(scrim)
                 .create();
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-        }
 
         boolean pinned = Config.getPinnedPackages(this).contains(pkg);
         root.addView(optionRow(georgia, pinned ? "Unpin app" : "Pin app", v -> {
@@ -3267,12 +3247,7 @@ public class MainActivity extends Activity implements SelectionHost {
                     android.widget.Toast.LENGTH_SHORT).show();
         }));
 
-        dialog.show();
-        if (dialog.getWindow() != null) {
-            android.view.WindowManager.LayoutParams params = dialog.getWindow().getAttributes();
-            params.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.85);
-            dialog.getWindow().setAttributes(params);
-        }
+        UiKit.finishCentered(dialog, scrim);
     }
 
     private void showFileOptions(String title, Runnable openWith, Runnable revealInFileManager) {
@@ -3285,12 +3260,11 @@ public class MainActivity extends Activity implements SelectionHost {
 
         root.addView(UiKit.dialogTitle(this, title));
 
-        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
-                .setView(root)
+        android.widget.FrameLayout scrim = UiKit.wrapScrim(this, root, 0.85f);
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(
+                this, R.style.Theme_PlainPhone_RoundedDialog)
+                .setView(scrim)
                 .create();
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-        }
 
         root.addView(optionRow(georgia, "Open with…", v -> {
             dialog.dismiss();
@@ -3304,12 +3278,7 @@ public class MainActivity extends Activity implements SelectionHost {
             }));
         }
 
-        dialog.show();
-        if (dialog.getWindow() != null) {
-            android.view.WindowManager.LayoutParams params = dialog.getWindow().getAttributes();
-            params.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.85);
-            dialog.getWindow().setAttributes(params);
-        }
+        UiKit.finishCentered(dialog, scrim);
     }
 
     private TextView optionRow(Typeface georgia, String label, View.OnClickListener listener) {

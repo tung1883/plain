@@ -15,4 +15,22 @@
         <item name="android:windowSplashScreenBackground" tools:targetApi="s">@android:color/black</item>
         <item name="android:windowSplashScreenAnimatedIcon" tools:targetApi="s">@drawable/splash_none</item>
     </style>
+
+    <!-- Every rounded custom-view popup (chess settings, vault confirms, filter sheets, …)
+         is built with AlertDialog.Builder(host) using the Activity's own theme, which
+         inherits Theme.PlainPhone's android:windowBackground = solid black square above.
+         Overriding that at runtime via Window.setBackgroundDrawable (UiKit.clearDialogChrome)
+         still leaves whatever frame/shadow drawable the OS ties to that inherited
+         windowBackground attribute — the square edge behind the rounded box. A dedicated
+         dialog theme with a transparent, frameless window from the start avoids that
+         entirely instead of patching it after the fact. -->
+    <style name="Theme.PlainPhone.RoundedDialog" parent="android:Theme.Black.NoTitleBar">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowFrame">@null</item>
+        <item name="android:windowIsFloating">true</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:backgroundDimEnabled">true</item>
+        <item name="android:windowIsTranslucent">true</item>
+    </style>
 </resources>

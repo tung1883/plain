@@ -127,29 +127,24 @@ public class RecorderSettingsActivity extends Activity {
     private LinearLayout popup(String title) {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
-        GradientDrawable bg = new GradientDrawable();
-        bg.setColor(Color.BLACK);
-        box.setBackground(bg);
-        box.setPadding(0, 16, 0, 8);
+        box.setBackground(UiKit.dialogBackground(this));
+        UiKit.clipRounded(this, box, UiKit.R_MD);
+        box.setPadding(2, 16, 2, UiKit.dp(this, UiKit.R_MD));
         box.addView(UiKit.dialogTitle(this, title));
         return box;
     }
 
+    // Set by dialog(), consumed by show() right after — sequential, never concurrent.
+    private android.widget.FrameLayout lastPopupScrim;
+
     private AlertDialog dialog(LinearLayout box) {
-        AlertDialog d = new AlertDialog.Builder(this).setView(box).create();
-        if (d.getWindow() != null) {
-            d.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-        }
-        return d;
+        lastPopupScrim = UiKit.wrapScrim(this, box, 0.85f);
+        return new AlertDialog.Builder(this, R.style.Theme_PlainPhone_RoundedDialog)
+                .setView(lastPopupScrim).create();
     }
 
     private void show(AlertDialog dialog) {
-        dialog.show();
-        if (dialog.getWindow() != null) {
-            WindowManager.LayoutParams p = dialog.getWindow().getAttributes();
-            p.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.85);
-            dialog.getWindow().setAttributes(p);
-        }
+        UiKit.finishCentered(dialog, lastPopupScrim);
     }
 
     private TextView option(String label, boolean selected, View.OnClickListener listener) {

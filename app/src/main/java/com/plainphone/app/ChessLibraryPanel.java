@@ -405,8 +405,9 @@ final class ChessLibraryPanel {
         scroller.setLayoutParams(new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, UiKit.dp(host, 320)));
 
-        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(host).setView(box).create();
-        UiKit.clearDialogChrome(dialog);
+        android.widget.FrameLayout scrim = UiKit.wrapScrim(host, box, 0.85f);
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(
+                host, R.style.Theme_PlainPhone_RoundedDialog).setView(scrim).create();
 
         int[] activeTab = {0};
         Runnable[] renderList = new Runnable[1];
@@ -470,13 +471,7 @@ final class ChessLibraryPanel {
         box.addView(applyRow(dialog));
 
         dialog.setOnDismissListener(d -> applyFilter());
-        dialog.show();
-        UiKit.unboxDialog(box);
-        if (dialog.getWindow() != null) {
-            android.view.WindowManager.LayoutParams p = dialog.getWindow().getAttributes();
-            p.width = (int) (host.getResources().getDisplayMetrics().widthPixels * 0.85);
-            dialog.getWindow().setAttributes(p);
-        }
+        UiKit.finishCentered(dialog, scrim);
     }
 
     private View applyRow(android.app.AlertDialog dialog) {
@@ -609,8 +604,9 @@ final class ChessLibraryPanel {
         box.setPadding(2, 32, 2, UiKit.dp(host, UiKit.R_MD));
         box.addView(UiKit.dialogTitle(host, source));
 
-        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(host).setView(box).create();
-        UiKit.clearDialogChrome(dialog);
+        android.widget.FrameLayout scrim = UiKit.wrapScrim(host, box, 0.85f);
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(
+                host, R.style.Theme_PlainPhone_RoundedDialog).setView(scrim).create();
 
         box.addView(optionRow("Rename", Color.WHITE, v -> { dialog.dismiss(); promptRename(source); }));
         box.addView(optionRow("Export this PGN", Color.WHITE, v -> { dialog.dismiss(); listener.onExportSource(source); }));
@@ -622,13 +618,7 @@ final class ChessLibraryPanel {
         box.addView(optionRow("Delete this PGN", 0xFFE05C5C, v -> { dialog.dismiss(); confirmDeleteSource(source); }));
         box.addView(optionRow("Cancel", 0xFF8A8A8A, v -> dialog.dismiss()));
 
-        dialog.show();
-        UiKit.unboxDialog(box);
-        if (dialog.getWindow() != null) {
-            android.view.WindowManager.LayoutParams p = dialog.getWindow().getAttributes();
-            p.width = (int) (host.getResources().getDisplayMetrics().widthPixels * 0.85);
-            dialog.getWindow().setAttributes(p);
-        }
+        UiKit.finishCentered(dialog, scrim);
     }
 
     private View optionRow(String label, int color, View.OnClickListener onClick) {
@@ -666,8 +656,9 @@ final class ChessLibraryPanel {
         inputLp.bottomMargin = UiKit.dp(host, 10);
         box.addView(input, inputLp);
 
-        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(host).setView(box).create();
-        UiKit.clearDialogChrome(dialog);
+        android.widget.FrameLayout scrim = UiKit.wrapScrim(host, box, 0.85f);
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(
+                host, R.style.Theme_PlainPhone_RoundedDialog).setView(scrim).create();
 
         box.addView(optionRow("Rename", Color.WHITE, v -> {
             String newName = input.getText().toString().trim();
@@ -683,13 +674,7 @@ final class ChessLibraryPanel {
         }));
         box.addView(optionRow("Cancel", 0xFF8A8A8A, v -> dialog.dismiss()));
 
-        dialog.show();
-        UiKit.unboxDialog(box);
-        if (dialog.getWindow() != null) {
-            android.view.WindowManager.LayoutParams p = dialog.getWindow().getAttributes();
-            p.width = (int) (host.getResources().getDisplayMetrics().widthPixels * 0.85);
-            dialog.getWindow().setAttributes(p);
-        }
+        UiKit.finishCentered(dialog, scrim);
     }
 
     private void confirmDeleteSource(String source) {
