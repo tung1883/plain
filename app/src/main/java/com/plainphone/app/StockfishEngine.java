@@ -27,6 +27,13 @@ final class StockfishEngine {
 
     private final BufferedReader out;
     private final BufferedWriter in;
+    // Guards writes to `in` specifically — not the whole instance, unlike bestOf/
+    // analyzeMultiPv's own `synchronized`. Those two spend nearly all their time blocked
+    // reading `out` inside that lock, so a caller wanting to interrupt one (stop(), below)
+    // would just queue up behind it if it used the same lock; writing "stop\n" to the
+    // process's stdin doesn't touch `out` at all; the only thing it must not race is another
+    // write to `in`.
+    private final Object writeLock = new Object();
 
     /** The move-picker process — used by {@link #bestOf} for double-tap. */
     static synchronized StockfishEngine get(Context context) throws IOException {
@@ -73,9 +80,30 @@ final class StockfishEngine {
     }
 
     private void send(String command) throws IOException {
-        in.write(command);
-        in.write("\n");
-        in.flush();
+        synchronized (writeLock) {
+            in.write(command);
+            in.write("\n");
+            in.flush();
+        }
+    }
+
+    /** Tells whichever search is currently running (if any) to stop right away and report
+     *  whatever "bestmove" it already has — UCI's own way of cutting a search short instead
+     *  of waiting out its full movetime. Deliberately not one of this class's synchronized
+     *  methods: {@link #analyzeMultiPv} holds that lock for as long as its search runs, so a
+     *  synchronized stop() would just queue up behind it instead of interrupting it. Used by
+     *  {@link ChessBoardView#requestAnalysis} so a fast burst of moves doesn't leave a
+     *  backlog of stale searches each running to completion — discarded on arrival by the
+     *  generation check — before the position actually on screen gets its turn. Safe to call
+     *  with nothing running (a plain no-op for Stockfish) or from a different thread than
+     *  whichever one is inside analyzeMultiPv/bestOf right now. */
+    void stop() {
+        try {
+            synchronized (writeLock) {
+                in.write("stop\n");
+                in.flush();
+            }
+        } catch (IOException ignored) { }
     }
 
     private void waitFor(String token) throws IOException {

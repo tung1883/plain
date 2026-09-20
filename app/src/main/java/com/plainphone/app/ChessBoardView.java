@@ -859,6 +859,20 @@ final class ChessBoardView extends View {
         String fen = toFen();
         int depth = Config.getChessEngineDepth(host);
         int lines = Config.getChessAnalysisLines(host);
+        // A burst of moves played faster than one analysis takes (each up to
+        // ANALYSIS_MOVETIME_CAP_MS) used to queue up behind each other with no way to cut one
+        // short — every stale request ran to its full movetime, discarded on arrival by the
+        // generation check below, before the position actually on screen got a turn; playing
+        // 5 quick moves could mean 5+ seconds before the engine even started on the last one.
+        // StockfishEngine.stop() sends UCI's own "stop" so whatever's currently running
+        // (if anything) wraps up immediately instead. Off the UI thread, same as the actual
+        // analysis call — getAnalysis() itself blocks on process I/O the first time it creates
+        // the engine.
+        new Thread(() -> {
+            try {
+                StockfishEngine.getAnalysis(host).stop();
+            } catch (Exception ignored) { }
+        }).start();
         new Thread(() -> {
             try {
                 List<StockfishEngine.Analysis> result =
