@@ -238,9 +238,16 @@ class UiKit {
         return t;
     }
 
-    /** The black "title / input / Save / Cancel" prompt (rename, etc.). */
+    /** The black "title / input / Save / Cancel" prompt (rename, etc.) — single-line. */
     static void textPrompt(android.app.Activity host, String title, String initial,
                            String okLabel, java.util.function.Consumer<String> onOk) {
+        textPrompt(host, title, initial, okLabel, true, onOk);
+    }
+
+    /** Same prompt, with {@code singleLine} false for free-form text (a comment, a note)
+     *  that should wrap and grow instead of scrolling sideways in one line. */
+    static void textPrompt(android.app.Activity host, String title, String initial,
+                           String okLabel, boolean singleLine, java.util.function.Consumer<String> onOk) {
         android.graphics.Typeface font = Fonts.current(host);
         LinearLayout root = new LinearLayout(host);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -256,7 +263,19 @@ class UiKit {
         input.setTextColor(Color.WHITE);
         input.setTypeface(font);
         input.setTextSize(18);
-        input.setSingleLine(true);
+        input.setSingleLine(singleLine);
+        if (!singleLine) {
+            input.setMinLines(3);
+            // Caps growth at 3 lines' worth of height — past that it scrolls internally
+            // instead of pushing the dialog taller with every extra line typed.
+            input.setMaxLines(3);
+            input.setVerticalScrollBarEnabled(true);
+            input.setMovementMethod(new android.text.method.ScrollingMovementMethod());
+            input.setGravity(android.view.Gravity.TOP | android.view.Gravity.START);
+            input.setInputType(android.text.InputType.TYPE_CLASS_TEXT
+                    | android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                    | android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        }
         input.setPadding(48, 8, 48, 16);
         root.addView(input);
 

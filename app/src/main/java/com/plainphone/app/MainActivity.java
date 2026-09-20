@@ -1435,15 +1435,6 @@ public class MainActivity extends Activity implements SelectionHost {
         flipIconLp.rightMargin = UiKit.dp(this, 14);
         status.addView(chessFlipIcon, flipIconLp);
 
-        android.widget.ImageView chessCommentIcon = new android.widget.ImageView(this);
-        chessCommentIcon.setImageDrawable(getResources().getDrawable(R.drawable.ic_chess_comment, getTheme()));
-        chessCommentIcon.setScaleType(android.widget.ImageView.ScaleType.CENTER_INSIDE);
-        chessCommentIcon.setContentDescription("Add or edit a comment on this move");
-        chessCommentIcon.setOnClickListener(v -> chessEditCurrentMoveComment());
-        LinearLayout.LayoutParams commentIconLp = new LinearLayout.LayoutParams(UiKit.dp(this, iconBoxDp), UiKit.dp(this, iconBoxDp));
-        commentIconLp.rightMargin = UiKit.dp(this, 14);
-        status.addView(chessCommentIcon, commentIconLp);
-
         chessResizeIcon = new android.widget.ImageView(this);
         chessResizeIcon.setImageDrawable(getResources().getDrawable(R.drawable.ic_chess_resize, getTheme()));
         chessResizeIcon.setScaleType(android.widget.ImageView.ScaleType.CENTER_INSIDE);
@@ -2257,15 +2248,6 @@ public class MainActivity extends Activity implements SelectionHost {
             chessEngineLines[i].setVisibility(has ? View.VISIBLE : View.GONE);
             if (has) chessEngineLines[i].setText(engineLines.get(i));
         }
-    }
-
-    /** "Add text" icon in the board status row — opens the same comment editor the moves
-     *  grid's long-press menu offers, but for whatever position is on screen right now
-     *  rather than requiring a long-press on a specific move first. */
-    private void chessEditCurrentMoveComment() {
-        ChessBoardView.MoveNode node = chessBoard.currentNode();
-        UiKit.textPrompt(this, "Comment", node.comment, "Save",
-                text -> chessBoard.setComment(node, text));
     }
 
     private void renderRows() {

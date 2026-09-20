@@ -176,8 +176,8 @@ final class MovesGrid extends LinearLayout {
             }
             posInRow++;
 
-            if (whiteNode.comment != null) { addView(commentRow(host, moveLabel(whiteNode), whiteNode.comment)); forceNewRow = true; }
-            if (blackNode != null && blackNode.comment != null) { addView(commentRow(host, moveLabel(blackNode), blackNode.comment)); forceNewRow = true; }
+            if (whiteNode.comment != null) { addView(commentRow(host, whiteNode)); forceNewRow = true; }
+            if (blackNode != null && blackNode.comment != null) { addView(commentRow(host, blackNode)); forceNewRow = true; }
         }
     }
 
@@ -197,15 +197,17 @@ final class MovesGrid extends LinearLayout {
     }
 
     /** One mainline move's comment, right under the row it's on — "5. Nc3 — A model
-     *  Najdorf." Not clickable; the move cell right above it already jumps there. */
-    private View commentRow(Activity host, String label, String comment) {
+     *  Najdorf." Long-press it (same as long-pressing the move itself) for the
+     *  edit/remove-comment menu. */
+    private View commentRow(Activity host, ChessBoardView.MoveNode node) {
         TextView t = new TextView(host);
-        t.setText(label + " — " + comment);
+        t.setText(moveLabel(node) + " — " + node.comment);
         t.setTypeface(Fonts.current(host), android.graphics.Typeface.ITALIC);
         t.setTextSize(VARIATION_SP);
         t.setTextColor(0xFFB7B7B7);
         int pad = UiKit.dp(host, 18);
         t.setPadding(pad, UiKit.dp(host, 2), pad, UiKit.dp(host, 10));
+        t.setOnLongClickListener(v -> { showMoveMenu(host, node, false); return true; });
         return t;
     }
 
@@ -388,7 +390,7 @@ final class MovesGrid extends LinearLayout {
         }
         root.addView(menuRow(host, node.comment == null ? "Add comment" : "Edit comment", v -> {
             dialog.dismiss();
-            UiKit.textPrompt(host, "Comment", node.comment, "Save",
+            UiKit.textPrompt(host, "Comment", node.comment, "Save", false,
                     text -> board.setComment(node, text));
         }));
         if (node.comment != null) {
