@@ -12,6 +12,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.BaseAdapter;
 import android.widget.EditText;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.TextView;
@@ -779,8 +780,11 @@ final class ChessLibraryPanel {
         row.setBackgroundColor(0xFF1C1C1C);
         row.setPadding(UiKit.dp(host, 20), UiKit.dp(host, 14), UiKit.dp(host, 10), UiKit.dp(host, 14));
 
-        TextView chevron = text(12, 0xFF8A8A8A);
-        row.addView(chevron, new LinearLayout.LayoutParams(UiKit.dp(host, 16), ViewGroup.LayoutParams.WRAP_CONTENT));
+        ImageView chevron = new ImageView(host);
+        chevron.setImageResource(R.drawable.ic_chevron_right);
+        LinearLayout.LayoutParams chevronLp = new LinearLayout.LayoutParams(UiKit.dp(host, 20), UiKit.dp(host, 20));
+        chevronLp.rightMargin = UiKit.dp(host, 8);
+        row.addView(chevron, chevronLp);
 
         LinearLayout lines = new LinearLayout(host);
         lines.setOrientation(LinearLayout.VERTICAL);
@@ -809,7 +813,7 @@ final class ChessLibraryPanel {
 
     private void bindHeaderRow(View row, HeaderRow h) {
         LinearLayout content = (LinearLayout) ((LinearLayout) row).getChildAt(1);
-        ((TextView) content.getChildAt(0)).setText(expandedSources.contains(h.source) ? "v" : ">");
+        content.getChildAt(0).setRotation(expandedSources.contains(h.source) ? 90f : 0f);
         LinearLayout lines = (LinearLayout) content.getChildAt(1);
         ((TextView) lines.getChildAt(0)).setText(h.source);
         String imported = h.importedAt > 0
