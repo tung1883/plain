@@ -56,6 +56,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -1995,111 +1996,206 @@ public class MainActivity extends Activity implements SelectionHost {
         if (chessBoard.mainlineSans().isEmpty()) { toast("No moves to save"); return; }
         new Thread(() -> {
             List<ChessLibrary.SourceSummary> sources = ChessLibrary.listSources(this);
-            runOnUiThread(() -> chessShowSaveSheetWith(sources));
+            runOnUiThread(() -> chessShowSaveSheetWith(new ArrayList<>(sources), new LinkedHashSet<>(), 0, null, null));
         }).start();
     }
 
-    private void chessShowSaveSheetWith(List<ChessLibrary.SourceSummary> sources) {
+    /** One dialog, two screens swapped in place (never a second stacked dialog — that used to
+     *  make "+ New PGN" flash the sheet behind it for a moment while the old dialog dismissed
+     *  and the new one hadn't shown yet): MAIN (Update / "Save to…") and PICKER (multi-select
+     *  which PGN(s) to save into, "+ New PGN"). "+ New PGN" itself is the one exception — it
+     *  dismisses this dialog for {@link UiKit#textPrompt}'s own proven-working keyboard
+     *  handling (an EditText added to an already-shown dialog window, the pattern the other
+     *  two screens use, never reliably got the IME to actually open — focus and a forced
+     *  show() call both landed, the keyboard itself just didn't), then reopens this same
+     *  picker via {@code onDismiss} either way (Cancel or Create). */
+    private void chessShowSaveSheetWith(List<ChessLibrary.SourceSummary> sourceList,
+                                        Set<String> selectedTargets, int initialMode,
+                                        Map<String, String> pendingTags, String pendingResult) {
+        int[] mode = {initialMode};
+        Map<String, String>[] tagsHolder = new Map[]{pendingTags};
+        String[] resultHolder = {pendingResult};
+        Runnable[] render = new Runnable[1];
+
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackground(UiKit.dialogBackground(this));
         UiKit.clipRounded(this, root, UiKit.R_MD);
         root.setPadding(2, 32, 2, UiKit.dp(this, UiKit.R_MD));
-        root.addView(UiKit.dialogTitle(this, "Save Game"));
 
-        String[] selectedSource = { chessCurrentEntry != null ? chessCurrentEntry.src
-                : (sources.isEmpty() ? null : sources.get(0).label) };
+        LinearLayout body = new LinearLayout(this);
+        body.setOrientation(LinearLayout.VERTICAL);
+        root.addView(body);
 
         android.widget.FrameLayout scrim = UiKit.wrapScrim(this, root, 0.85f);
         AlertDialog dialog = new AlertDialog.Builder(this, R.style.Theme_PlainPhone_RoundedDialog)
                 .setView(scrim).create();
 
-        if (chessCurrentEntry != null) {
-            root.addView(chessSettingsRow("Update this game", v -> {
-                dialog.dismiss();
-                chessUpdateCurrentEntry();
-            }));
-        }
-
-        TextView pgnRow = chessSettingsRow(chessSaveTargetLabel(selectedSource[0]), v -> {});
-        pgnRow.setOnClickListener(v -> chessPickSaveTarget(sources, chosen -> {
-            selectedSource[0] = chosen;
-            pgnRow.setText(chessSaveTargetLabel(chosen));
-        }));
-        root.addView(pgnRow);
-
-        root.addView(chessSettingsRow("Save", v -> {
-            dialog.dismiss();
-            if (selectedSource[0] == null) { toast("Choose a PGN first"); return; }
-            chessSaveAsNewGame(selectedSource[0]);
-        }));
+        render[0] = () -> {
+            body.removeAllViews();
+            if (mode[0] == 0) {
+                body.addView(UiKit.dialogTitle(this, "Save Game"));
+                if (chessCurrentEntry != null) {
+                    body.addView(chessSettingsRow("Update this game", v -> {
+                        dialog.dismiss();
+                        chessUpdateCurrentEntry(tagsHolder[0], resultHolder[0]);
+                    }));
+                }
+                body.addView(chessSettingsRow("Edit metadata", v -> {
+                    dialog.dismiss();
+                    String w = tagsHolder[0] != null ? tagsHolder[0].get("White") : chessCurrentEntry != null ? chessCurrentEntry.white : "";
+                    String b = tagsHolder[0] != null ? tagsHolder[0].get("Black") : chessCurrentEntry != null ? chessCurrentEntry.black : "";
+                    String ev = tagsHolder[0] != null ? tagsHolder[0].get("Event") : chessCurrentEntry != null ? chessCurrentEntry.event : "";
+                    String rd = tagsHolder[0] != null ? tagsHolder[0].get("Round") : chessCurrentEntry != null ? chessCurrentEntry.round : "";
+                    String dt = tagsHolder[0] != null ? tagsHolder[0].get("Date") : chessCurrentEntry != null ? chessCurrentEntry.date
+                            : new java.text.SimpleDateFormat("yyyy.MM.dd", java.util.Locale.US).format(new java.util.Date());
+                    String ec = tagsHolder[0] != null ? tagsHolder[0].get("ECO") : chessCurrentEntry != null ? chessCurrentEntry.eco : "";
+                    String res = resultHolder[0] != null ? resultHolder[0]
+                            : chessCurrentEntry != null ? chessCurrentEntry.result : chessBoard.pgnResult();
+                    // Save here closes for good — no return to the Save Game sheet. A loaded
+                    // game's tags are committed straight to its library entry, same as the
+                    // Library's own "Edit metadata"; a still-unsaved game has nothing to
+                    // commit to yet, so there's nothing more to do either way.
+                    ChessMetadataDialog.show(this, w, b, ev, rd, dt, ec, res,
+                            (tags, result) -> {
+                                if (chessCurrentEntry == null) return;
+                                ChessLibrary.Entry entry = chessCurrentEntry;
+                                new Thread(() -> ChessLibrary.updateMetadata(this, entry.id, tags, result)).start();
+                                chessCurrentEntry = new ChessLibrary.Entry(entry.id, entry.src,
+                                        tags.get("White"), tags.get("Black"), tags.get("Event"), tags.get("Round"),
+                                        tags.get("ECO"), tags.get("Date"), result, entry.sansJoined, entry.importedAt,
+                                        entry.comments);
+                                updateChessMetaUi();
+                                toast("Metadata updated");
+                            }, null);
+                }));
+                body.addView(chessSettingsRow("Save to…", v -> { mode[0] = 1; render[0].run(); }));
+            } else {
+                body.addView(chessPickerHeader("Save to…", () -> { mode[0] = 0; render[0].run(); },
+                        "Save", () -> {
+                            if (selectedTargets.isEmpty()) { toast("Choose at least one PGN"); return; }
+                            dialog.dismiss();
+                            chessSaveAsNewGameMulti(new LinkedHashSet<>(selectedTargets), tagsHolder[0], resultHolder[0]);
+                        }));
+                body.addView(chessColoredRow("+ New PGN", Color.WHITE, v -> {
+                    dialog.dismiss();
+                    UiKit.textPrompt(this, "New PGN", "", "Create", true, name -> {
+                        new Thread(() -> ChessLibrary.createSource(this, name)).start();
+                        String normalized = ChessLibrary.normalizeSourceName(name);
+                        sourceList.add(new ChessLibrary.SourceSummary(normalized, 0, System.currentTimeMillis()));
+                        selectedTargets.add(normalized);
+                    }, () -> chessShowSaveSheetWith(sourceList, selectedTargets, 1, tagsHolder[0], resultHolder[0]));
+                }));
+                LinearLayout rows = new LinearLayout(this);
+                rows.setOrientation(LinearLayout.VERTICAL);
+                for (ChessLibrary.SourceSummary s : sourceList) {
+                    boolean sel = selectedTargets.contains(s.label);
+                    rows.addView(chessColoredRow((sel ? "[x] " : "[ ] ") + s.label, Color.WHITE, v -> {
+                        if (!selectedTargets.remove(s.label)) selectedTargets.add(s.label);
+                        render[0].run();
+                    }));
+                }
+                ScrollView scroller = new ScrollView(this);
+                scroller.addView(rows, new ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                int maxScrollerPx = (int) (getResources().getDisplayMetrics().heightPixels * 0.5f);
+                body.addView(scroller, new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, maxScrollerPx));
+            }
+        };
+        render[0].run();
 
         UiKit.finishCentered(dialog, scrim);
     }
 
-    private String chessSaveTargetLabel(String source) {
-        return "Save as new game in: " + (source == null ? "choose a PGN…" : source);
+    /** [← back]  title  .......  [action], all one row — the picker/new-PGN screens' shared
+     *  header inside {@link #chessShowSaveSheetWith}'s single dialog. */
+    private LinearLayout chessPickerHeader(String title, Runnable onBack, String actionLabel, Runnable onAction) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(48, 20, 48, 20);
+        TextView back = chessText("←", 22, Color.WHITE);
+        back.setOnClickListener(v -> onBack.run());
+        row.addView(back);
+        TextView titleView = chessText(title, 17, Color.WHITE);
+        titleView.setTypeface(Fonts.current(this), android.graphics.Typeface.BOLD);
+        LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        titleLp.leftMargin = UiKit.dp(this, 16);
+        row.addView(titleView, titleLp);
+        TextView action = chessText(actionLabel, 17, Color.WHITE);
+        action.setTypeface(Fonts.current(this), android.graphics.Typeface.BOLD);
+        action.setOnClickListener(v -> onAction.run());
+        row.addView(action);
+        return row;
     }
 
-    /** {@link #chessOptionSheet}'s pick-one list, sources plus a trailing "+ New PGN…" —
-     *  picking that prompts a name, declares it (see {@link ChessLibrary#createSource}) so it
-     *  shows up in the Library even before this game is actually saved into it, then hands the
-     *  new name back the same way an existing source would be. */
-    private void chessPickSaveTarget(List<ChessLibrary.SourceSummary> sources, java.util.function.Consumer<String> onPicked) {
-        String[] labels = new String[sources.size() + 1];
-        for (int i = 0; i < sources.size(); i++) labels[i] = sources.get(i).label;
-        labels[sources.size()] = "+ New PGN…";
-        chessOptionSheet("Save into", labels, index -> {
-            if (index == sources.size()) {
-                UiKit.textPrompt(this, "New PGN", "", "Create", true, name -> {
-                    new Thread(() -> ChessLibrary.createSource(this, name)).start();
-                    onPicked.accept(name);
-                });
-            } else {
-                onPicked.accept(sources.get(index).label);
-            }
-        });
+    private TextView chessColoredRow(String label, int color, View.OnClickListener listener) {
+        TextView row = chessText(label, 20, color);
+        row.setPadding(48, 32, 48, 32);
+        StateListDrawable bg = new StateListDrawable();
+        bg.addState(new int[]{android.R.attr.state_pressed}, new ColorDrawable(Color.DKGRAY));
+        bg.addState(new int[]{}, new ColorDrawable(Color.BLACK));
+        row.setBackground(bg);
+        row.setOnClickListener(listener);
+        return row;
     }
 
-    private void chessUpdateCurrentEntry() {
+    /** {@code tagOverride}/{@code resultOverride} come from the Save sheet's "Edit metadata"
+     *  step, when the user went through it — {@code null} for either leaves the corresponding
+     *  half of the game (moves/comments/result vs. tags) untouched, same as before metadata
+     *  editing existed. */
+    private void chessUpdateCurrentEntry(Map<String, String> tagOverride, String resultOverride) {
         ChessLibrary.Entry entry = chessCurrentEntry;
         if (entry == null) return;
         List<String> sans = chessBoard.mainlineSans();
         List<String> comments = chessBoard.mainlineComments();
-        String result = chessBoard.pgnResult();
+        String result = resultOverride != null ? resultOverride : chessBoard.pgnResult();
         new Thread(() -> {
             boolean ok = ChessLibrary.updateEntry(this, entry.id, sans, comments, result);
+            if (ok && tagOverride != null) ChessLibrary.updateMetadata(this, entry.id, tagOverride, null);
             runOnUiThread(() -> toast(ok ? "Game updated" : "Could not update game"));
         }).start();
     }
 
-    /** Appends the board's current game as a brand-new library entry under {@code source} —
-     *  reusing {@link #chessCurrentEntry}'s own player/event tags when this game started as a
-     *  copy of one (a natural "save as" for a variation explored from a loaded game), plain
-     *  defaults otherwise. */
-    private void chessSaveAsNewGame(String source) {
+    /** Appends the board's current game as a brand-new library entry into every PGN in
+     *  {@code sources} — {@code tagOverride}/{@code resultOverride} from "Edit metadata" if the
+     *  user went through it, otherwise {@link #chessCurrentEntry}'s own player/event tags when
+     *  this game started as a copy of one (a natural "save as" for a variation explored from a
+     *  loaded game), plain defaults otherwise. */
+    private void chessSaveAsNewGameMulti(Set<String> sources, Map<String, String> tagOverride, String resultOverride) {
         List<String> sans = chessBoard.mainlineSans();
         List<String> comments = chessBoard.mainlineComments();
-        String result = chessBoard.pgnResult();
-        Map<String, String> tags = new LinkedHashMap<>();
-        if (chessCurrentEntry != null) {
-            tags.put("White", chessCurrentEntry.white);
-            tags.put("Black", chessCurrentEntry.black);
-            tags.put("Event", chessCurrentEntry.event);
-            tags.put("Round", chessCurrentEntry.round);
-            tags.put("ECO", chessCurrentEntry.eco);
-            tags.put("Date", chessCurrentEntry.date);
+        String result = resultOverride != null ? resultOverride : chessBoard.pgnResult();
+        Map<String, String> tags;
+        if (tagOverride != null) {
+            tags = tagOverride;
         } else {
-            tags.put("Event", "Plainphone study");
-            tags.put("Date", new java.text.SimpleDateFormat("yyyy.MM.dd", java.util.Locale.US).format(new java.util.Date()));
+            tags = new LinkedHashMap<>();
+            if (chessCurrentEntry != null) {
+                tags.put("White", chessCurrentEntry.white);
+                tags.put("Black", chessCurrentEntry.black);
+                tags.put("Event", chessCurrentEntry.event);
+                tags.put("Round", chessCurrentEntry.round);
+                tags.put("ECO", chessCurrentEntry.eco);
+                tags.put("Date", chessCurrentEntry.date);
+            } else {
+                tags.put("Event", "Plainphone study");
+                tags.put("Date", new java.text.SimpleDateFormat("yyyy.MM.dd", java.util.Locale.US).format(new java.util.Date()));
+            }
         }
         new Thread(() -> {
-            String id = ChessLibrary.saveGame(this, source, tags, sans, comments, result);
+            String lastId = null;
+            for (String source : sources) {
+                String id = ChessLibrary.saveGame(this, source, tags, sans, comments, result);
+                if (id != null) lastId = id;
+            }
+            String finalId = lastId;
             runOnUiThread(() -> {
-                if (id != null) {
-                    chessCurrentEntry = ChessLibrary.findById(this, id);
+                if (finalId != null) {
+                    chessCurrentEntry = ChessLibrary.findById(this, finalId);
                     updateChessMetaUi();
-                    toast("Saved to " + source);
+                    toast("Saved to " + sources.size() + (sources.size() == 1 ? " PGN" : " PGNs"));
                 } else {
                     toast("Could not save game");
                 }

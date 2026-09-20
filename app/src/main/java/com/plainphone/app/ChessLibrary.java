@@ -15,8 +15,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /** Every game ever imported through "Import PGN", kept around so it can be browsed later —
@@ -88,19 +90,30 @@ final class ChessLibrary {
         return new File(context.getFilesDir(), "chess_sources.jsonl");
     }
 
+    /** ".pgn" appended if missing (case-insensitive) — an imported source's label is always
+     *  its real filename (so it always carries the extension); a manually created one is just
+     *  whatever the user typed, and stood out without it. */
+    static String normalizeSourceName(String name) {
+        String trimmed = name == null ? "" : name.trim();
+        return trimmed.toLowerCase(java.util.Locale.US).endsWith(".pgn") ? trimmed : trimmed + ".pgn";
+    }
+
     /** Declares a source name so it shows up in {@link #listSources} before it has any games
-     *  — a no-op if that name is already known (declared, or already carried by a game). */
-    static void createSource(Context context, String name) {
-        for (SourceSummary s : listSources(context)) if (s.label.equals(name)) return;
+     *  — a no-op if that (normalized) name is already known (declared, or already carried by
+     *  a game). Returns the normalized name actually stored. */
+    static String createSource(Context context, String name) {
+        String normalized = normalizeSourceName(name);
+        for (SourceSummary s : listSources(context)) if (s.label.equals(normalized)) return normalized;
         File f = sourcesFile(context);
         JSONObject o = new JSONObject();
         try {
-            o.put("name", name);
+            o.put("name", normalized);
             o.put("createdAt", System.currentTimeMillis());
-        } catch (JSONException ignored) { return; }
+        } catch (JSONException ignored) { return normalized; }
         try (FileOutputStream out = new FileOutputStream(f, true)) {
             out.write((o.toString() + "\n").getBytes(StandardCharsets.UTF_8));
         } catch (IOException ignored) { }
+        return normalized;
     }
 
     /** Declared source names still with zero games — {@code name -> createdAt}. */
@@ -516,8 +529,11 @@ final class ChessLibrary {
         return writeLines(context, lines);
     }
 
-    /** Reassigns {@code ids}' "src" to {@code toSource} — moving games between PGNs. */
-    static boolean moveGames(Context context, java.util.Set<String> ids, String toSource) {
+    /** Overwrites one game's tags (White/Black/Event/Round/Date/ECO — only the keys present
+     *  in {@code tags} are touched) and optionally its result, WITHOUT touching moves or
+     *  comments — the "Edit metadata" flow, as opposed to {@link #updateEntry}'s moves/
+     *  comments/result. {@code result} may be {@code null} to leave it as-is. */
+    static boolean updateMetadata(Context context, String id, Map<String, String> tags, String result) {
         File f = file(context);
         if (!f.exists()) return false;
         List<String> lines = new ArrayList<>();
@@ -528,8 +544,14 @@ final class ChessLibrary {
                 if (line.isEmpty()) continue;
                 try {
                     JSONObject o = new JSONObject(line);
-                    if (ids.contains(o.optString("id", ""))) {
-                        o.put("src", toSource);
+                    if (id.equals(o.optString("id", ""))) {
+                        if (tags.containsKey("White")) o.put("white", tags.get("White"));
+                        if (tags.containsKey("Black")) o.put("black", tags.get("Black"));
+                        if (tags.containsKey("Event")) o.put("event", tags.get("Event"));
+                        if (tags.containsKey("Round")) o.put("round", tags.get("Round"));
+                        if (tags.containsKey("Date")) o.put("date", tags.get("Date"));
+                        if (tags.containsKey("ECO")) o.put("eco", tags.get("ECO"));
+                        if (result != null) o.put("result", result.isEmpty() ? "*" : result);
                         line = o.toString();
                         changed = true;
                     }
@@ -541,25 +563,71 @@ final class ChessLibrary {
         return writeLines(context, lines);
     }
 
+    /** Reassigns {@code ids}' "src" to {@code toSource} — moving games between PGNs. A source
+     *  left with no games by the move is declared (see {@link #createSource}) so it stays in
+     *  the Library as an empty PGN, same reasoning as {@link #deleteGames}. */
+    static boolean moveGames(Context context, java.util.Set<String> ids, String toSource) {
+        File f = file(context);
+        if (!f.exists()) return false;
+        List<String> lines = new ArrayList<>();
+        Set<String> movedFromSources = new LinkedHashSet<>();
+        Set<String> stillHasGames = new LinkedHashSet<>();
+        boolean changed = false;
+        try (BufferedReader r = new BufferedReader(new FileReader(f))) {
+            String line;
+            while ((line = r.readLine()) != null) {
+                if (line.isEmpty()) continue;
+                try {
+                    JSONObject o = new JSONObject(line);
+                    if (ids.contains(o.optString("id", ""))) {
+                        movedFromSources.add(o.optString("src", ""));
+                        o.put("src", toSource);
+                        line = o.toString();
+                        changed = true;
+                    } else {
+                        stillHasGames.add(o.optString("src", ""));
+                    }
+                } catch (JSONException ignored) { }
+                lines.add(line);
+            }
+        } catch (IOException ignored) { return false; }
+        if (!changed) return false;
+        boolean ok = writeLines(context, lines);
+        if (ok) {
+            for (String src : movedFromSources) if (!stillHasGames.contains(src)) createSource(context, src);
+        }
+        return ok;
+    }
+
     /** Removes {@code ids} — deleting individual games, as opposed to {@link #deleteSource}'s
      *  whole-PGN delete. Callers are responsible for cascade-deleting those games' puzzles,
-     *  same caveat as {@code deleteSource}. */
+     *  same caveat as {@code deleteSource}. A source that loses its LAST game this way is
+     *  declared (see {@link #createSource}) so it stays in the Library as an empty PGN instead
+     *  of silently vanishing — deleting a game is not the same action as deleting its PGN. */
     static boolean deleteGames(Context context, java.util.Set<String> ids) {
         File f = file(context);
         if (!f.exists()) return false;
         List<String> keep = new ArrayList<>();
+        Set<String> removedFromSources = new LinkedHashSet<>();
+        Set<String> stillHasGames = new LinkedHashSet<>();
         boolean removedAny = false;
         try (BufferedReader r = new BufferedReader(new FileReader(f))) {
             String line;
             while ((line = r.readLine()) != null) {
                 if (line.isEmpty()) continue;
                 Entry e = parseLine(line, false);
-                if (e != null && ids.contains(e.id)) { removedAny = true; continue; }
+                if (e == null) continue;
+                if (ids.contains(e.id)) { removedAny = true; removedFromSources.add(e.src); continue; }
+                stillHasGames.add(e.src);
                 keep.add(line);
             }
         } catch (IOException ignored) { return false; }
         if (!removedAny) return false;
-        return writeLines(context, keep);
+        boolean ok = writeLines(context, keep);
+        if (ok) {
+            for (String src : removedFromSources) if (!stillHasGames.contains(src)) createSource(context, src);
+        }
+        return ok;
     }
 
     /** PGN text for an arbitrary set of games (multi-select export) — tags, moves and comments

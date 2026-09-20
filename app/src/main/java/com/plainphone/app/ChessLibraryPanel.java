@@ -554,6 +554,11 @@ final class ChessLibraryPanel {
         TextView result = text(13, 0xFF8A8A8A);
         result.setPadding(UiKit.dp(host, 10), 0, 0, 0);
         row.addView(result);
+        TextView kebab = text(18, 0xFF8A8A8A);
+        kebab.setText("⋮");
+        kebab.setGravity(Gravity.CENTER);
+        kebab.setBackground(UiKit.pressable(host, Color.BLACK, Color.DKGRAY, 0, 0f, UiKit.R_SM));
+        row.addView(kebab, new LinearLayout.LayoutParams(UiKit.dp(host, 36), UiKit.dp(host, 36)));
         return row;
     }
 
@@ -564,6 +569,37 @@ final class ChessLibraryPanel {
         ((TextView) lines.getChildAt(0)).setText(marker + ChessBoardView.shortName(e.white) + " vs " + ChessBoardView.shortName(e.black));
         ((TextView) lines.getChildAt(1)).setText(e.event + " · " + e.date);
         ((TextView) box.getChildAt(1)).setText(e.result);
+        View kebab = box.getChildAt(2);
+        kebab.setVisibility(selectMode ? View.GONE : View.VISIBLE);
+        kebab.setOnClickListener(v -> openGameOptions(e));
+    }
+
+    /** The game row's "⋮" — just "Edit metadata" for now (rename/export/delete per-game
+     *  already live in the multi-select toolbar). */
+    private void openGameOptions(ChessLibrary.Entry e) {
+        LinearLayout box = new LinearLayout(host);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setBackground(UiKit.dialogBackground(host));
+        UiKit.clipRounded(host, box, UiKit.R_MD);
+        box.setPadding(2, 32, 2, UiKit.dp(host, UiKit.R_MD));
+        box.addView(UiKit.dialogTitle(host, ChessBoardView.shortName(e.white) + " vs " + ChessBoardView.shortName(e.black)));
+
+        android.widget.FrameLayout scrim = UiKit.wrapScrim(host, box, 0.85f);
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(
+                host, R.style.Theme_PlainPhone_RoundedDialog).setView(scrim).create();
+
+        box.addView(optionRow("Edit metadata", Color.WHITE, v -> {
+            dialog.dismiss();
+            ChessMetadataDialog.show(host, e.white, e.black, e.event, e.round, e.date, e.eco, e.result,
+                    (tags, result) -> new Thread(() -> {
+                        ChessLibrary.updateMetadata(host, e.id, tags, result);
+                        host.runOnUiThread(this::refresh);
+                    }).start(),
+                    null);
+        }));
+        box.addView(optionRow("Cancel", 0xFF8A8A8A, v -> dialog.dismiss()));
+
+        UiKit.finishCentered(dialog, scrim);
     }
 
     // --- multi-select: move / export / delete games ---------------------------------
@@ -589,7 +625,7 @@ final class ChessLibraryPanel {
     }
 
     private void updateSelectBar() {
-        selectCountLabel.setText(selectedIds.size() + " selected");
+        selectCountLabel.setText(String.valueOf(selectedIds.size()));
     }
 
     private View buildSelectBar() {
@@ -649,8 +685,9 @@ final class ChessLibraryPanel {
         box.addView(optionRow("+ New PGN…", 0xFF4A9EFF, v -> {
             dialog.dismiss();
             UiKit.textPrompt(host, "New PGN", "", "Create", true, name -> {
+                String normalized = ChessLibrary.normalizeSourceName(name);
                 new Thread(() -> ChessLibrary.createSource(host, name)).start();
-                moveSelectedTo(ids, name);
+                moveSelectedTo(ids, normalized);
             });
         }));
         box.addView(optionRow("Cancel", 0xFF8A8A8A, v -> dialog.dismiss()));

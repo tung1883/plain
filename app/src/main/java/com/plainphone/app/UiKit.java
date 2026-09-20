@@ -248,6 +248,16 @@ class UiKit {
      *  that should wrap and grow instead of scrolling sideways in one line. */
     static void textPrompt(android.app.Activity host, String title, String initial,
                            String okLabel, boolean singleLine, java.util.function.Consumer<String> onOk) {
+        textPrompt(host, title, initial, okLabel, singleLine, onOk, null);
+    }
+
+    /** Same prompt, plus {@code onDismiss} — fires however the dialog closes (Cancel, the
+     *  save/create action, the back button, tapping the scrim), for a caller that needs to
+     *  reopen whatever was behind it once this one's gone (see the chess Save sheet's
+     *  "+ New PGN", which returns to its own PGN picker either way). */
+    static void textPrompt(android.app.Activity host, String title, String initial,
+                           String okLabel, boolean singleLine, java.util.function.Consumer<String> onOk,
+                           Runnable onDismiss) {
         android.graphics.Typeface font = Fonts.current(host);
         LinearLayout root = new LinearLayout(host);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -288,6 +298,7 @@ class UiKit {
             dialog.dismiss();
         }));
         root.addView(promptRow(host, font, "Cancel", dialog::dismiss));
+        if (onDismiss != null) dialog.setOnDismissListener(d -> onDismiss.run());
         finishCentered(dialog, scrim);
         focusAndShowKeyboard(host, input);
     }
