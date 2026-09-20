@@ -138,6 +138,8 @@ public class MainActivity extends Activity implements SelectionHost {
     // loaded straight from a raw PGN file that hasn't been imported yet. Drives the
     // metadata block and the "Game N of M" PGN stepper; both quietly hide when this is null.
     private ChessLibrary.Entry chessCurrentEntry;
+    private final Handler chessAutosaveHandler = new Handler(Looper.getMainLooper());
+    private Runnable chessAutosaveTask;
     private TextView chessMetaPlayers, chessMetaEvent, chessMetaOpening, chessMetaResult;
     private TextView chessPgnStepper, chessPgnSourceChip;
     private LinearLayout chessMetaBlock, chessPgnRow;
@@ -1462,14 +1464,16 @@ public class MainActivity extends Activity implements SelectionHost {
         saveIconLp.rightMargin = UiKit.dp(this, 14);
         status.addView(chessSaveIcon, saveIconLp);
 
-        android.widget.ImageView chessClearArrowsIcon = new android.widget.ImageView(this);
-        chessClearArrowsIcon.setImageDrawable(getResources().getDrawable(R.drawable.ic_chess_clear_arrows, getTheme()));
-        chessClearArrowsIcon.setScaleType(android.widget.ImageView.ScaleType.CENTER_INSIDE);
-        chessClearArrowsIcon.setContentDescription("Clear arrows and circles");
-        chessClearArrowsIcon.setOnClickListener(v -> chessBoard.clearAnnotations());
-        LinearLayout.LayoutParams clearArrowsIconLp = new LinearLayout.LayoutParams(UiKit.dp(this, iconBoxDp), UiKit.dp(this, iconBoxDp));
-        clearArrowsIconLp.rightMargin = UiKit.dp(this, 14);
-        status.addView(chessClearArrowsIcon, clearArrowsIconLp);
+        android.widget.ImageView chessNewBoardIcon = new android.widget.ImageView(this);
+        chessNewBoardIcon.setImageDrawable(getResources().getDrawable(R.drawable.ic_chess_new_board, getTheme()));
+        chessNewBoardIcon.setScaleType(android.widget.ImageView.ScaleType.CENTER_INSIDE);
+        chessNewBoardIcon.setContentDescription("New board");
+        chessNewBoardIcon.setOnClickListener(v -> VaultUi.confirm(this, "Go to a new board?", null,
+                "Yes", () -> { chessCurrentEntry = null; chessBoard.resetToStartPosition(); updateChessMetaUi(); },
+                "Cancel", () -> { }));
+        LinearLayout.LayoutParams newBoardIconLp = new LinearLayout.LayoutParams(UiKit.dp(this, iconBoxDp), UiKit.dp(this, iconBoxDp));
+        newBoardIconLp.rightMargin = UiKit.dp(this, 14);
+        status.addView(chessNewBoardIcon, newBoardIconLp);
 
         android.widget.ImageView chessSettingsIcon = new android.widget.ImageView(this);
         chessSettingsIcon.setImageDrawable(getResources().getDrawable(R.drawable.ic_chess_settings, getTheme()));
@@ -1968,6 +1972,12 @@ public class MainActivity extends Activity implements SelectionHost {
                 v -> { dialog.dismiss(); chessChooseBoard(); }));
         rows.addView(chessSettingsRow("Piece theme: " + ChessBoardView.pretty(chessSelectedPieces),
                 v -> { dialog.dismiss(); chessChoosePieces(); }));
+        boolean coords = Config.getChessShowCoords(this);
+        rows.addView(chessSettingsRow("Board coordinates: " + (coords ? "On" : "Off"), v -> {
+            Config.setChessShowCoords(this, !coords);
+            chessBoard.invalidate();
+            renderChessSettingsRows(rows, dialog);
+        }));
         rows.addView(UiKit.dialogTitle(this, "Engine"));
         int depth = Config.getChessEngineDepth(this);
         rows.addView(chessSettingsRow("Engine depth: " + depth, v -> {
@@ -1979,12 +1989,6 @@ public class MainActivity extends Activity implements SelectionHost {
         rows.addView(chessSettingsRow("Variations shown: " + lines, v -> {
             Config.setChessAnalysisLines(this, lines >= 5 ? 1 : lines + 1);
             chessBoard.requestAnalysis();
-            renderChessSettingsRows(rows, dialog);
-        }));
-        boolean coords = Config.getChessShowCoords(this);
-        rows.addView(chessSettingsRow("Board coordinates: " + (coords ? "On" : "Off"), v -> {
-            Config.setChessShowCoords(this, !coords);
-            chessBoard.invalidate();
             renderChessSettingsRows(rows, dialog);
         }));
     }
@@ -2502,6 +2506,25 @@ public class MainActivity extends Activity implements SelectionHost {
             if (has) chessEngineLines[i].setText(engineLines.get(i));
         }
         chessMovesGrid.refresh(); // comments render inline in the grid, right under their move
+        scheduleChessAutosave();
+    }
+
+    /** Debounced autosave for a game already loaded from the library — every move/comment/
+     *  variation edit lands here via {@link #updateChessHomeUi} instead of requiring a manual
+     *  "Update" tap. Debounced (1.2s of quiet) so a burst of edits (replaying moves, typing a
+     *  comment) writes once, not on every keystroke/move. Silent — no toast, unlike the manual
+     *  Update action — an autosave firing constantly would just be noise. */
+    private void scheduleChessAutosave() {
+        if (chessCurrentEntry == null) return;
+        if (chessAutosaveTask != null) chessAutosaveHandler.removeCallbacks(chessAutosaveTask);
+        ChessLibrary.Entry entry = chessCurrentEntry;
+        chessAutosaveTask = () -> {
+            List<String> sans = chessBoard.mainlineSans();
+            List<String> comments = chessBoard.mainlineComments();
+            String result = chessBoard.pgnResult();
+            new Thread(() -> ChessLibrary.updateEntry(this, entry.id, sans, comments, result)).start();
+        };
+        chessAutosaveHandler.postDelayed(chessAutosaveTask, 1200);
     }
 
     /** Just the engine-eval lines — {@link ChessBoardView}'s dedicated callback for a pure

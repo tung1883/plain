@@ -487,6 +487,11 @@ final class ChessBoardView extends View {
         synchronized (positionLock) {
             float margin = margin();
             float cell = cellSize();
+            int clipSave = canvas.save();
+            RectF boardRect = new RectF(margin, margin, margin + 8 * cell, margin + 8 * cell);
+            Path boardClip = new Path();
+            boardClip.addRoundRect(boardRect, UiKit.dp(host, 8), UiKit.dp(host, 8), Path.Direction.CW);
+            canvas.clipPath(boardClip);
             for (int row = 0; row < 8; row++) for (int col = 0; col < 8; col++) {
                 float l = margin + flip(col) * cell, t = margin + flip(row) * cell;
                 boolean isLight = ((row + col) & 1) == 0;
@@ -509,6 +514,7 @@ final class ChessBoardView extends View {
                 // Hold the piece slightly above the finger, like chess.com, so its destination stays visible.
                 drawPiece(canvas, position[dragRow][dragCol], dragX - cell / 2f, dragY - cell * .70f, cell);
             }
+            canvas.restoreToCount(clipSave);
             if (Config.getChessShowCoords(host)) {
                 coordPaint.setTextSize(UiKit.dp(host, 13));
                 coordPaint.setColor(0xFFBDBDBD);
