@@ -60,6 +60,19 @@ class Tips {
             "Boredom is the doorway to your next good idea.",
             "What you give your attention to grows.",
             "The task you keep avoiding is the one that matters.",
+            "Discipline is choosing what you want most over what you want now.",
+            "Small daily habits outrun rare heroic ones.",
+            "You do not rise to your goals. You fall to your systems.",
+            "Start before you feel ready.",
+            "The obstacle you're avoiding is usually the work itself.",
+            "Progress hides inside repetition.",
+            "Clarity comes from action, not thought.",
+            "Do less, but make it count.",
+            "Your focus is the scarcest thing you own.",
+            "Momentum is built in the boring middle, not the exciting start.",
+            "Plan your work, work your plan.",
+            "Pressure is part of what we do.",
+            "The only way out is through.",
     };
 
     static String defaultTipsText() {
