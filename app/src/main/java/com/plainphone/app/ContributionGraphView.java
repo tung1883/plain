@@ -75,13 +75,14 @@ class ContributionGraphView extends View {
 
     private static int colorFor(int count, int max) {
         if (count <= 0) return 0xFF1B1B1B;
-        int level = (int) Math.ceil(count * 4.0 / max);
-        level = Math.max(1, Math.min(4, level));
+        int level = (int) Math.ceil(count * 5.0 / max);
+        level = Math.max(1, Math.min(5, level));
         switch (level) {
             case 1: return 0xFF0E4429;
             case 2: return 0xFF006D32;
             case 3: return 0xFF26A641;
-            default: return 0xFF39D353;
+            case 4: return 0xFF39D353;
+            default: return 0xFF56D364;
         }
     }
 }
