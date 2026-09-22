@@ -45,9 +45,9 @@ final class PanelKind {
 
     static final List<PanelKind> ALL = Arrays.asList(
             new PanelKind("shell", "Shell", true,
-                    (c, h, x) -> new ShellPanel(devLabel(c, h), h, parseId(x))),
+                    (c, h, x) -> new DevLockedPanel(new ShellPanel(devLabel(c, h), h, parseId(x)))),
             new PanelKind("screen", "Screen", true,
-                    (c, h, x) -> new ScreenPanel(devLabel(c, h), h)),
+                    (c, h, x) -> new DevLockedPanel(new ScreenPanel(devLabel(c, h), h))),
             new PanelKind("notes", "Notes", false,
                     (c, h, x) -> new NotesPanel()),
             new PanelKind("chess", "Chess", false,
@@ -67,7 +67,7 @@ final class PanelKind {
             new PanelKind("supabase", "Supabase", false, "supabase",
                     (c, h, x) -> new SupabasePanel(x)),
             new PanelKind("perf", "Perf", true,
-                    (c, h, x) -> new PerfPanel(devLabel(c, h), h))
+                    (c, h, x) -> new DevLockedPanel(new PerfPanel(devLabel(c, h), h)))
     );
 
     static PanelKind byId(String id) {
