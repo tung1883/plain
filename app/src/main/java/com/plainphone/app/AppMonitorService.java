@@ -107,6 +107,8 @@ public class AppMonitorService extends AccessibilityService {
 
     private static final long TEARDOWN_GRACE_MILLIS = 700L;
 
+    private static final long HOME_FLASH_DEBOUNCE_MILLIS = 600L;
+
     private static final long HOME_COOLDOWN_MILLIS = 1500L;
 
     private static final Set<String> PASSTHROUGH_PACKAGES = new HashSet<>();
@@ -131,6 +133,8 @@ public class AppMonitorService extends AccessibilityService {
     private long homeReachedAt = 0L;
     private String sessionPackage = null;
     private long sessionStartMillis = 0L;
+    private Runnable pendingGraceClear = null;
+    private String pendingGraceClearPackage = null;
 
     @Override
     protected void onServiceConnected() {
@@ -146,6 +150,7 @@ public class AppMonitorService extends AccessibilityService {
 
         instance = null;
         endSession();
+        cancelPendingGraceClear();
         return super.onUnbind(intent);
     }
 
@@ -181,14 +186,25 @@ public class AppMonitorService extends AccessibilityService {
         String previousPackage = lastForegroundPackage;
         lastForegroundPackage = packageName;
 
+        // A locked app bounced right back to the foreground after a brief MainActivity
+        // sighting below — that was a compositor flash (an in-app transition, e.g. opening
+        // a settings sheet), not the user actually leaving, so the grace-clear it queued
+        // never fires.
+        if (packageName.equals(pendingGraceClearPackage)) {
+            cancelPendingGraceClear();
+        }
+
         if (packageName.equals(getPackageName())) {
 
             // Back at the home screen — a locked app the user just left re-locks now,
-            // instead of coasting on its unlock grace window.
+            // instead of coasting on its unlock grace window. Debounced: a transient
+            // window-focus flash through the launcher during an in-app transition (opening
+            // a dialog/sheet) reports the same event, so the clear only actually runs if
+            // we're still away from that app a moment later.
             if (className.equals(getPackageName() + ".MainActivity")
                     && previousPackage != null
                     && Config.getLockedPackages(this).contains(previousPackage)) {
-                Config.clearAppUnlock(this, previousPackage);
+                schedulePendingGraceClear(previousPackage);
             }
 
             if (className.startsWith(getPackageName() + ".")) {
@@ -645,6 +661,25 @@ public class AppMonitorService extends AccessibilityService {
             handler.removeCallbacks(pendingTeardown);
             pendingTeardown = null;
         }
+    }
+
+    private void schedulePendingGraceClear(String packageName) {
+        cancelPendingGraceClear();
+        pendingGraceClearPackage = packageName;
+        pendingGraceClear = () -> {
+            pendingGraceClear = null;
+            pendingGraceClearPackage = null;
+            Config.clearAppUnlock(this, packageName);
+        };
+        handler.postDelayed(pendingGraceClear, HOME_FLASH_DEBOUNCE_MILLIS);
+    }
+
+    private void cancelPendingGraceClear() {
+        if (pendingGraceClear != null) {
+            handler.removeCallbacks(pendingGraceClear);
+            pendingGraceClear = null;
+        }
+        pendingGraceClearPackage = null;
     }
 
     @Override
