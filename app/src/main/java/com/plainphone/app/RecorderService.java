@@ -406,15 +406,14 @@ public class RecorderService extends Service {
         vaultPlay = playDocId != null;
         if (playDocId != null) Config.setVaultRecDuration(this, playDocId, dur);
         else Recorder.healDuration(this, playRecId, dur);
+        // Loop the current track rather than auto-advancing the queue — a recording ending
+        // used to jump straight into the next one, which is surprising for voice memos (each
+        // one is its own thing, not a continuous playlist); prev/next stay manual-only.
         player.setOnCompletionListener(mp -> {
-            if (playlist != null && playIndex >= 0 && playIndex + 1 < playlist.size()) {
-                switchToIndex(playIndex + 1, true);         // auto-advance the queue
-            } else {
-                mp.seekTo(0);
-                handler.removeCallbacks(playTick);
-                updateSessionState();
-                updateNotification();
-            }
+            mp.seekTo(0);
+            mp.start();
+            updateSessionState();
+            updateNotification();
         });
         return true;
     }
@@ -858,6 +857,12 @@ public class RecorderService extends Service {
 
     void playToggle() {
         togglePlay();
+    }
+
+    /** Hard-stops playback (and the whole service, notification included) from the player
+     *  screen — the only way to do this used to be the notification's own Stop action. */
+    void stop() {
+        finishAndStop();
     }
 
     void playSeekFraction(float fraction) {

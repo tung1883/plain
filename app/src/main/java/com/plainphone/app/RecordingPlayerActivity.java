@@ -134,7 +134,22 @@ public class RecordingPlayerActivity extends Activity {
         LinearLayout outer = new LinearLayout(this);
         outer.setOrientation(LinearLayout.VERTICAL);
         outer.setBackgroundColor(Color.BLACK);
-        outer.addView(UiKit.header(this, title), new LinearLayout.LayoutParams(
+        LinearLayout headerBar = UiKit.header(this, title);
+        TextView stopBtn = new TextView(this);
+        stopBtn.setText("■");
+        stopBtn.setTextColor(0xFFE84C3D);
+        stopBtn.setTextSize(18);
+        stopBtn.setTypeface(font);
+        stopBtn.setGravity(Gravity.CENTER);
+        stopBtn.setContentDescription("Stop playback");
+        stopBtn.setOnClickListener(v -> {
+            if (svc != null) svc.stop();
+        });
+        LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(
+                UiKit.dp(this, 44), LinearLayout.LayoutParams.MATCH_PARENT);
+        sp.rightMargin = UiKit.dp(this, 8);
+        headerBar.addView(stopBtn, sp);
+        outer.addView(headerBar, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
         View hair = new View(this);
         hair.setBackgroundColor(0xFF1C1C1C);
