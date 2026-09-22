@@ -122,7 +122,7 @@ public class MainActivity extends Activity implements SelectionHost {
     // height is what resizeChessBoardIfNeeded subtracts to size the board; the moves grid
     // itself scrolls independently below it now, so its height must never factor in.
     private LinearLayout chessFixedRows;
-    private TextView chessTurnLine;
+    private TextView chessTurnLine, chessOpeningLine;
     private TextView[] chessEngineLines;
     private MovesGrid chessMovesGrid;
     private String chessSelectedBoard = "Grey";
@@ -369,6 +369,7 @@ public class MainActivity extends Activity implements SelectionHost {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         IndexScheduler.schedule(this);
+        DevSyncScheduler.schedule(this);
         pm = getPackageManager();
         Config.migrateArt(this);
 
@@ -1483,6 +1484,13 @@ public class MainActivity extends Activity implements SelectionHost {
         status.addView(chessSettingsIcon, new LinearLayout.LayoutParams(UiKit.dp(this, iconBoxDp), UiKit.dp(this, iconBoxDp)));
         chessFixedRows.addView(status);
 
+        chessOpeningLine = chessText("", 13, Color.WHITE);
+        chessOpeningLine.setPadding(48, 0, 48, UiKit.dp(this, 8));
+        chessOpeningLine.setSingleLine(true);
+        chessOpeningLine.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        chessOpeningLine.setVisibility(View.GONE);
+        chessFixedRows.addView(chessOpeningLine);
+
         chessEngineLines = new TextView[5]; // pool sized for the max "Variations shown" setting
         for (int i = 0; i < chessEngineLines.length; i++) {
             TextView line = chessText("", 13, 0xFF8FBF8F);
@@ -2062,7 +2070,10 @@ public class MainActivity extends Activity implements SelectionHost {
                     String rd = tagsHolder[0] != null ? tagsHolder[0].get("Round") : chessCurrentEntry != null ? chessCurrentEntry.round : "";
                     String dt = tagsHolder[0] != null ? tagsHolder[0].get("Date") : chessCurrentEntry != null ? chessCurrentEntry.date
                             : new java.text.SimpleDateFormat("yyyy.MM.dd", java.util.Locale.US).format(new java.util.Date());
-                    String ec = tagsHolder[0] != null ? tagsHolder[0].get("ECO") : chessCurrentEntry != null ? chessCurrentEntry.eco : "";
+                    String[] detected = OpeningBook.classify(this, chessBoard.mainlineSans());
+                    String ec = tagsHolder[0] != null ? tagsHolder[0].get("ECO")
+                            : chessCurrentEntry != null && !chessCurrentEntry.eco.isEmpty() ? chessCurrentEntry.eco
+                            : detected != null ? detected[0] : "";
                     String res = resultHolder[0] != null ? resultHolder[0]
                             : chessCurrentEntry != null ? chessCurrentEntry.result : chessBoard.pgnResult();
                     // Save here closes for good — no return to the Save Game sheet. A loaded
@@ -2499,6 +2510,9 @@ public class MainActivity extends Activity implements SelectionHost {
         chessTurnLine.setText(puzzleStatus != null ? puzzleStatus
                 : gameOver != null ? gameOver
                 : chessBoard.whiteToMove() ? "White to move" : "Black to move");
+        String[] opening = OpeningBook.classify(this, chessBoard.currentLineSans());
+        chessOpeningLine.setVisibility(opening == null ? View.GONE : View.VISIBLE);
+        if (opening != null) chessOpeningLine.setText(opening[0] + " · " + opening[1]);
         List<String> engineLines = chessBoard.engineSummary();
         for (int i = 0; i < chessEngineLines.length; i++) {
             boolean has = i < engineLines.size();

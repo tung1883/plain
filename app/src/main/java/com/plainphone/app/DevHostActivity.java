@@ -116,6 +116,11 @@ public class DevHostActivity extends Activity implements DevService.StateListene
         root.addView(big("Perf", enabled,
                 v -> startActivity(new Intent(this, DevPerfActivity.class)
                         .putExtra(EXTRA_HOST_ID, hostId))));
+        boolean syncEnabled = enabled && service != null
+                && service.caps(hostId) != null && service.caps(hostId).contains(DevProtocol.CAP_SYNC);
+        root.addView(big("Sync", syncEnabled,
+                v -> startActivity(new Intent(this, DevSyncActivity.class)
+                        .putExtra(EXTRA_HOST_ID, hostId))));
         root.addView(divider());
         root.addView(action("Clipboard sync: " + clipModeLabel(host.clipMode), Color.WHITE, v -> {
             host.clipMode = nextClipMode(host.clipMode);

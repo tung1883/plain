@@ -77,6 +77,19 @@ final class DevProtocol {
     static final String T_CLIP_GET = "clip.get";
     static final String T_CLIP_SET = "clip.set";
     static final String T_CLIP = "clip";
+    static final String T_FS_LIST = "fs.list";
+    static final String T_SYNC_LIST = "sync.list";
+    static final String T_SYNC_PUT_BEGIN = "sync.put.begin";
+    static final String T_SYNC_PUT_READY = "sync.put.ready";
+    static final String T_SYNC_PUT_CHUNK = "sync.put.chunk";
+    static final String T_SYNC_PUT_END = "sync.put.end";
+    static final String T_SYNC_PUT_DONE = "sync.put.done";
+    static final String T_SYNC_GET_BEGIN = "sync.get.begin";
+    static final String T_SYNC_GET_META = "sync.get.meta";
+    static final String T_SYNC_GET_CHUNK = "sync.get.chunk";
+    static final String T_SYNC_GET_END = "sync.get.end";
+    static final String T_SYNC_DELETE = "sync.delete";
+    static final String T_SYNC_DELETE_DONE = "sync.delete.done";
 
     static final String CAP_PTY = "pty";
     static final String CAP_SCREEN = "screen";
@@ -84,6 +97,11 @@ final class DevProtocol {
     static final String CAP_PROC = "proc";
     static final String CAP_METRICS = "metrics";
     static final String CAP_CLIP = "clip";
+    static final String CAP_SYNC = "sync";
+
+    /** Chunk size for {@code sync.put.chunk}/{@code sync.get.chunk} — well under
+     *  {@link #MAX_FRAME} once msgpack map overhead is counted. */
+    static final int SYNC_CHUNK_SIZE = 256 * 1024;
 
     // ---- framing -------------------------------------------------------------
 
@@ -338,6 +356,67 @@ final class DevProtocol {
         Map<String, Object> m = msg(T_CLIP_SET);
         m.put("ch", ch);
         m.put("text", text);
+        return m;
+    }
+
+    // ---- file sync -----------------------------------------------------
+
+    static Map<String, Object> fsList(long ch, String path) {
+        Map<String, Object> m = msg(T_FS_LIST);
+        m.put("ch", ch);
+        m.put("path", path);
+        return m;
+    }
+
+    /** {@code hash} only when the pair's detect mode is checksum — hashing
+     *  every file on the other side is expensive, so ask for it only when
+     *  it's actually needed. */
+    static Map<String, Object> syncList(long ch, String root, boolean hash) {
+        Map<String, Object> m = msg(T_SYNC_LIST);
+        m.put("ch", ch);
+        m.put("root", root);
+        if (hash) m.put("hash", Boolean.TRUE);
+        return m;
+    }
+
+    static Map<String, Object> syncPutBegin(long ch, String path, long size, long mtimeMs) {
+        Map<String, Object> m = msg(T_SYNC_PUT_BEGIN);
+        m.put("ch", ch);
+        m.put("path", path);
+        m.put("size", size);
+        m.put("mtime_ms", mtimeMs);
+        return m;
+    }
+
+    static Map<String, Object> syncPutChunk(long ch, long offset, byte[] data) {
+        Map<String, Object> m = msg(T_SYNC_PUT_CHUNK);
+        m.put("ch", ch);
+        m.put("offset", offset);
+        m.put("data", data);
+        return m;
+    }
+
+    static Map<String, Object> syncPutEnd(long ch) {
+        Map<String, Object> m = msg(T_SYNC_PUT_END);
+        m.put("ch", ch);
+        return m;
+    }
+
+    /** {@code resumeOffset} is how much of this file the phone already has in
+     *  its own local cache (see {@code DevSyncJobs}), so a killed download
+     *  resumes instead of restarting. */
+    static Map<String, Object> syncGetBegin(long ch, String path, long resumeOffset) {
+        Map<String, Object> m = msg(T_SYNC_GET_BEGIN);
+        m.put("ch", ch);
+        m.put("path", path);
+        m.put("resume_offset", resumeOffset);
+        return m;
+    }
+
+    static Map<String, Object> syncDelete(long ch, String path) {
+        Map<String, Object> m = msg(T_SYNC_DELETE);
+        m.put("ch", ch);
+        m.put("path", path);
         return m;
     }
 

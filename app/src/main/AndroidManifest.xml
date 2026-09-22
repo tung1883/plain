@@ -440,6 +440,27 @@
             android:theme="@style/Theme.PlainPhone" />
 
         <activity
+            android:name=".DevSyncActivity"
+            android:exported="false"
+            android:taskAffinity="com.plainphone.app.dev"
+            android:autoRemoveFromRecents="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
+            android:name=".DevSyncAddActivity"
+            android:exported="false"
+            android:taskAffinity="com.plainphone.app.dev"
+            android:autoRemoveFromRecents="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
+            android:name=".DevSyncRunActivity"
+            android:exported="false"
+            android:taskAffinity="com.plainphone.app.dev"
+            android:autoRemoveFromRecents="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
             android:name=".CloudPanelActivity"
             android:exported="false"
             android:taskAffinity="com.plainphone.app.dev"
@@ -490,6 +511,15 @@
 
         <receiver
             android:name=".IndexScheduler$Receiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".DevSyncScheduler$Receiver"
             android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />

@@ -807,6 +807,17 @@ final class ChessBoardView extends View {
         return n;
     }
 
+    /** SAN moves from root to {@link #current} — the branch actually on screen right now,
+     *  as opposed to {@link #mainlineSans()}'s permanent first-recorded line. Used for
+     *  anything that should track the live position (opening classification) rather than
+     *  the game's eventual PGN export. */
+    List<String> currentLineSans() {
+        java.util.ArrayDeque<String> out = new java.util.ArrayDeque<>();
+        MoveNode n = current;
+        while (n != null && n.parent != null) { out.addFirst(n.san); n = n.parent; }
+        return new ArrayList<>(out);
+    }
+
     /** The permanent mainline's SAN moves in order, root to tip — what PGN export writes as
      *  the game's movetext. Deliberately just the mainline: PGN's own variation syntax
      *  would be needed to also carry recorded sidelines, which is more than a "save my

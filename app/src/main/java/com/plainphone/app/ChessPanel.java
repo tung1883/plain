@@ -21,7 +21,7 @@ import java.util.List;
 final class ChessPanel implements PanelContent {
     private Activity host;
     private ChessBoardView board;
-    private TextView turnLine, moveLine, themeLine;
+    private TextView turnLine, moveLine, themeLine, openingLine;
     private TextView[] engineLines;
     private MovesGrid movesGrid;
     private String selectedBoard = "Slate Study";
@@ -50,6 +50,13 @@ final class ChessPanel implements PanelContent {
         moveLine = text("Move 0 / 0", 15, 0xFFDDDDDD);
         status.addView(moveLine, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         content.addView(status, matchWrap());
+
+        openingLine = text("", 13, Color.WHITE);
+        openingLine.setPadding(48, 0, 48, UiKit.dp(host, 8));
+        openingLine.setSingleLine(true);
+        openingLine.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        openingLine.setVisibility(View.GONE);
+        content.addView(openingLine, matchWrap());
 
         engineLines = new TextView[3];
         for (int i = 0; i < engineLines.length; i++) {
@@ -222,6 +229,9 @@ final class ChessPanel implements PanelContent {
         String gameOver = board.gameOverText();
         turnLine.setText(gameOver != null ? gameOver : board.whiteToMove() ? "White to move" : "Black to move");
         moveLine.setText("Move " + board.cursor() + " / " + board.totalMoves());
+        String[] opening = OpeningBook.classify(host, board.currentLineSans());
+        openingLine.setVisibility(opening == null ? View.GONE : View.VISIBLE);
+        if (opening != null) openingLine.setText(opening[0] + " · " + opening[1]);
         List<String> lines = board.engineSummary();
         for (int i = 0; i < engineLines.length; i++) {
             boolean has = i < lines.size();

@@ -142,6 +142,7 @@ public class DevService extends Service {
         boolean stopped;
         String detail;
         Long clipCh;
+        List<Object> caps;
 
         Link(DevHost host) { this.host = host; }
     }
@@ -163,6 +164,12 @@ public class DevService extends Service {
     DevConnection connection(String hostId) {
         Link l = links.get(hostId);
         return (l != null && l.state == State.CONNECTED) ? l.conn : null;
+    }
+
+    /** The daemon's advertised capabilities for this host, or {@code null} if not connected. */
+    List<Object> caps(String hostId) {
+        Link l = links.get(hostId);
+        return l != null ? l.caps : null;
     }
 
     State state() {
@@ -242,6 +249,7 @@ public class DevService extends Service {
                         link.backoff = 0;
                         lastError = null;
                         link.state = State.CONNECTED;
+                        link.caps = caps;
                         if (DevHost.CLIP_AUTO.equals(link.host.clipMode)
                                 && caps != null && caps.contains(DevProtocol.CAP_CLIP)) {
                             startClipWatch(link);

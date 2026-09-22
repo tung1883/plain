@@ -1006,6 +1006,16 @@ class Config {
         prefs(context).edit().putString("dev_hosts", json).apply();
     }
 
+    /** Dev sync folder pairs as an opaque JSON array of {@link DevSyncPair} records,
+     *  each carrying its own {@code host_id}. */
+    static String getDevSyncPairsJson(Context context) {
+        return prefs(context).getString("dev_sync_pairs", "[]");
+    }
+
+    static void setDevSyncPairsJson(Context context, String json) {
+        prefs(context).edit().putString("dev_sync_pairs", json).apply();
+    }
+
     /** Dev service accounts (GitHub/Vercel/Supabase) as an opaque JSON array of {@link DevAccount} records (never the token). */
     static String getDevAccountsJson(Context context) {
         return prefs(context).getString("dev_accounts", "[]");

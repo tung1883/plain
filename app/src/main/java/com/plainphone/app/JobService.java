@@ -5,8 +5,10 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.ServiceConnection;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.IBinder;
@@ -86,6 +88,8 @@ public class JobService extends Service {
             new Thread(() -> runChessPuzzleGen(job), "job-chess-puzzlegen").start();
         } else if (ChessImportJobs.TYPE_PGN_IMPORT.equals(job.type)) {
             new Thread(() -> runChessPgnImport(job), "job-chess-pgnimport").start();
+        } else if (DevSyncJobs.TYPE_SYNC.equals(job.type)) {
+            new Thread(() -> runDevSync(job), "job-dev-sync").start();
         } else {
             android.util.Log.w("JobService", "Dropping unknown job type " + job.type);
             JobQueue.clear(app, job.id);
@@ -630,6 +634,75 @@ public class JobService extends Service {
             if (passphrase != null) java.util.Arrays.fill(passphrase, '\0');
         }
         VaultJobs.finish(app, job, ok, message);
+        running = false;
+        main.post(this::maybeStart);
+    }
+
+    // --- dev-plugin file sync ----------------------------------------------
+
+    private static final long DEV_SYNC_CONNECT_TIMEOUT_MS = 15_000;
+
+    private void runDevSync(JobQueue.Job job) {
+        Context app = getApplicationContext();
+        String pairId = job.data.get("pair");
+        DevSyncPair pair = pairId == null ? null : DevSyncPair.find(app, pairId);
+        if (pair == null || pair.localTree() == null || pair.remotePath == null) {
+            DevSyncJobs.finish(app, job);
+            running = false;
+            main.post(this::maybeStart);
+            return;
+        }
+
+        DevService.connect(app, pair.hostId);
+        long deadline = android.os.SystemClock.uptimeMillis() + DEV_SYNC_CONNECT_TIMEOUT_MS;
+        while (!DevService.isConnected(pair.hostId) && android.os.SystemClock.uptimeMillis() < deadline) {
+            try { Thread.sleep(250); } catch (InterruptedException e) { Thread.currentThread().interrupt(); break; }
+        }
+
+        if (!DevService.isConnected(pair.hostId)) {
+            android.util.Log.w("JobService", "dev sync: " + pair.hostId + " not reachable, skipping this run");
+            pair.lastRunAt = System.currentTimeMillis();
+            pair.lastFailed = 1;
+            pair.save(app);
+            DevSyncJobs.finish(app, job);
+            running = false;
+            main.post(this::maybeStart);
+            return;
+        }
+
+        java.util.concurrent.CountDownLatch bound = new java.util.concurrent.CountDownLatch(1);
+        DevService[] holder = new DevService[1];
+        ServiceConnection sc = new ServiceConnection() {
+            @Override public void onServiceConnected(ComponentName name, IBinder binder) {
+                holder[0] = ((DevService.LocalBinder) binder).service();
+                bound.countDown();
+            }
+            @Override public void onServiceDisconnected(ComponentName name) { }
+        };
+        bindService(new Intent(app, DevService.class), sc, Context.BIND_AUTO_CREATE);
+        try { bound.await(5, java.util.concurrent.TimeUnit.SECONDS); } catch (InterruptedException ignored) { Thread.currentThread().interrupt(); }
+
+        DevConnection connection = holder[0] != null ? holder[0].connection(pair.hostId) : null;
+        if (connection == null) {
+            pair.lastRunAt = System.currentTimeMillis();
+            pair.lastFailed = 1;
+            pair.save(app);
+            try { unbindService(sc); } catch (IllegalArgumentException ignored) { }
+            DevSyncJobs.finish(app, job);
+            running = false;
+            main.post(this::maybeStart);
+            return;
+        }
+
+        DevSyncClient client = new DevSyncClient(connection);
+        try {
+            keepAlive(job);
+            DevSyncRunner.run(app, job, pair, client, () -> keepAlive(job));
+        } finally {
+            client.close();
+            try { unbindService(sc); } catch (IllegalArgumentException ignored) { }
+        }
+        DevSyncJobs.finish(app, job);
         running = false;
         main.post(this::maybeStart);
     }
