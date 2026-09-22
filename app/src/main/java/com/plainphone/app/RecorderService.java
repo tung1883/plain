@@ -107,6 +107,16 @@ public class RecorderService extends Service {
     private int vaultResumePos;
     private VaultSession.Listener vaultWatcher;
     private java.util.List<Recording> playlist;
+
+    // --- Recorder-section lock (PIN, not the vault) --------------------
+    // A hard-lock of the Recorder section (Lock.RECORDER via "Lock" / "Lock all") used to
+    // just stop refreshing the unlock grace, so Home showed the section as locked while the
+    // mic or playback kept right on running underneath, notification and all. lockWatch polls
+    // for that transition (there's no listener for a plain Lock, unlike VaultSession) and
+    // actually pauses the job — same "pause, resume where you left off" shape as the vault's
+    // own onVaultStateChanged, but fully hides the notification instead of showing a paused one.
+    private boolean sectionPausedByLock;
+    private boolean lockWatchScheduled;
     private int playIndex = -1;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -437,6 +447,55 @@ public class RecorderService extends Service {
         if (!Lock.RECORDER.hardLocked(this)) Lock.RECORDER.keepUnlocked(this);
     }
 
+    private void startLockWatch() {
+        if (lockWatchScheduled) return;
+        lockWatchScheduled = true;
+        handler.post(lockWatch);
+    }
+
+    private final Runnable lockWatch = new Runnable() {
+        @Override public void run() {
+            if (mode == Mode.NONE) {
+                lockWatchScheduled = false;
+                return;
+            }
+            boolean hard = Lock.RECORDER.hardLocked(RecorderService.this);
+            if (hard && !sectionPausedByLock) pauseForSectionLock();
+            else if (!hard && sectionPausedByLock) resumeFromSectionLock();
+            handler.postDelayed(this, 1000);
+        }
+    };
+
+    private void pauseForSectionLock() {
+        sectionPausedByLock = true;
+        if (mode == Mode.RECORDING && capture != null && !capture.paused()) {
+            capture.pause();
+            updateWakeLock();
+        } else if (mode == Mode.PLAYING && player != null && player.isPlaying()) {
+            player.pause();
+            handler.removeCallbacks(playTick);
+            updateSessionState();
+        }
+        stopForeground(STOP_FOREGROUND_REMOVE);   // hidden until the section is unlocked again
+    }
+
+    private void resumeFromSectionLock() {
+        sectionPausedByLock = false;
+        if (mode == Mode.RECORDING && capture != null) {
+            capture.resume();
+            goForeground(recForegroundType());
+            updateWakeLock();
+            updateNotification();
+        } else if (mode == Mode.PLAYING && player != null) {
+            player.start();
+            goForeground(playForegroundType());
+            refreshSessionMetadata();
+            updateSessionState();
+            updateNotification();
+            handler.post(playTick);
+        }
+    }
+
     private void togglePlay() {
         if (mode != Mode.PLAYING || vaultPausedByLock || player == null) return;
         if (player.isPlaying()) {
@@ -606,6 +665,7 @@ public class RecorderService extends Service {
     }
 
     private void goForeground(int type) {
+        startLockWatch();
         Notification n = buildNotification();
         if (Build.VERSION.SDK_INT >= 30 && type != 0) {
             startForeground(NOTIF_ID, n, type);
@@ -615,6 +675,7 @@ public class RecorderService extends Service {
     }
 
     private void updateNotification() {
+        if (sectionPausedByLock) return;   // stays hidden until resumeFromSectionLock()
         getSystemService(NotificationManager.class).notify(NOTIF_ID, buildNotification());
     }
 
@@ -748,6 +809,7 @@ public class RecorderService extends Service {
         stopPlaybackInternal();
         releaseWakeLock();
         mode = Mode.NONE;
+        sectionPausedByLock = false;
         active = false;
         vaultPlay = false;
         activeDetail = null;

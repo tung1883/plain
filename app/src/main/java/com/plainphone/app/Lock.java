@@ -54,8 +54,8 @@ enum Lock {
      */
     static void lockAllSections(Context context) {
         for (Lock lock : values()) {
+            if (!lock.isLocked(context)) continue;   // locking turned off for this section — leave it off
             if (lock.busy(context)) continue;   // a pending import / live recorder keeps its section unlocked
-            lock.setLocked(context, true);
             Config.setUnlockUntil(context, lock.area, 0L);
         }
         Config.clearAppUnlocks(context);
@@ -80,6 +80,9 @@ enum Lock {
     boolean busy(Context context) {
         if (importing(context)) return true;
         if (this == RECORDER && RecorderService.isActive(context)) {
+            return !hardLocked(context);
+        }
+        if (this == DEV && DevService.isConnected()) {
             return !hardLocked(context);
         }
         return false;

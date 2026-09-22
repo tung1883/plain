@@ -120,7 +120,7 @@ final class PluginLock {
     }
 
     private static void lockSection(Context ctx, Lock lock) {
-        lock.setLocked(ctx, true);
+        if (!lock.isLocked(ctx)) return;   // locking turned off for this section — leave it off
         Config.setUnlockUntil(ctx, lock.area, 0L);
     }
 }
