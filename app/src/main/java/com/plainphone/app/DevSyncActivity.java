@@ -86,10 +86,8 @@ public class DevSyncActivity extends Activity {
     private String rowSub(DevSyncPair pair) {
         String dir = DevSyncPair.DIR_PUSH.equals(pair.direction) ? "Push"
                 : DevSyncPair.DIR_PULL.equals(pair.direction) ? "Pull" : "Mirror";
-        String detect = DevSyncPair.DETECT_CHECKSUM.equals(pair.detectMode) ? "Checksum"
-                : DevSyncPair.DETECT_SIZE.equals(pair.detectMode) ? "Size" : "Modified time";
-        String sched = pair.scheduleMinutes > 0 ? "every " + pair.scheduleMinutes + " min" : "manual";
-        StringBuilder sb = new StringBuilder(dir).append(" · ").append(detect).append(" · ").append(sched);
+        String sched = scheduleLabel(pair);
+        StringBuilder sb = new StringBuilder(dir).append(" · ").append(sched);
         if (DevSyncJobs.pending(this, pair.id)) {
             sb.append("\nSyncing…");
         } else if (pair.lastConflicts > 0) {
@@ -103,11 +101,19 @@ public class DevSyncActivity extends Activity {
         return sb.toString();
     }
 
+    static String scheduleLabel(DevSyncPair pair) {
+        int minutes = pair.scheduleMinutes;
+        if (minutes <= 0) return "manual";
+        if (minutes == 24 * 60) return "daily at " + DevSyncAddActivity.formatMinuteOfDay(pair.dailyMinuteOfDay);
+        if (minutes % 60 == 0) return "every " + (minutes / 60) + "h";
+        return "every " + minutes + " min";
+    }
+
     private void confirmDelete(String pairId) {
         DevSyncPair pair = DevSyncPair.find(this, pairId);
         if (pair == null) return;
         VaultUi.confirm(this, "Remove this sync pair?",
-                "This only stops syncing — no files are deleted.", "Remove", () -> {
+                null, "Remove", () -> {
                     DevSyncPair.remove(this, pairId);
                     list.refresh();
                 }, "Cancel", null);

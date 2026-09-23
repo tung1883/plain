@@ -48,11 +48,28 @@ public final class DevSyncScheduler {
             long now = System.currentTimeMillis();
             for (DevSyncPair pair : pairs) {
                 if (pair.scheduleMinutes <= DevSyncPair.SCHEDULE_MANUAL) continue;
-                long dueAt = pair.lastRunAt + pair.scheduleMinutes * 60_000L;
-                if (now < dueAt) continue;
+                boolean due = pair.scheduleMinutes == 24 * 60
+                        ? dueForDailyTime(pair, now)
+                        : now >= pair.lastRunAt + pair.scheduleMinutes * 60_000L;
+                if (!due) continue;
                 if (DevSyncJobs.pending(context, pair.id)) continue;
                 DevSyncJobs.enqueue(context, pair);
             }
+        }
+
+        /** A daily pair is due once we're past today's occurrence of its clock time
+         *  and it hasn't already run since then — anchored to the wall-clock time the
+         *  user picked rather than "24h after last run", so it doesn't drift a little
+         *  later each day depending on exactly when the tick caught it. */
+        private boolean dueForDailyTime(DevSyncPair pair, long now) {
+            java.util.Calendar cal = java.util.Calendar.getInstance();
+            cal.setTimeInMillis(now);
+            cal.set(java.util.Calendar.HOUR_OF_DAY, pair.dailyMinuteOfDay / 60);
+            cal.set(java.util.Calendar.MINUTE, pair.dailyMinuteOfDay % 60);
+            cal.set(java.util.Calendar.SECOND, 0);
+            cal.set(java.util.Calendar.MILLISECOND, 0);
+            long todayOccurrence = cal.getTimeInMillis();
+            return now >= todayOccurrence && pair.lastRunAt < todayOccurrence;
         }
     }
 

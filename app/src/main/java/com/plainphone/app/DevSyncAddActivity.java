@@ -1,6 +1,7 @@
 package com.plainphone.app;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -34,9 +35,9 @@ public class DevSyncAddActivity extends Activity {
     private Uri localTree;
     private String remotePath;
     private String direction = DevSyncPair.DIR_PUSH;
-    private String detectMode = DevSyncPair.DETECT_MTIME;
     private String deleteMode = DevSyncPair.DELETE_OFF;
     private int scheduleMinutes = DevSyncPair.SCHEDULE_MANUAL;
+    private int dailyMinuteOfDay = 120; // 2:00 AM — only meaningful when scheduleMinutes is daily
 
     private int step = 0; // 0 = pick local, 1 = remote path, 2 = direction+detect, 3 = delete (mirror only), 4 = schedule
 
@@ -99,7 +100,7 @@ public class DevSyncAddActivity extends Activity {
             if (v.isEmpty()) return;
             remotePath = v;
             step = 2;
-            renderDirectionAndDetect();
+            renderDirection();
         }));
 
         ScrollView scroller = new ScrollView(this);
@@ -110,7 +111,7 @@ public class DevSyncAddActivity extends Activity {
 
     // --- step: direction + detect mode --------------------------------------
 
-    private void renderDirectionAndDetect() {
+    private void renderDirection() {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(48, 24, 48, 24);
@@ -124,7 +125,6 @@ public class DevSyncAddActivity extends Activity {
         LinearLayout.LayoutParams dgp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         dgp.topMargin = UiKit.dp(this, 14);
-        dgp.bottomMargin = UiKit.dp(this, 24);
         root.addView(dirGroup, dgp);
 
         String[][] dirs = {
@@ -135,36 +135,8 @@ public class DevSyncAddActivity extends Activity {
         for (String[] d : dirs) {
             dirGroup.addView(choiceRow(d[1], d[2], direction.equals(d[0]), v -> {
                 direction = d[0];
-                renderDirectionAndDetect();
+                renderDirection();
             }));
-        }
-
-        root.addView(sectionTitle("Change detection"));
-        root.addView(sectionSub("How to tell a file needs syncing."));
-
-        LinearLayout detectGroup = new LinearLayout(this);
-        detectGroup.setOrientation(LinearLayout.VERTICAL);
-        detectGroup.setBackground(UiKit.rounded(this, Color.BLACK, 0xFF2C2C2C, 2f, UiKit.R_MD));
-        UiKit.clipRounded(this, detectGroup, UiKit.R_MD);
-        LinearLayout.LayoutParams detp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        detp.topMargin = UiKit.dp(this, 14);
-        root.addView(detectGroup, detp);
-
-        String[][] modes = {
-                {DevSyncPair.DETECT_MTIME, "Modified time", "Fast. Compares last-changed timestamps."},
-                {DevSyncPair.DETECT_SIZE, "Size", "Fastest. Only checks byte length."},
-                {DevSyncPair.DETECT_CHECKSUM, "Checksum (content)", "Slower, exact — like rsync --checksum."},
-        };
-        for (int i = 0; i < modes.length; i++) {
-            String[] m = modes[i];
-            TextView row = flatChoiceRow(m[1], m[2], detectMode.equals(m[0]));
-            row.setOnClickListener(v -> {
-                detectMode = m[0];
-                renderDirectionAndDetect();
-            });
-            detectGroup.addView(row);
-            if (i < modes.length - 1) detectGroup.addView(hairline());
         }
 
         View spacer = new View(this);
@@ -278,6 +250,7 @@ public class DevSyncAddActivity extends Activity {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(48, 24, 48, 24);
 
+        root.addView(stepLabel("STEP " + (direction.equals(DevSyncPair.DIR_MIRROR) ? "5 OF 5" : "4 OF 4")));
         root.addView(sectionTitle("Schedule"));
         root.addView(sectionSub("Run this pair by hand, or keep it ticking on its own."));
 
@@ -290,8 +263,9 @@ public class DevSyncAddActivity extends Activity {
         gp.topMargin = UiKit.dp(this, 14);
         root.addView(group, gp);
 
-        int[][] options = {{0, 0}, {1, 15}, {2, 30}, {3, 60}};
-        String[] labels = {"Manual only", "Every 15 minutes", "Every 30 minutes", "Every hour"};
+        int[][] options = {{0, 0}, {1, 15}, {2, 30}, {3, 60}, {4, 24 * 60}};
+        String[] labels = {"Manual only", "Every 15 minutes", "Every 30 minutes", "Every hour", "Once a day"};
+        boolean daily = scheduleMinutes == 24 * 60;
         for (int i = 0; i < options.length; i++) {
             int minutes = options[i][1];
             TextView row = flatChoiceRow(labels[i], null, scheduleMinutes == minutes);
@@ -300,7 +274,9 @@ public class DevSyncAddActivity extends Activity {
                 renderSchedule();
             });
             group.addView(row);
-            if (i < options.length - 1) group.addView(hairline());
+            boolean showTimeRow = minutes == 24 * 60 && daily;
+            if (i < options.length - 1 || showTimeRow) group.addView(hairline());
+            if (showTimeRow) group.addView(dailyTimeRow());
         }
 
         View spacer = new View(this);
@@ -324,13 +300,151 @@ public class DevSyncAddActivity extends Activity {
             pair.localTreeUri = localTree.toString();
             pair.remotePath = remotePath;
             pair.direction = direction;
-            pair.detectMode = detectMode;
             pair.deleteMode = deleteMode;
             pair.scheduleMinutes = scheduleMinutes;
+            pair.dailyMinuteOfDay = dailyMinuteOfDay;
             pair.save(this);
             if (scheduleMinutes > DevSyncPair.SCHEDULE_MANUAL) DevSyncScheduler.schedule(this);
             finish();
         });
+    }
+
+    /** The "Time  ·  2:00 AM  ›" row shown under "Once a day" once it's selected —
+     *  opens the platform's own time picker rather than a custom wheel. */
+    private View dailyTimeRow() {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(UiKit.dp(this, 34), UiKit.dp(this, 14), UiKit.dp(this, 16), UiKit.dp(this, 14));
+        row.setBackgroundColor(0xFF141414);
+
+        TextView label = new TextView(this);
+        label.setText("Time");
+        label.setTextColor(0xFF999999);
+        label.setTextSize(13);
+        label.setTypeface(font);
+        row.addView(label, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        TextView value = new TextView(this);
+        value.setText(formatMinuteOfDay(dailyMinuteOfDay));
+        value.setTextColor(Color.WHITE);
+        value.setTextSize(15);
+        value.setTypeface(font, Typeface.BOLD);
+        LinearLayout.LayoutParams vp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        vp.rightMargin = UiKit.dp(this, 8);
+        row.addView(value, vp);
+
+        TextView chevron = new TextView(this);
+        chevron.setText("›");
+        chevron.setTextColor(0xFF666666);
+        chevron.setTextSize(16);
+        row.addView(chevron);
+
+        row.setOnClickListener(v -> showDailyTimePicker());
+        return row;
+    }
+
+    static String formatMinuteOfDay(int minuteOfDay) {
+        int h = minuteOfDay / 60, m = minuteOfDay % 60;
+        int h12 = h % 12 == 0 ? 12 : h % 12;
+        return String.format(java.util.Locale.US, "%d:%02d %s", h12, m, h < 12 ? "AM" : "PM");
+    }
+
+    /** A dark, app-styled hour/minute scroll picker — {@link android.app.TimePickerDialog}
+     *  always draws the system's own (light-leaning) widget chrome, which never matched the
+     *  rest of this wizard's look. 24-hour, no AM/PM; minutes step by 5. */
+    private void showDailyTimePicker() {
+        android.view.ContextThemeWrapper dark =
+                new android.view.ContextThemeWrapper(this, android.R.style.Theme_Material);
+
+        android.widget.NumberPicker hourPicker = new android.widget.NumberPicker(dark);
+        hourPicker.setMinValue(0);
+        hourPicker.setMaxValue(23);
+        hourPicker.setFormatter(v -> String.format(java.util.Locale.US, "%02d", v));
+        hourPicker.setValue(dailyMinuteOfDay / 60);
+
+        String[] minuteLabels = new String[12];
+        for (int i = 0; i < 12; i++) minuteLabels[i] = String.format(java.util.Locale.US, "%02d", i * 5);
+        android.widget.NumberPicker minutePicker = new android.widget.NumberPicker(dark);
+        minutePicker.setMinValue(0);
+        minutePicker.setMaxValue(11);
+        minutePicker.setDisplayedValues(minuteLabels);
+        minutePicker.setValue(dailyMinuteOfDay % 60 / 5);
+
+        applyFont(hourPicker);
+        applyFont(minutePicker);
+
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackground(UiKit.dialogBackground(this));
+        UiKit.clipRounded(this, root, UiKit.R_MD);
+        root.setPadding(2, 32, 2, UiKit.dp(this, UiKit.R_MD));
+
+        android.widget.FrameLayout scrim = UiKit.wrapScrim(this, root, 0.85f);
+        AlertDialog dialog = new AlertDialog.Builder(this, R.style.Theme_PlainPhone_RoundedDialog)
+                .setView(scrim).create();
+
+        root.addView(UiKit.dialogTitle(this, "Sync time"));
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        rowLp.topMargin = UiKit.dp(this, 22);
+        rowLp.bottomMargin = UiKit.dp(this, 10);
+        root.addView(row, rowLp);
+        row.addView(hourPicker, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        row.addView(minutePicker, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        row.post(() -> { applyFont(hourPicker); applyFont(minutePicker); });
+
+        LinearLayout buttons = new LinearLayout(this);
+        buttons.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        bp.topMargin = UiKit.dp(this, 22);
+        bp.leftMargin = UiKit.dp(this, 20);
+        bp.rightMargin = UiKit.dp(this, 20);
+        root.addView(buttons, bp);
+
+        buttons.addView(dialogButton("Cancel", false, v -> dialog.dismiss()),
+                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        View gap = new View(this);
+        buttons.addView(gap, new LinearLayout.LayoutParams(UiKit.dp(this, 12), 1));
+        buttons.addView(dialogButton("Set", true, v -> {
+            dailyMinuteOfDay = hourPicker.getValue() * 60 + minutePicker.getValue() * 5;
+            dialog.dismiss();
+            renderSchedule();
+        }), new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        UiKit.finishCentered(dialog, scrim);
+    }
+
+    /** {@link android.widget.NumberPicker} has no public setTypeface — its scroll labels
+     *  are an internal EditText found only by walking its children. */
+    private void applyFont(View v) {
+        if (v instanceof android.widget.EditText) {
+            ((android.widget.EditText) v).setTypeface(font);
+        } else if (v instanceof ViewGroup) {
+            ViewGroup g = (ViewGroup) v;
+            for (int i = 0; i < g.getChildCount(); i++) applyFont(g.getChildAt(i));
+        }
+    }
+
+    private TextView dialogButton(String label, boolean primary, View.OnClickListener onTap) {
+        TextView t = new TextView(this);
+        t.setText(label);
+        t.setTextSize(14.5f);
+        t.setGravity(Gravity.CENTER);
+        t.setTypeface(font, primary ? Typeface.BOLD : Typeface.NORMAL);
+        t.setTextColor(primary ? Color.BLACK : Color.WHITE);
+        t.setPadding(0, UiKit.dp(this, 13), 0, UiKit.dp(this, 13));
+        t.setBackground(primary
+                ? UiKit.rounded(this, Color.WHITE, 0, 0, UiKit.R_MD)
+                : UiKit.rounded(this, Color.BLACK, 0xFF2C2C2C, 2f, UiKit.R_MD));
+        t.setOnClickListener(onTap);
+        return t;
     }
 
     private String suggestLabel() {

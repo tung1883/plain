@@ -46,7 +46,7 @@ final class DevSyncRunner {
 
     static void run(Context context, JobQueue.Job job, DevSyncPair pair, DevSyncClient client, KeepAlive keepAlive) {
         Uri tree = pair.localTree();
-        boolean hash = pair.needsHash();
+        boolean hash = true; // always compare mtime + size + checksum, no user-chosen mode anymore
 
         List<DevSyncLocal.Entry> localList;
         List<DevSyncClient.RemoteEntry> remoteList;
@@ -224,34 +224,21 @@ final class DevSyncRunner {
         DevSyncJobs.publishNow(snap);
     }
 
+    /** A file is unchanged only when modified time, size, AND checksum all agree —
+     *  no user-chosen mode anymore, just the strictest combination of all three. */
     private static boolean sameByMode(DevSyncPair pair, DevSyncLocal.Entry L, DevSyncClient.RemoteEntry R) {
-        if (DevSyncPair.DETECT_CHECKSUM.equals(pair.detectMode)) {
-            return L.sha256 != null && L.sha256.equals(R.sha256);
-        }
-        if (DevSyncPair.DETECT_SIZE.equals(pair.detectMode)) {
-            return L.size == R.size;
-        }
-        return Math.abs(L.mtimeMs - R.mtimeMs) <= 1000 && L.size == R.size;
+        return Math.abs(L.mtimeMs - R.mtimeMs) <= 1000 && L.size == R.size
+                && L.sha256 != null && L.sha256.equals(R.sha256);
     }
 
     private static boolean localMatchesBaseline(DevSyncPair pair, DevSyncLocal.Entry L, DevSyncJobs.BaselineEntry B) {
-        if (DevSyncPair.DETECT_CHECKSUM.equals(pair.detectMode)) {
-            return L.sha256 != null && L.sha256.equals(B.hash);
-        }
-        if (DevSyncPair.DETECT_SIZE.equals(pair.detectMode)) {
-            return L.size == B.size;
-        }
-        return Math.abs(L.mtimeMs - B.mtimeMs) <= 1000 && L.size == B.size;
+        return Math.abs(L.mtimeMs - B.mtimeMs) <= 1000 && L.size == B.size
+                && L.sha256 != null && L.sha256.equals(B.hash);
     }
 
     private static boolean remoteMatchesBaseline(DevSyncPair pair, DevSyncClient.RemoteEntry R, DevSyncJobs.BaselineEntry B) {
-        if (DevSyncPair.DETECT_CHECKSUM.equals(pair.detectMode)) {
-            return R.sha256 != null && R.sha256.equals(B.hash);
-        }
-        if (DevSyncPair.DETECT_SIZE.equals(pair.detectMode)) {
-            return R.size == B.size;
-        }
-        return Math.abs(R.mtimeMs - B.mtimeMs) <= 1000 && R.size == B.size;
+        return Math.abs(R.mtimeMs - B.mtimeMs) <= 1000 && R.size == B.size
+                && R.sha256 != null && R.sha256.equals(B.hash);
     }
 
     private static String remotePathFor(DevSyncPair pair, String relPath) {

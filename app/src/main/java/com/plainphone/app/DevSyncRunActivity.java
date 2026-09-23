@@ -67,10 +67,8 @@ public class DevSyncRunActivity extends Activity {
 
         String dir = DevSyncPair.DIR_PUSH.equals(pair.direction) ? "Push"
                 : DevSyncPair.DIR_PULL.equals(pair.direction) ? "Pull" : "Mirror";
-        String detect = DevSyncPair.DETECT_CHECKSUM.equals(pair.detectMode) ? "Checksum"
-                : DevSyncPair.DETECT_SIZE.equals(pair.detectMode) ? "Size" : "Modified time";
-        String sched = pair.scheduleMinutes > 0 ? "every " + pair.scheduleMinutes + " min" : "manual";
-        root.addView(meta(dir + " · " + detect + " · " + sched));
+        String sched = DevSyncActivity.scheduleLabel(pair);
+        root.addView(meta(dir + " · " + sched));
 
         boolean running = DevSyncJobs.pending(this, pairId);
         DevSyncJobs.Snapshot snap = DevSyncJobs.snapshot;

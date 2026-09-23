@@ -23,10 +23,6 @@ final class DevSyncPair {
     static final String DIR_PULL = "pull";     // PC -> phone
     static final String DIR_MIRROR = "mirror"; // both ways
 
-    static final String DETECT_MTIME = "mtime";
-    static final String DETECT_SIZE = "size";
-    static final String DETECT_CHECKSUM = "checksum";
-
     static final String DELETE_OFF = "off";
     static final String DELETE_PROPAGATE = "propagate";
 
@@ -38,9 +34,9 @@ final class DevSyncPair {
     String localTreeUri; // SAF tree, as a Uri string
     String remotePath;   // absolute path on the daemon's filesystem
     String direction = DIR_PUSH;
-    String detectMode = DETECT_MTIME;
     String deleteMode = DELETE_OFF; // only meaningful for DIR_MIRROR
     int scheduleMinutes = SCHEDULE_MANUAL;
+    int dailyMinuteOfDay = 120; // 2:00 AM — only meaningful when scheduleMinutes == 24*60
 
     // Last-run summary, for the pair list row.
     long lastRunAt;
@@ -62,10 +58,6 @@ final class DevSyncPair {
         return isMirror() && DELETE_PROPAGATE.equals(deleteMode);
     }
 
-    boolean needsHash() {
-        return DETECT_CHECKSUM.equals(detectMode);
-    }
-
     // --- persistence -----------------------------------------------------
 
     static List<DevSyncPair> all(Context context) {
@@ -80,9 +72,9 @@ final class DevSyncPair {
                 p.localTreeUri = o.optString("local_tree", null);
                 p.remotePath = o.optString("remote_path", null);
                 p.direction = o.optString("direction", DIR_PUSH);
-                p.detectMode = o.optString("detect_mode", DETECT_MTIME);
                 p.deleteMode = o.optString("delete_mode", DELETE_OFF);
                 p.scheduleMinutes = o.optInt("schedule_minutes", SCHEDULE_MANUAL);
+                p.dailyMinuteOfDay = o.optInt("daily_minute_of_day", 120);
                 p.lastRunAt = o.optLong("last_run_at", 0);
                 p.lastSynced = o.optInt("last_synced", 0);
                 p.lastFailed = o.optInt("last_failed", 0);
@@ -142,9 +134,9 @@ final class DevSyncPair {
                 o.put("local_tree", p.localTreeUri);
                 o.put("remote_path", p.remotePath);
                 o.put("direction", p.direction);
-                o.put("detect_mode", p.detectMode);
                 o.put("delete_mode", p.deleteMode);
                 o.put("schedule_minutes", p.scheduleMinutes);
+                o.put("daily_minute_of_day", p.dailyMinuteOfDay);
                 o.put("last_run_at", p.lastRunAt);
                 o.put("last_synced", p.lastSynced);
                 o.put("last_failed", p.lastFailed);
