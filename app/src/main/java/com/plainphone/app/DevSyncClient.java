@@ -63,7 +63,16 @@ final class DevSyncClient implements DevConnection.Sink {
         DirEntry(String name, boolean isDir) { this.name = name; this.isDir = isDir; }
     }
 
-    List<DirEntry> fsList(String path) throws IOException {
+    /** One {@code fs.list} reply: the absolute path actually listed (an empty request
+     *  path resolves to the daemon's home directory — see {@code plaind}'s {@code fs_list})
+     *  plus its immediate children. */
+    static final class DirListing {
+        final String path;
+        final List<DirEntry> entries;
+        DirListing(String path, List<DirEntry> entries) { this.path = path; this.entries = entries; }
+    }
+
+    DirListing fsList(String path) throws IOException {
         connection.send(DevProtocol.fsList(channel, path));
         Map<String, Object> reply = await(DEFAULT_TIMEOUT_MS);
         List<DirEntry> out = new ArrayList<>();
@@ -75,7 +84,7 @@ final class DevSyncClient implements DevConnection.Sink {
                 out.add(new DirEntry(DevProtocol.str(m, "name"), DevProtocol.bool(m, "is_dir")));
             }
         }
-        return out;
+        return new DirListing(DevProtocol.str(reply, "path"), out);
     }
 
     // --- listing (job) -----------------------------------------------------

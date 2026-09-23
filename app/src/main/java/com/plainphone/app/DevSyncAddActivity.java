@@ -2,6 +2,7 @@ package com.plainphone.app;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -56,6 +57,12 @@ public class DevSyncAddActivity extends Activity {
     }
 
     @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        disconnectFsClient();
+    }
+
+    @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode != REQ_PICK_FOLDER) return;
@@ -71,7 +78,23 @@ public class DevSyncAddActivity extends Activity {
         renderRemotePath();
     }
 
-    // --- step: remote path --------------------------------------------------
+    // --- step: remote path (browsed live over the dev connection, not typed) -----
+
+    private DevService fsService;
+    private android.content.ServiceConnection fsServiceConn;
+    private DevSyncClient fsClient;
+    private boolean fsBrowseStarted;
+    private boolean fsLoading;
+    private String fsError;
+    private String fsDir; // absolute path currently shown, null until the first listing lands
+    private java.util.List<DevSyncClient.DirEntry> fsEntries = new java.util.ArrayList<>();
+
+    /** Sent instead of a real path to ask the daemon for its drive list — plaind's own
+     *  {@code filesync::DRIVES_SENTINEL}, kept in sync with that constant by hand since
+     *  it crosses the wire as a plain string, not a shared type. Reached by walking "up"
+     *  from a Windows drive root, so a phone can get to a second drive without typing
+     *  anything. */
+    private static final String SENTINEL_DRIVES = "\u0000drives";
 
     private void renderRemotePath() {
         LinearLayout root = new LinearLayout(this);
@@ -79,26 +102,54 @@ public class DevSyncAddActivity extends Activity {
         root.setPadding(48, 24, 48, 24);
 
         root.addView(sectionTitle("Remote folder"));
-        root.addView(sectionSub("Absolute path on the PC — e.g. /Users/you/Design/assets"));
+        String subLabel = SENTINEL_DRIVES.equals(fsDir) ? "This PC"
+                : fsDir != null ? fsDir : "Browsing " + DevHost.find(this, hostId).label + "…";
+        root.addView(sectionSub(subLabel));
 
-        android.widget.EditText input = new android.widget.EditText(this);
-        UiKit.style(this, input);
-        input.setSingleLine(true);
-        input.setHint("/path/on/pc");
-        input.setHintTextColor(0xFF555555);
-        LinearLayout.LayoutParams ip = new LinearLayout.LayoutParams(
+        LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        list.setBackground(UiKit.rounded(this, Color.BLACK, 0xFF2C2C2C, 2f, UiKit.R_MD));
+        UiKit.clipRounded(this, list, UiKit.R_MD);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        ip.topMargin = UiKit.dp(this, 18);
-        root.addView(input, ip);
+        lp.topMargin = UiKit.dp(this, 14);
+        root.addView(list, lp);
+
+        if (fsError != null) {
+            TextView err = plainRow(fsError, "Tap to retry");
+            err.setOnClickListener(v -> loadDir(fsDir != null ? fsDir : ""));
+            list.addView(err);
+        } else if (fsLoading) {
+            list.addView(plainRow("Loading…", null));
+        } else {
+            String parent = parentOf(fsDir);
+            if (parent != null) {
+                TextView up = plainRow("‹  ..", null);
+                up.setOnClickListener(v -> loadDir(parent));
+                list.addView(up);
+                if (!fsEntries.isEmpty()) list.addView(hairline());
+            }
+            boolean atDrives = SENTINEL_DRIVES.equals(fsDir);
+            for (int i = 0; i < fsEntries.size(); i++) {
+                DevSyncClient.DirEntry e = fsEntries.get(i);
+                TextView row = plainRow(e.name, null);
+                row.setOnClickListener(v -> loadDir(atDrives ? e.name : childPath(fsDir, e.name)));
+                list.addView(row);
+                if (i < fsEntries.size() - 1) list.addView(hairline());
+            }
+            if (fsEntries.isEmpty() && parent == null) {
+                list.addView(plainRow("No subfolders here", null));
+            }
+        }
 
         View spacer = new View(this);
         root.addView(spacer, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
-        root.addView(continueButton(() -> {
-            String v = input.getText().toString().trim();
-            if (v.isEmpty()) return;
-            remotePath = v;
+        boolean pickable = fsDir != null && !SENTINEL_DRIVES.equals(fsDir);
+        root.addView(continueButton(pickable ? "Use " + leafOf(fsDir) : "Use this folder", () -> {
+            if (!pickable) return;
+            remotePath = fsDir;
             step = 2;
             renderDirection();
         }));
@@ -107,6 +158,100 @@ public class DevSyncAddActivity extends Activity {
         scroller.addView(root, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         UiKit.screen(this, "New sync pair", scroller);
+
+        if (!fsBrowseStarted) {
+            fsBrowseStarted = true;
+            connectFsClient();
+        }
+    }
+
+    private void connectFsClient() {
+        fsLoading = true;
+        DevService.connect(this, hostId);
+        fsServiceConn = new android.content.ServiceConnection() {
+            @Override public void onServiceConnected(android.content.ComponentName n, android.os.IBinder b) {
+                fsService = ((DevService.LocalBinder) b).service();
+                new Thread(() -> {
+                    long deadline = android.os.SystemClock.uptimeMillis() + 8000;
+                    while (!DevService.isConnected(hostId) && android.os.SystemClock.uptimeMillis() < deadline) {
+                        try { Thread.sleep(150); } catch (InterruptedException ignored) { break; }
+                    }
+                    DevConnection conn = DevService.isConnected(hostId) ? fsService.connection(hostId) : null;
+                    runOnUiThread(() -> {
+                        if (conn == null) {
+                            fsLoading = false;
+                            fsError = "Couldn't reach that computer";
+                            renderRemotePath();
+                            return;
+                        }
+                        fsClient = new DevSyncClient(conn);
+                        loadDir("");
+                    });
+                }).start();
+            }
+            @Override public void onServiceDisconnected(android.content.ComponentName n) { fsService = null; }
+        };
+        bindService(new Intent(this, DevService.class), fsServiceConn, Context.BIND_AUTO_CREATE);
+    }
+
+    private void loadDir(String path) {
+        if (fsClient == null) return;
+        fsLoading = true;
+        fsError = null;
+        renderRemotePath();
+        new Thread(() -> {
+            try {
+                DevSyncClient.DirListing listing = fsClient.fsList(path);
+                java.util.List<DevSyncClient.DirEntry> dirs = new java.util.ArrayList<>();
+                for (DevSyncClient.DirEntry e : listing.entries) if (e.isDir) dirs.add(e);
+                runOnUiThread(() -> {
+                    fsLoading = false;
+                    fsDir = listing.path;
+                    fsEntries = dirs;
+                    renderRemotePath();
+                });
+            } catch (java.io.IOException e) {
+                runOnUiThread(() -> {
+                    fsLoading = false;
+                    fsError = "Couldn't open that folder";
+                    renderRemotePath();
+                });
+            }
+        }).start();
+    }
+
+    private void disconnectFsClient() {
+        if (fsClient != null) { fsClient.close(); fsClient = null; }
+        if (fsServiceConn != null) {
+            try { unbindService(fsServiceConn); } catch (IllegalArgumentException ignored) { }
+            fsServiceConn = null;
+        }
+    }
+
+    /** {@code path}'s parent in its own OS's separator style, or null once at a drive/filesystem
+     *  root — plaind runs on whatever OS the paired computer is, Windows or POSIX. */
+    private static String parentOf(String path) {
+        if (path == null || SENTINEL_DRIVES.equals(path)) return null;
+        boolean win = path.length() >= 2 && path.charAt(1) == ':';
+        char sep = win ? '\\' : '/';
+        String p = path;
+        while (p.length() > 1 && p.charAt(p.length() - 1) == sep) p = p.substring(0, p.length() - 1);
+        int idx = p.lastIndexOf(sep);
+        if (idx < 0) return win ? SENTINEL_DRIVES : null;
+        if (win && idx <= 2) return p.length() >= 3 ? p.substring(0, 3) : SENTINEL_DRIVES;
+        if (idx == 0) return String.valueOf(sep);
+        return p.substring(0, idx);
+    }
+
+    private static String childPath(String dir, String name) {
+        char sep = dir.length() >= 2 && dir.charAt(1) == ':' ? '\\' : '/';
+        return dir.endsWith(String.valueOf(sep)) ? dir + name : dir + sep + name;
+    }
+
+    private static String leafOf(String path) {
+        int slash = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+        String leaf = slash >= 0 && slash < path.length() - 1 ? path.substring(slash + 1) : path;
+        return leaf.isEmpty() ? path : leaf;
     }
 
     // --- step: direction + detect mode --------------------------------------
@@ -562,6 +707,33 @@ public class DevSyncAddActivity extends Activity {
         return row;
     }
 
+    /** Same look as {@link #flatChoiceRow}, no radio-button prefix — the remote-folder
+     *  browser's rows (folders, "..", loading/error states) aren't a mutually-exclusive
+     *  choice, just a list to tap into. */
+    private TextView plainRow(String title, String sub) {
+        TextView row = new TextView(this);
+        row.setTypeface(font);
+        row.setTextColor(Color.WHITE);
+        row.setTextSize(14.5f);
+        row.setPadding(UiKit.dp(this, 16), UiKit.dp(this, 15), UiKit.dp(this, 16), UiKit.dp(this, 15));
+        if (sub != null) {
+            android.text.SpannableStringBuilder sb = new android.text.SpannableStringBuilder();
+            sb.append(title).append("\n");
+            int subStart = sb.length();
+            sb.append(sub);
+            sb.setSpan(new android.text.style.ForegroundColorSpan(0xFF777777), subStart, sb.length(), 0);
+            sb.setSpan(new android.text.style.RelativeSizeSpan(0.85f), subStart, sb.length(), 0);
+            row.setText(sb);
+        } else {
+            row.setText(title);
+        }
+        StateListDrawable bg = new StateListDrawable();
+        bg.addState(new int[]{android.R.attr.state_pressed}, new ColorDrawable(Color.DKGRAY));
+        bg.addState(new int[]{}, new ColorDrawable(Color.BLACK));
+        row.setBackground(bg);
+        return row;
+    }
+
     private View hairline() {
         View v = new View(this);
         v.setBackgroundColor(0xFF1C1C1C);
@@ -570,8 +742,12 @@ public class DevSyncAddActivity extends Activity {
     }
 
     private View continueButton(Runnable onTap) {
+        return continueButton("Continue", onTap);
+    }
+
+    private View continueButton(String label, Runnable onTap) {
         TextView button = new TextView(this);
-        button.setText("Continue");
+        button.setText(label);
         button.setTextColor(Color.BLACK);
         button.setTextSize(15);
         button.setTypeface(font, Typeface.BOLD);
