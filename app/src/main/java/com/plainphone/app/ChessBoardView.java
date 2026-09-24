@@ -112,13 +112,14 @@ final class ChessBoardView extends View {
     // arrowMargin/lineWidth ratios (see drawArrow/drawOneAnnotation). Drawing the exact same
     // arrow (or circle) again removes it; no color picker.
     private static final int ANNOTATION_COLOR = 0xFF1B4F91;
-    private static final long LONG_PRESS_MS = 320;
+    private static final long LONG_PRESS_MS = 450;
     private final android.os.Handler gestureHandler = new android.os.Handler();
     private final Runnable armAnnotate = this::onLongPressArm;
     // True once the long-press timer has fired for the current touch sequence — from then
     // until ACTION_UP, this touch draws an arrow/circle instead of selecting or moving a
     // piece, however the down event's own grabbedPiece check may have already started that.
     private boolean annotating;
+    private boolean gestureDead; // set by a cancelled/multi-touch gesture; cleared on the next ACTION_DOWN
     private int annotateRow = -1, annotateCol = -1;
     private float annotateX, annotateY; // live drag point while annotating
 
@@ -655,15 +656,38 @@ final class ChessBoardView extends View {
     @Override public boolean onTouchEvent(android.view.MotionEvent event) {
         float margin = margin(), cell = cellSize();
         doubleTap.onTouchEvent(event);
+        // A cancelled gesture (the enclosing ScrollView / section swiper took it over) and a
+        // second finger (pinch) both used to fall straight through with the pending long-press
+        // still queued — it fired later with no finger down and left a live blue circle
+        // sitting on whatever square the first touch had landed on.
+        int maskedAction = event.getActionMasked();
+        if (maskedAction == android.view.MotionEvent.ACTION_CANCEL
+                || maskedAction == android.view.MotionEvent.ACTION_POINTER_DOWN) {
+            gestureHandler.removeCallbacks(armAnnotate);
+            annotating = false;
+            draggingPiece = false;
+            dragRow = dragCol = -1;
+            gestureDead = true; // ignore the rest of this touch (a lone pointer's later MOVE/UP)
+            invalidate();
+            return true;
+        }
         if (event.getAction() == android.view.MotionEvent.ACTION_DOWN) {
+            gestureDead = false;
             downX = event.getX(); downY = event.getY();
             dragCol = flip((int) ((downX - margin) / cell)); dragRow = flip((int) ((downY - margin) / cell));
             annotating = false;
             gestureHandler.removeCallbacks(armAnnotate);
             // Armed only if the finger is still down, unmoved, past LONG_PRESS_MS — a quick
             // tap or an immediate drag (piece move) cancels this below, in ACTION_MOVE/UP,
-            // before it ever fires.
-            if (in(dragRow, dragCol)) gestureHandler.postDelayed(armAnnotate, LONG_PRESS_MS);
+            // before it ever fires. Never armed on a square the player is plainly trying to
+            // move to (the selected piece's legal target) — a slow tap there used to draw a
+            // stray circle instead of making the move — nor, in a puzzle, on one of their own
+            // pieces (a slow grab-and-drag is a move, not a markup gesture).
+            boolean intendsMove = in(dragRow, dragCol)
+                    && ((selectedRow >= 0 && isLegalTarget(dragRow, dragCol))
+                    || (puzzleMode && position[dragRow][dragCol] != 0
+                        && Character.isUpperCase(position[dragRow][dragCol]) == whiteTurn));
+            if (in(dragRow, dragCol) && !intendsMove) gestureHandler.postDelayed(armAnnotate, LONG_PRESS_MS);
             boolean grabbedPiece = gameOverText == null && in(dragRow, dragCol) && position[dragRow][dragCol] != 0
                     && Character.isUpperCase(position[dragRow][dragCol]) == whiteTurn;
             if (grabbedPiece) {
@@ -676,11 +700,17 @@ final class ChessBoardView extends View {
             if (grabbedPiece) getParent().requestDisallowInterceptTouchEvent(true);
             return true;
         }
+        if (gestureDead) return true;
         if (event.getAction() == android.view.MotionEvent.ACTION_MOVE) {
             if (annotating) {
                 annotateX = event.getX(); annotateY = event.getY();
                 invalidate();
                 return true;
+            }
+            // Any real movement means this is a drag or a swipe, never a long-press-in-place.
+            if (Math.abs(event.getX() - downX) > UiKit.dp(host, 8)
+                    || Math.abs(event.getY() - downY) > UiKit.dp(host, 8)) {
+                gestureHandler.removeCallbacks(armAnnotate);
             }
             if (in(dragRow, dragCol) && selectedRow == dragRow && selectedCol == dragCol
                     && (Math.abs(event.getX() - downX) > UiKit.dp(host, 8)
@@ -721,16 +751,7 @@ final class ChessBoardView extends View {
         boolean dragged = Math.abs(event.getX() - downX) > UiKit.dp(host, 8)
                 || Math.abs(event.getY() - downY) > UiKit.dp(host, 8);
         if (selectedRow >= 0 && isLegalTarget(row, col)) {
-            if (puzzleMode && puzzleSolved) {
-                // Solved — the board is free-play from here, same as any other position.
-                commitMove(selectedRow, selectedCol, row, col);
-            } else if (puzzleMode && !matchesPuzzleMove(selectedRow, selectedCol, row, col)) {
-                selectedRow = selectedCol = -1;
-                if (onPuzzleWrongMove != null) onPuzzleWrongMove.run();
-            } else {
-                commitMove(selectedRow, selectedCol, row, col);
-                if (puzzleMode) advancePuzzleAfterPlayerMove();
-            }
+            playPlayerMove(selectedRow, selectedCol, row, col);
         } else if (!dragged && position[row][col] != 0
                 && Character.isUpperCase(position[row][col]) == whiteTurn) {
             selectedRow = row; selectedCol = col;
@@ -748,6 +769,7 @@ final class ChessBoardView extends View {
      *  this touch draws an arrow/circle instead of whatever the down event's own
      *  {@code grabbedPiece} check queued it up for. */
     private void onLongPressArm() {
+        if (gestureDead || !in(dragRow, dragCol)) return; // finger already gone or gesture cancelled
         annotating = true;
         annotateRow = dragRow; annotateCol = dragCol;
         annotateX = downX; annotateY = downY;
@@ -966,6 +988,27 @@ final class ChessBoardView extends View {
         invalidate();
     }
 
+    /** The one entry point for a move the player chose (tap, drag or double-tap): outside
+     *  puzzle mode — or once solved, when the board is free-play again — it just commits;
+     *  in an unsolved puzzle it's checked against the solution first, and a correct one is
+     *  followed by the opponent's auto-played reply. Double-tap used to call
+     *  {@link #commitMove} directly, skipping both the check and the reply, which is why a
+     *  double-tapped move never got answered and the player then had to play the
+     *  opponent's side by hand. */
+    private void playPlayerMove(int fromRow, int fromCol, int toRow, int toCol) {
+        if (puzzleMode && !puzzleSolved) {
+            if (!matchesPuzzleMove(fromRow, fromCol, toRow, toCol)) {
+                selectedRow = selectedCol = -1;
+                if (onPuzzleWrongMove != null) onPuzzleWrongMove.run();
+                return;
+            }
+            commitMove(fromRow, fromCol, toRow, toCol);
+            advancePuzzleAfterPlayerMove();
+        } else {
+            commitMove(fromRow, fromCol, toRow, toCol);
+        }
+    }
+
     // Guards against a second double-tap firing while Stockfish is still answering the
     // first one — the board state a stale answer was computed against may no longer exist.
     private boolean thinkingAboutDoubleTap;
@@ -990,7 +1033,7 @@ final class ChessBoardView extends View {
         if (candidates.isEmpty()) return false;
         if (candidates.size() == 1) {
             selectedRow = selectedCol = -1;
-            commitMove(candidates.get(0)[0], candidates.get(0)[1], row, col);
+            playPlayerMove(candidates.get(0)[0], candidates.get(0)[1], row, col);
             invalidate();
             return true;
         }
@@ -1032,7 +1075,7 @@ final class ChessBoardView extends View {
                 thinkingAboutDoubleTap = false;
                 if (gen != boardGeneration) return; // board moved on while Stockfish was thinking
                 selectedRow = selectedCol = -1;
-                commitMove(fallback[0], fallback[1], toRow, toCol);
+                playPlayerMove(fallback[0], fallback[1], toRow, toCol);
                 invalidate();
             });
         }).start();
@@ -1166,7 +1209,9 @@ final class ChessBoardView extends View {
             List<int[]> squares = new ArrayList<>();
             StringBuilder sb = new StringBuilder();
             int plies = Math.min(pvUci.size(), ANALYSIS_PLIES);
-            int ply = current.ply() + 1; // the PV picks up right after the position on screen
+            // the PV picks up right after the position on screen; +1 more when the root position
+            // has Black to move (a puzzle cut from mid-game), so parity matches the moves grid
+            int ply = current.ply() + 1 + (root.whiteTurn ? 0 : 1);
             for (int i = 0; i < plies; i++) {
                 String mv = pvUci.get(i);
                 if (mv.length() < 4) break;
@@ -1521,20 +1566,29 @@ final class ChessBoardView extends View {
      *  mover's own king in check — a pinned piece can't move off the pin line, and a
      *  king can't step into an attacked square. */
     private List<int[]> legalMoves(int row, int col) {
-        char moving = position[row][col];
-        if (moving == 0) return new ArrayList<>();
-        boolean white = Character.isUpperCase(moving);
-        List<int[]> out = new ArrayList<>();
-        for (int[] mv : pseudoLegalMoves(row, col)) {
-            char captured = position[mv[0]][mv[1]];
-            position[mv[0]][mv[1]] = moving;
-            position[row][col] = 0;
-            boolean safe = !isKingInCheck(white);
-            position[row][col] = moving;
-            position[mv[0]][mv[1]] = captured;
-            if (safe) out.add(mv);
+        // This king-safety probe temporarily writes into the shared `position` array, and it's
+        // reached from the UI thread (move dots, taps) as well as the analysis thread (pvToSan
+        // -> sanFor) — two probes interleaving used to restore each other's half-applied
+        // pieces, leaving a stray/missing piece behind (a king "capturing" on a square it never
+        // left, pieces vanishing). Same lock as commitMove / pvToSan's own excursions; the whole
+        // method is inside it so even the initial read of `moving` can't see another probe's
+        // temporarily-emptied square.
+        synchronized (positionLock) {
+            char moving = position[row][col];
+            if (moving == 0) return new ArrayList<>();
+            boolean white = Character.isUpperCase(moving);
+            List<int[]> out = new ArrayList<>();
+            for (int[] mv : pseudoLegalMoves(row, col)) {
+                char captured = position[mv[0]][mv[1]];
+                position[mv[0]][mv[1]] = moving;
+                position[row][col] = 0;
+                boolean safe = !isKingInCheck(white);
+                position[row][col] = moving;
+                position[mv[0]][mv[1]] = captured;
+                if (safe) out.add(mv);
+            }
+            return out;
         }
-        return out;
     }
 
     private boolean isKingInCheck(boolean white) {

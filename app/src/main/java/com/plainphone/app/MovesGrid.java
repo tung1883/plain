@@ -135,7 +135,12 @@ final class MovesGrid extends LinearLayout {
         int pairWidth = numW + moveW + tightGap + moveW;
         int movesPerRow = Math.max(1, (availWidth + moveGap) / (pairWidth + moveGap));
 
-        int fullMoves = (nodes.size() + 1) / 2;
+        // A position cut from mid-game with Black to move starts with an empty White slot,
+        // so the first row reads "1. …  Nf3" and every later row still pairs White/Black.
+        List<ChessBoardView.MoveNode> slots = new java.util.ArrayList<>();
+        if (!nodes.isEmpty() && startOffset(nodes.get(0)) == 1) slots.add(null);
+        slots.addAll(nodes);
+        int fullMoves = (slots.size() + 1) / 2;
         LinearLayout row = null;
         int posInRow = 0;
         int rowMoveGap = moveGap;
@@ -158,10 +163,12 @@ final class MovesGrid extends LinearLayout {
                 forceNewRow = false;
             }
             int i0 = m * 2, i1 = m * 2 + 1;
-            boolean hasBlack = i1 < nodes.size();
-            ChessBoardView.MoveNode whiteNode = nodes.get(i0);
-            ChessBoardView.MoveNode blackNode = hasBlack ? nodes.get(i1) : null;
-            View whiteCell = buildCell(host, whiteNode, whiteNode == currentNode, moveW, numW);
+            boolean hasBlack = i1 < slots.size();
+            ChessBoardView.MoveNode whiteNode = slots.get(i0);
+            ChessBoardView.MoveNode blackNode = hasBlack ? slots.get(i1) : null;
+            View whiteCell = whiteNode == null
+                    ? emptyWhiteCell(host, m + 1, moveW, numW)
+                    : buildCell(host, whiteNode, whiteNode == currentNode, moveW, numW);
             View blackCell = hasBlack ? buildCell(host, blackNode, blackNode == currentNode, moveW, numW) : null;
             whiteCell.setPadding(0, vPad, 0, vPad);
 
@@ -176,7 +183,7 @@ final class MovesGrid extends LinearLayout {
             }
             posInRow++;
 
-            if (whiteNode.comment != null) { addView(commentRow(host, whiteNode)); forceNewRow = true; }
+            if (whiteNode != null && whiteNode.comment != null) { addView(commentRow(host, whiteNode)); forceNewRow = true; }
             if (blackNode != null && blackNode.comment != null) { addView(commentRow(host, blackNode)); forceNewRow = true; }
         }
     }
@@ -211,9 +218,31 @@ final class MovesGrid extends LinearLayout {
         return t;
     }
 
+    /** The White half of row {@code moveNum} when Black moves first: just "1." and a dim "…". */
+    private View emptyWhiteCell(Activity host, int moveNum, int moveW, int numW) {
+        LinearLayout box = new LinearLayout(host);
+        box.setOrientation(HORIZONTAL);
+        TextView num = new TextView(host);
+        num.setText(moveNum + ".");
+        num.setTypeface(Fonts.current(host));
+        num.setTextSize(TEXT_SP);
+        num.setSingleLine(true);
+        num.setTextColor(0xFF6E6E6E);
+        TextView dots = new TextView(host);
+        dots.setText("…");
+        dots.setTypeface(Fonts.current(host));
+        dots.setTextSize(TEXT_SP);
+        dots.setSingleLine(true);
+        dots.setGravity(Gravity.END);
+        dots.setTextColor(0xFF6E6E6E);
+        box.addView(num, new LinearLayout.LayoutParams(numW, ViewGroup.LayoutParams.WRAP_CONTENT));
+        box.addView(dots, new LinearLayout.LayoutParams(moveW, ViewGroup.LayoutParams.WRAP_CONTENT));
+        return box;
+    }
+
     private View buildCell(Activity host, ChessBoardView.MoveNode node, boolean current, int moveW, int numW) {
         int textColor = current ? Color.WHITE : 0xFF6E6E6E;
-        int ply = node.ply();
+        int ply = node.ply() + startOffset(node);
         boolean white = (ply % 2) == 1;
         View.OnClickListener jump = v -> {
             board.jumpToNode(node);
@@ -325,9 +354,18 @@ final class MovesGrid extends LinearLayout {
         }
     }
 
+    /** 1 when the game/puzzle's root position has Black to move (a puzzle cut from mid-game),
+     *  else 0 — added to a node's ply so numbering reads "1...Nf3 2.gxf3 Kxf3" instead of
+     *  mislabeling Black's first move as White's "1.Nf3". */
+    private static int startOffset(ChessBoardView.MoveNode node) {
+        ChessBoardView.MoveNode root = node;
+        while (root.parent != null) root = root.parent;
+        return root.whiteTurn ? 0 : 1;
+    }
+
     private CharSequence formatVariation(ChessBoardView.DisplayLine line, ChessBoardView.MoveNode currentNode) {
         android.text.SpannableStringBuilder sb = new android.text.SpannableStringBuilder("(");
-        int ply = line.startPly;
+        int ply = line.startPly + (line.nodes.isEmpty() ? 0 : startOffset(line.nodes.get(0)));
         for (int i = 0; i < line.nodes.size(); i++) {
             ChessBoardView.MoveNode node = line.nodes.get(i);
             boolean whiteMove = (ply % 2) == 1;
@@ -357,7 +395,7 @@ final class MovesGrid extends LinearLayout {
     /** "6...dxc6" / "6.e4" — the move's own SAN with its move number and dots, the same
      *  numbering {@link #formatVariation} already uses for the line it sits in. */
     private String moveLabel(ChessBoardView.MoveNode node) {
-        int ply = node.ply();
+        int ply = node.ply() + startOffset(node);
         boolean whiteMove = (ply % 2) == 1;
         int moveNum = (ply + 1) / 2;
         return moveNum + (whiteMove ? "." : "...") + node.san;
