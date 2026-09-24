@@ -1330,6 +1330,10 @@ public class MainActivity extends Activity implements SelectionHost {
             @Override public void onOpenPuzzleList() { startActivity(new Intent(MainActivity.this, ChessPuzzleListActivity.class)); }
             @Override public void onResizeRequested() { chessShowResizeDialog(); }
             @Override public void onOpenSettings() { chessOpenSettings(); }
+            @Override public int boardWidthPx() {
+                ViewGroup.LayoutParams lp = chessBoard == null ? null : chessBoard.getLayoutParams();
+                return lp != null && lp.width > 0 ? lp.width : 0;
+            }
         });
         chessLibraryPanel = new ChessLibraryPanel(this, new ChessLibraryPanel.Listener() {
             @Override public void onGameChosen(ChessLibrary.Entry entry) { chessLoadEntryOntoBoard(entry); }
@@ -1589,7 +1593,8 @@ public class MainActivity extends Activity implements SelectionHost {
         if (chessBoard == null || chessFixedRows == null) return;
         if (chessPanel == null || chessPanel.getVisibility() != View.VISIBLE) return;
         if (homeFocusSink == null || homeFocusSink.getHeight() <= 0) return;
-        if (chessFixedRows.getHeight() <= 0) return;
+        if (chessOtherRowsFixedPx() <= 0) return;
+        boolean puzzleSizing = chessPuzzleSizing();
 
         int target;
         if (chessAutoResize) {
@@ -1622,6 +1627,10 @@ public class MainActivity extends Activity implements SelectionHost {
                 target = Math.max(UiKit.dp(this, 120), Math.min(maxW, target));
             }
         }
+        if (puzzleSizing) {
+            chessPuzzlesPanel.setBoardWidthPx(target);
+            return;
+        }
         FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) chessBoard.getLayoutParams();
         if (lp.width != target || lp.gravity != Gravity.CENTER_HORIZONTAL) {
             lp.width = target;
@@ -1630,12 +1639,29 @@ public class MainActivity extends Activity implements SelectionHost {
         }
     }
 
+    /** True while the Puzzles tab is showing an actual puzzle — the auto-fit then sizes the
+     *  puzzle board from that screen's own rows instead of the Board tab's. */
+    private boolean chessPuzzleSizing() {
+        return chessActiveTab == 1 && chessPuzzlesPanel != null && chessPuzzlesPanel.solving();
+    }
+
+    /** Last non-zero height of the Board tab's fixed rows. The puzzle board is sized as if it
+     *  sat in the Board tab (same rows below it), not from its own much taller screen — that
+     *  screen scrolls, so its extra rows shouldn't shrink the board below the Board tab's. */
+    private int chessBoardTabRowsH;
+
+    private int chessOtherRowsFixedPx() {
+        int h = chessFixedRows.getHeight();
+        if (h > 0) chessBoardTabRowsH = h;
+        return chessPuzzleSizing() ? chessBoardTabRowsH : h;
+    }
+
     /** The auto-fit board width for a given (possibly simulated, not necessarily the header's
      *  actual current) {@code simulatedHeaderOffset} — used both for the real, continuously
      *  dragged header position and to work out the two fixed endpoints
      *  {@link #chessResolvedSizeUp}/{@link #chessResolvedSizeDown} scale from. */
     private int chessAutoFitFor(float simulatedHeaderOffset) {
-        int otherRowsH = chessFixedRows.getHeight() + UiKit.dp(this, CHESS_MOVES_GRID_HEIGHT_DP);
+        int otherRowsH = chessOtherRowsFixedPx() + UiKit.dp(this, CHESS_MOVES_GRID_HEIGHT_DP);
         float headerNow = simulatedHeaderOffset <= 0f ? headerFullH : Math.max(0f, headerFullH - simulatedHeaderOffset);
         int viewportH = homeFocusSink.getHeight() - Math.round(headerNow);
         int available = viewportH - otherRowsH;

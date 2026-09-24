@@ -31,6 +31,9 @@ final class ChessPuzzlesPanel {
          *  board scale/theme/engine settings, so the two tabs' boards stay consistent. */
         void onResizeRequested();
         void onOpenSettings();
+        /** The Board tab's board width right now (px), or 0 if it hasn't been sized yet —
+         *  the puzzle board mirrors it exactly rather than re-deriving its own size. */
+        int boardWidthPx();
     }
 
     private final Activity host;
@@ -75,6 +78,18 @@ final class ChessPuzzlesPanel {
     void onShown() {
         if (homeView.getVisibility() == View.VISIBLE) refreshHome();
         else applyBoardScale();
+    }
+
+    /** True while a puzzle (not the puzzles home list) is on screen. */
+    boolean solving() { return solveView.getVisibility() == View.VISIBLE; }
+
+    /** Sets the puzzle board's width (px) — the live counterpart of {@link #applyBoardScale}. */
+    void setBoardWidthPx(int widthPx) {
+        ViewGroup.LayoutParams lp = board.getLayoutParams();
+        if (lp == null) lp = new FrameLayout.LayoutParams(widthPx, ViewGroup.LayoutParams.WRAP_CONTENT);
+        if (lp.width == widthPx) return;
+        lp.width = widthPx;
+        board.setLayoutParams(lp);
     }
 
     private void refreshJobCardIfShown() {
@@ -621,9 +636,15 @@ final class ChessPuzzlesPanel {
      *  vertical auto-fit math. Re-applied on every puzzle load and tab-show so a resize made
      *  on the Board tab is picked up next time this one's visible. */
     private void applyBoardScale() {
-        int maxW = host.getResources().getDisplayMetrics().widthPixels - UiKit.dp(host, 96);
-        float scale = Math.max(0.55f, Math.min(1f, Config.getChessBoardScale(host)));
-        int widthPx = Math.max(UiKit.dp(host, 160), Math.round(maxW * scale));
+        // Mirror the Board tab's board exactly — whatever size its auto-fit / resize settings
+        // currently give it. Only falls back to a flat scale of the full inset width if that
+        // board hasn't been sized yet (Board tab never opened this session).
+        int widthPx = listener.boardWidthPx();
+        if (widthPx <= 0) {
+            int maxW = host.getResources().getDisplayMetrics().widthPixels - 96;
+            float scale = Math.max(0.55f, Math.min(1f, Config.getChessBoardScale(host)));
+            widthPx = Math.max(UiKit.dp(host, 160), Math.round(maxW * scale));
+        }
         ViewGroup.LayoutParams lp = board.getLayoutParams();
         if (lp == null) lp = new FrameLayout.LayoutParams(widthPx, ViewGroup.LayoutParams.WRAP_CONTENT);
         else lp.width = widthPx;
