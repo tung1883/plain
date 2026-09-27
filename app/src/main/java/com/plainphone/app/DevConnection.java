@@ -21,7 +21,7 @@ import java.util.concurrent.atomic.AtomicLong;
 /**
  * One live TCP link to a {@code plaind} daemon: a reader thread that parses
  * frames off the wire and a writer thread that drains an outbound queue and
- * keeps the link warm with a ping every {@link #PING_MS}. Frames that carry a
+ * keeps the link warm (and measures RTT) with a ping every {@link #PROBE_MS}. Frames that carry a
  * {@code ch} are routed to that channel's {@link Sink}; everything else
  * (welcome / error / pong) goes to the {@link Listener}. All callbacks land on
  * the main thread.
@@ -33,7 +33,8 @@ final class DevConnection {
 
     private static final int CONNECT_TIMEOUT_MS = 8000;
     private static final int READ_TIMEOUT_MS = 20000;
-    private static final long PING_MS = 15000;
+    /** Latency probe: a ping at most this often, one outstanding at a time. */
+    private static final long PROBE_MS = 1000;
 
     interface Listener {
         void onConnected(String host, String os, List<Object> caps);
@@ -51,12 +52,36 @@ final class DevConnection {
     private final Listener listener;
     private final Handler main = new Handler(Looper.getMainLooper());
 
-    private final LinkedBlockingQueue<Map<String, Object>> outbox = new LinkedBlockingQueue<>();
+    /** An outbound message plus when it was queued (for the queue-wait metric). */
+    private static final class Queued {
+        final Map<String, Object> message;
+        final long at;
+
+        Queued(Map<String, Object> message) {
+            this.message = message;
+            this.at = android.os.SystemClock.uptimeMillis();
+        }
+    }
+
+    private final LinkedBlockingQueue<Queued> outbox = new LinkedBlockingQueue<>();
+    /** uptimeMillis the outstanding probe ping was written, 0 = none. */
+    private final AtomicLong pingSentAt = new AtomicLong();
     private final ConcurrentHashMap<Long, Sink> channels = new ConcurrentHashMap<>();
     private final AtomicLong nextChannel = new AtomicLong(1);
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
     private Socket socket;
+    private volatile List<Object> caps = java.util.Collections.emptyList();
+    /** Smoothed probe-ping round trip (ms), -1 until the first pong. */
+    private volatile double srttMs = -1;
+
+    boolean hasCap(String cap) {
+        return caps.contains(cap);
+    }
+
+    double srttMs() {
+        return srttMs;
+    }
     private Thread reader;
     private Thread writer;
 
@@ -94,7 +119,7 @@ final class DevConnection {
     }
 
     void send(Map<String, Object> message) {
-        if (!closed.get()) outbox.offer(message);
+        if (!closed.get()) outbox.offer(new Queued(message));
     }
 
     // --- reader ---------------------------------------------------------
@@ -139,6 +164,7 @@ final class DevConnection {
             String daemonHost = DevProtocol.str(welcome, "host");
             String os = DevProtocol.str(welcome, "os");
             List<Object> caps = DevProtocol.list(welcome, "caps");
+            this.caps = caps != null ? caps : java.util.Collections.emptyList();
             main.post(() -> listener.onConnected(daemonHost, os, caps));
 
             writer = new Thread(() -> runWriter(rawOut), "dev-conn-writer");
@@ -165,12 +191,26 @@ final class DevConnection {
 
     private void dispatch(Map<String, Object> frame) {
         String type = DevProtocol.type(frame);
-        if (DevProtocol.T_PONG.equals(type)) return;
+        if (DevProtocol.T_PONG.equals(type)) {
+            long sent = pingSentAt.getAndSet(0);
+            // round trip: phone socket -> daemon frame loop -> daemon send queue -> phone
+            if (sent > 0) {
+                long rtt = android.os.SystemClock.uptimeMillis() - sent;
+                LatencyStats.record("net.rtt", rtt);
+                srttMs = srttMs < 0 ? rtt : srttMs * 0.875 + rtt * 0.125; // TCP-style EWMA
+            }
+            return;
+        }
         Object ch = frame.get("ch");
         if (ch instanceof Number) {
             Sink sink = channels.get(((Number) ch).longValue());
             if (sink != null) {
-                main.post(() -> sink.onMessage(frame));
+                long readAt = android.os.SystemClock.uptimeMillis();
+                main.post(() -> {
+                    // time the frame waited for the main thread
+                    LatencyStats.record("phone.main_lag", android.os.SystemClock.uptimeMillis() - readAt);
+                    sink.onMessage(frame);
+                });
                 return;
             }
         }
@@ -184,10 +224,23 @@ final class DevConnection {
 
     private void runWriter(OutputStream out) {
         try {
+            long lastPing = 0;
             while (!closed.get()) {
-                Map<String, Object> message = outbox.poll(PING_MS, java.util.concurrent.TimeUnit.MILLISECONDS);
-                if (message == null) message = DevProtocol.ping();
-                DevProtocol.writeFrame(out, message);
+                Queued q = outbox.poll(PROBE_MS, java.util.concurrent.TimeUnit.MILLISECONDS);
+                long now = android.os.SystemClock.uptimeMillis();
+                if (q != null) {
+                    LatencyStats.record("phone.send_queue", now - q.at);
+                    DevProtocol.writeFrame(out, q.message);
+                    LatencyStats.record("phone.write", android.os.SystemClock.uptimeMillis() - now);
+                }
+                // Probe ping (doubles as keepalive): one outstanding at a time;
+                // a pong lost for 5 s frees the slot.
+                long sent = pingSentAt.get();
+                if (now - lastPing >= PROBE_MS && (sent == 0 || now - sent > 5000)) {
+                    lastPing = now;
+                    pingSentAt.set(android.os.SystemClock.uptimeMillis());
+                    DevProtocol.writeFrame(out, DevProtocol.ping());
+                }
             }
         } catch (IOException | InterruptedException e) {
             fail("write failed");

@@ -1,7 +1,6 @@
 package com.plainphone.app;
 
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayDeque;
 
 /**
  * A practical VT100 / xterm screen model — enough of the escape grammar for
@@ -19,8 +18,6 @@ final class TerminalEmulator {
     static final int DEFAULT = -1;
     static final int FLAG_BOLD = 1;
     static final int FLAG_INVERSE = 2;
-    /** Cell holds a guessed-not-confirmed keystroke (predictive local echo). */
-    static final int FLAG_PREDICTED = 4;
 
     static final int SCROLLBACK_MAX = 2000;
 
@@ -34,12 +31,15 @@ final class TerminalEmulator {
         final int[] f;
         final int[] b;
         final int[] fl;
+        /** Soft-wrapped: the text continues on the next line (autowrap, not a newline). */
+        final boolean wrapped;
 
-        Line(char[] g, int[] f, int[] b, int[] fl) {
+        Line(char[] g, int[] f, int[] b, int[] fl, boolean wrapped) {
             this.g = g;
             this.f = f;
             this.b = b;
             this.fl = fl;
+            this.wrapped = wrapped;
         }
     }
 
@@ -52,6 +52,8 @@ final class TerminalEmulator {
     int[][] fg;
     int[][] bg;
     int[][] flags;
+    /** Per screen row: soft-wrapped into the next row (see {@link Line#wrapped}). */
+    private boolean[] wrapped;
 
     int cursorX;
     int cursorY;
@@ -63,6 +65,7 @@ final class TerminalEmulator {
     private int[][] altFg;
     private int[][] altBg;
     private int[][] altFlags;
+    private boolean[] altWrapped;
     private boolean onAlt;
     private int savedX, savedY;
 
@@ -78,69 +81,208 @@ final class TerminalEmulator {
     // parser
     private int parseState = GROUND;
     private final StringBuilder csi = new StringBuilder();
-    private static final int GROUND = 0, ESC = 1, CSI = 2, OSC = 3, CHARSET = 4;
+    private static final int GROUND = 0, ESC = 1, CSI = 2, OSC = 3, CHARSET = 4, OSC_ESC = 5;
 
     private final StringBuilder utf8 = new StringBuilder();
     private int utf8Remaining;
     private int utf8Value;
 
-    // predictive local echo (see predict()/expireStalePredictions())
-    private static final class Prediction {
-        final int y, x;
-        final char expected;
-        final long atMillis;
-
-        Prediction(int y, int x, char expected, long atMillis) {
-            this.y = y; this.x = x; this.expected = expected; this.atMillis = atMillis;
-        }
-    }
-    private final ArrayDeque<Prediction> predictions = new ArrayDeque<>();
-    private static final long PREDICTION_TIMEOUT_MS = 800;
+    /** Predictive local echo, drawn over this grid (never written into it). */
+    final EchoPredictor predictor = new EchoPredictor(this);
 
     TerminalEmulator(int cols, int rows, Output output) {
         this.output = output;
         resize(cols, rows);
     }
 
+    /**
+     * Resize with reflow, like modern terminals (and what ConPTY expects: after
+     * a resize it only repaints what it thinks changed, assuming the terminal
+     * re-wrapped its own text). Soft-wrapped rows are joined back into logical
+     * lines — scrollback included — and re-wrapped to the new width, so text
+     * cut off by a narrow (zoomed-in) width comes back when it widens again.
+     * The cursor stays on the same character; rows that no longer fit go to
+     * scrollback rather than being dropped. The alternate screen (full-screen
+     * apps redraw themselves on resize) is just cropped / padded, while the
+     * primary screen saved behind it is reflowed.
+     */
     synchronized void resize(int newCols, int newRows) {
-        predictions.clear();
+        if (predictor != null) predictor.invalidate(); // null during the constructor's first resize
         newCols = Math.max(2, newCols);
         newRows = Math.max(2, newRows);
-        char[][] g = blankGlyph(newCols, newRows);
-        int[][] f = filled(newCols, newRows, DEFAULT);
-        int[][] b = filled(newCols, newRows, DEFAULT);
-        int[][] fl = filled(newCols, newRows, 0);
-        if (glyph != null) {
-            for (int y = 0; y < Math.min(rows, newRows); y++) {
-                for (int x = 0; x < Math.min(cols, newCols); x++) {
-                    g[y][x] = glyph[y][x];
-                    f[y][x] = fg[y][x];
-                    b[y][x] = bg[y][x];
-                    // mask out a predicted-but-unconfirmed bit — cell coordinates
-                    // may now mean something entirely different post-resize.
-                    fl[y][x] = flags[y][x] & ~FLAG_PREDICTED;
-                }
-            }
+        if (glyph == null) {
+            glyph = blankGlyph(newCols, newRows);
+            fg = filled(newCols, newRows, DEFAULT);
+            bg = filled(newCols, newRows, DEFAULT);
+            flags = filled(newCols, newRows, 0);
+            wrapped = new boolean[newRows];
+        } else if (!onAlt) {
+            Screen r = reflow(new Screen(glyph, fg, bg, flags, wrapped, cursorX, cursorY, cols, rows),
+                    newCols, newRows);
+            glyph = r.g; fg = r.f; bg = r.b; flags = r.fl; wrapped = r.wrap;
+            cursorX = r.cx; cursorY = r.cy;
+        } else {
+            Screen r = reflow(new Screen(altGlyph, altFg, altBg, altFlags, altWrapped, savedX, savedY, cols, rows),
+                    newCols, newRows);
+            altGlyph = r.g; altFg = r.f; altBg = r.b; altFlags = r.fl; altWrapped = r.wrap;
+            savedX = r.cx; savedY = r.cy;
+            crop(newCols, newRows);
         }
-        glyph = g; fg = f; bg = b; flags = fl;
         cols = newCols;
         rows = newRows;
         scrollTop = 0;
         scrollBottom = rows - 1;
         cursorX = Math.min(cursorX, cols - 1);
         cursorY = Math.min(cursorY, rows - 1);
-        if (onAlt) {
-            altGlyph = blankGlyph(cols, rows);
-            altFg = filled(cols, rows, DEFAULT);
-            altBg = filled(cols, rows, DEFAULT);
-            altFlags = filled(cols, rows, 0);
+        wrapPending = false;
+    }
+
+    /** Alternate screen resize: keep the top-left, pad / cut the rest. */
+    private void crop(int newCols, int newRows) {
+        char[][] g = blankGlyph(newCols, newRows);
+        int[][] f = filled(newCols, newRows, DEFAULT);
+        int[][] b = filled(newCols, newRows, DEFAULT);
+        int[][] fl = filled(newCols, newRows, 0);
+        for (int y = 0; y < Math.min(rows, newRows); y++) {
+            int n = Math.min(Math.min(cols, newCols), glyph[y].length);
+            System.arraycopy(glyph[y], 0, g[y], 0, n);
+            System.arraycopy(fg[y], 0, f[y], 0, n);
+            System.arraycopy(bg[y], 0, b[y], 0, n);
+            System.arraycopy(flags[y], 0, fl[y], 0, n);
         }
+        glyph = g; fg = f; bg = b; flags = fl;
+        wrapped = new boolean[newRows];
+    }
+
+    /** A screen's rows plus its cursor, in or out of {@link #reflow}. */
+    private static final class Screen {
+        final char[][] g;
+        final int[][] f, b, fl;
+        final boolean[] wrap;
+        final int cx, cy, cols, rows;
+
+        Screen(char[][] g, int[][] f, int[][] b, int[][] fl, boolean[] wrap, int cx, int cy, int cols, int rows) {
+            this.g = g; this.f = f; this.b = b; this.fl = fl; this.wrap = wrap;
+            this.cx = cx; this.cy = cy; this.cols = cols; this.rows = rows;
+        }
+    }
+
+    /** A logical line: the cells of one or more soft-wrapped rows, joined. */
+    private static final class Logical {
+        char[] g = new char[80];
+        int[] f = new int[80], b = new int[80], fl = new int[80];
+        int len;
+
+        void add(char c, int fc, int bc, int flc) {
+            if (len == g.length) {
+                int n = len * 2;
+                g = java.util.Arrays.copyOf(g, n);
+                f = java.util.Arrays.copyOf(f, n);
+                b = java.util.Arrays.copyOf(b, n);
+                fl = java.util.Arrays.copyOf(fl, n);
+            }
+            g[len] = c; f[len] = fc; b[len] = bc; fl[len] = flc;
+            len++;
+        }
+    }
+
+    /** Re-wrap scrollback + {@code s} to {@code newCols}; replaces {@link #scrollback}. */
+    private Screen reflow(Screen s, int newCols, int newRows) {
+        // 1. physical rows -> logical lines
+        java.util.ArrayList<Logical> lines = new java.util.ArrayList<>();
+        Logical cur = null;
+        int topLine = 0, topOff = 0, curLine = 0, curOff = 0;
+        int total = scrollback.size() + s.rows;
+        for (int i = 0; i < total; i++) {
+            char[] g; int[] f, b, fl; boolean wrap;
+            if (i < scrollback.size()) {
+                Line ln = scrollback.get(i);
+                g = ln.g; f = ln.f; b = ln.b; fl = ln.fl; wrap = ln.wrapped;
+            } else {
+                int y = i - scrollback.size();
+                g = s.g[y]; f = s.f[y]; b = s.b[y]; fl = s.fl[y]; wrap = s.wrap[y];
+            }
+            if (cur == null) {
+                cur = new Logical();
+                lines.add(cur);
+            }
+            int y = i - scrollback.size();
+            if (y == 0) { topLine = lines.size() - 1; topOff = cur.len; }
+            if (y == s.cy) { curLine = lines.size() - 1; curOff = cur.len + s.cx; }
+            int w = Math.min(s.cols, g.length);
+            int n = w;
+            if (!wrap) {
+                while (n > 0 && (g[n - 1] == ' ' || g[n - 1] == 0) && b[n - 1] == DEFAULT && fl[n - 1] == 0) n--;
+            }
+            for (int x = 0; x < n; x++) cur.add(g[x], f[x], b[x], fl[x]);
+            if (!wrap) cur = null;
+        }
+        // blank lines under the cursor are just unused screen, not content
+        while (lines.size() - 1 > curLine && lines.get(lines.size() - 1).len == 0) lines.remove(lines.size() - 1);
+
+        // 2. logical lines -> rows of newCols
+        java.util.ArrayList<char[]> og = new java.util.ArrayList<>();
+        java.util.ArrayList<int[]> of = new java.util.ArrayList<>(), ob = new java.util.ArrayList<>(),
+                ofl = new java.util.ArrayList<>();
+        java.util.ArrayList<Boolean> ow = new java.util.ArrayList<>();
+        int topRow = 0, curRow = 0, curCol = 0;
+        for (int li = 0; li < lines.size(); li++) {
+            Logical ln = lines.get(li);
+            int end = ln.len;
+            if (li == curLine) end = Math.max(end, curOff + 1); // room for the cursor
+            int row = -1, col = newCols; // col == newCols forces a new row first
+            for (int k = 0; k < Math.max(end, 1); k++) {
+                boolean wide = k + 1 < ln.len && ln.g[k + 1] == 0 && ln.g[k] != 0;
+                if (col >= newCols || (wide && col == newCols - 1)) {
+                    if (row >= 0) ow.set(ow.size() - 1, true); // previous row wraps into this one
+                    og.add(blankRowG(newCols)); of.add(filledRow(newCols, DEFAULT));
+                    ob.add(filledRow(newCols, DEFAULT)); ofl.add(filledRow(newCols, 0));
+                    ow.add(false);
+                    row = og.size() - 1;
+                    col = 0;
+                }
+                if (li == topLine && k == topOff) topRow = row;
+                if (li == curLine && k == curOff) { curRow = row; curCol = col; }
+                if (k < ln.len) {
+                    og.get(row)[col] = ln.g[k]; of.get(row)[col] = ln.f[k];
+                    ob.get(row)[col] = ln.b[k]; ofl.get(row)[col] = ln.fl[k];
+                }
+                col++;
+            }
+            if (li == topLine && topOff >= Math.max(end, 1)) topRow = row;
+        }
+
+        // 3. split into scrollback + screen: the old screen's first line stays
+        //    the screen's top unless the cursor would fall off the bottom
+        int top = Math.max(0, Math.max(topRow, curRow - newRows + 1));
+        scrollback.clear();
+        for (int r = Math.max(0, top - SCROLLBACK_MAX); r < top; r++) {
+            scrollback.add(new Line(og.get(r), of.get(r), ob.get(r), ofl.get(r), ow.get(r)));
+        }
+        char[][] g = blankGlyph(newCols, newRows);
+        int[][] f = filled(newCols, newRows, DEFAULT);
+        int[][] b = filled(newCols, newRows, DEFAULT);
+        int[][] fl = filled(newCols, newRows, 0);
+        boolean[] wrap = new boolean[newRows];
+        for (int y = 0; y < newRows && top + y < og.size(); y++) {
+            g[y] = og.get(top + y); f[y] = of.get(top + y); b[y] = ob.get(top + y);
+            fl[y] = ofl.get(top + y); wrap[y] = ow.get(top + y);
+        }
+        return new Screen(g, f, b, fl, wrap, Math.min(curCol, newCols - 1),
+                Math.max(0, Math.min(curRow - top, newRows - 1)), newCols, newRows);
+    }
+
+    private static char[] blankRowG(int cols) {
+        char[] r = new char[cols];
+        java.util.Arrays.fill(r, ' ');
+        return r;
     }
 
     synchronized void feed(byte[] data, int len) {
         for (int i = 0; i < len; i++) {
             handleByte(data[i] & 0xff);
         }
+        predictor.onOutput();
     }
 
     synchronized int scrollbackSize() {
@@ -161,16 +303,19 @@ final class TerminalEmulator {
         if (parseState == GROUND && utf8Remaining > 0) {
             if ((b & 0xc0) == 0x80) {
                 utf8Value = (utf8Value << 6) | (b & 0x3f);
-                if (--utf8Remaining == 0) putCodePoint(utf8Value, false);
+                if (--utf8Remaining == 0) putCodePoint(utf8Value);
                 return;
             }
-            utf8Remaining = 0; // malformed — fall through
+            utf8Remaining = 0; // malformed — drop the partial char, handle b normally
         }
         switch (parseState) {
             case GROUND: ground(b); break;
             case ESC: esc(b); break;
             case CSI: csiByte(b); break;
             case OSC: osc(b); break;
+            case OSC_ESC: // ESC \ ends the string; any other ESC aborts it and starts a new escape
+                if (b == '\\') parseState = GROUND; else { parseState = ESC; esc(b); }
+                break;
             case CHARSET: parseState = GROUND; break; // consume the set designator
         }
     }
@@ -188,9 +333,9 @@ final class TerminalEmulator {
             case 0x0d: cursorX = 0; wrapPending = false; return; // CR
             case 0x1b: parseState = ESC; csi.setLength(0); return;
             default:
-                if (b < 0x20) return;
+                if (b < 0x20 || b == 0x7f) return;
                 if (b < 0x80) {
-                    putCodePoint(b, false);
+                    putCodePoint(b);
                 } else if ((b & 0xe0) == 0xc0) {
                     utf8Remaining = 1; utf8Value = b & 0x1f;
                 } else if ((b & 0xf0) == 0xe0) {
@@ -204,7 +349,10 @@ final class TerminalEmulator {
     private void esc(int b) {
         switch (b) {
             case '[': parseState = CSI; csi.setLength(0); return;
-            case ']': parseState = OSC; csi.setLength(0); return;
+            // OSC, and DCS / SOS / PM / APC: swallow the payload up to BEL / ST
+            // instead of printing it (tmux, zellij and ConPTY emit DCS / APC).
+            case ']': case 'P': case 'X': case '^': case '_':
+                parseState = OSC; csi.setLength(0); return;
             case '(': case ')': case '*': case '+': parseState = CHARSET; return;
             case 'M': reverseLineFeed(); parseState = GROUND; return;
             case '7': savedX = cursorX; savedY = cursorY; parseState = GROUND; return;
@@ -217,8 +365,7 @@ final class TerminalEmulator {
 
     private void osc(int b) {
         if (b == 0x07) { parseState = GROUND; return; }        // BEL terminator
-        if (b == 0x1b) { parseState = ESC; return; }           // ST starts with ESC \
-        if (b == '\\' && parseState == ESC) { parseState = GROUND; return; }
+        if (b == 0x1b) { parseState = OSC_ESC; return; }       // ST = ESC \
         // ignore the payload (window title etc.)
     }
 
@@ -227,31 +374,51 @@ final class TerminalEmulator {
         // truecolor SGR (e.g. "38:2::R:G:Bm" instead of "38;2;R;G;Bm") — treat
         // it like ';' rather than letting it prematurely terminate the sequence
         // and dump the rest of the escape as garbage onto the screen.
-        if ((b >= '0' && b <= '9') || b == ';' || b == ':' || b == '?' || b == ' ' || b == '>') {
+        // Parameter bytes (0x30-0x3F: digits ; : < = > ?) and intermediates
+        // (0x20-0x2F) accumulate; only 0x40-0x7E ends the sequence. Anything
+        // narrower lets e.g. "ESC[!p" or "ESC[<u" end early and dump the rest
+        // of the escape onto the screen as text.
+        if (b >= 0x20 && b <= 0x3f) {
             csi.append((char) b);
             return;
         }
-        dispatchCsi((char) b);
+        if (b == 0x1b) { parseState = ESC; csi.setLength(0); return; } // aborted sequence
+        if (b < 0x20) { ground(b); return; } // C0 controls execute mid-sequence
+        if (b <= 0x7e && !hasIntermediate()) dispatchCsi((char) b);
         parseState = GROUND;
+    }
+
+    /** Intermediate byte present ("ESC[!p", "ESC[2$p"...) — none of those
+     *  are implemented, and dispatching them as the bare final byte would
+     *  misfire (soft reset as 'p', etc.). DECSCUSR's "ESC[2 q" is harmless. */
+    private boolean hasIntermediate() {
+        for (int i = 0; i < csi.length(); i++) {
+            if (csi.charAt(i) < 0x30) return true;
+        }
+        return false;
     }
 
     // --- CSI dispatch -------------------------------------------------
 
     private void dispatchCsi(char finalByte) {
-        boolean priv = csi.length() > 0 && csi.charAt(0) == '?';
-        String body = priv ? csi.substring(1) : csi.toString();
+        char lead = csi.length() > 0 ? csi.charAt(0) : 0;
+        boolean priv = lead == '?';
+        // "ESC[>...", "ESC[<...", "ESC[=..." are xterm / kitty extensions
+        // (modifyOtherKeys, keyboard protocol...) — only DA2 is answered.
+        if (lead == '<' || lead == '=' || (lead == '>' && finalByte != 'c')) return;
+        String body = (priv || lead == '>') ? csi.substring(1) : csi.toString();
         int[] p = params(body);
         int p0 = p.length > 0 ? p[0] : 0;
 
         switch (finalByte) {
-            case 'A': cursorY = clampY(cursorY - Math.max(1, p0)); break;
-            case 'B': cursorY = clampY(cursorY + Math.max(1, p0)); break;
+            case 'A': cursorY = clampY(cursorY - Math.max(1, p0)); wrapPending = false; break;
+            case 'B': cursorY = clampY(cursorY + Math.max(1, p0)); wrapPending = false; break;
             case 'C': cursorX = clampX(cursorX + Math.max(1, p0)); wrapPending = false; break;
             case 'D': cursorX = clampX(cursorX - Math.max(1, p0)); wrapPending = false; break;
             case 'E': cursorX = 0; cursorY = clampY(cursorY + Math.max(1, p0)); break;
             case 'F': cursorX = 0; cursorY = clampY(cursorY - Math.max(1, p0)); break;
             case 'G': case '`': cursorX = clampX((p0 == 0 ? 1 : p0) - 1); wrapPending = false; break;
-            case 'd': cursorY = clampY((p0 == 0 ? 1 : p0) - 1); break;
+            case 'd': cursorY = clampY((p0 == 0 ? 1 : p0) - 1); wrapPending = false; break;
             case 'H': case 'f': {
                 int row = (p.length > 0 && p[0] > 0 ? p[0] : 1) - 1;
                 int col = (p.length > 1 && p[1] > 0 ? p[1] : 1) - 1;
@@ -319,18 +486,21 @@ final class TerminalEmulator {
 
     // --- screen ops -------------------------------------------------
 
-    private void putCodePoint(int cp, boolean speculative) {
+    private void putCodePoint(int cp) {
+        if (isZeroWidth(cp)) return; // combining marks, ZWJ, variation selectors
         if (wrapPending && autowrap) {
+            wrapped[cursorY] = true;
             cursorX = 0;
             lineFeed();
             wrapPending = false;
         }
-        int width = (!speculative && isWide(cp)) ? 2 : 1;
+        int width = isWide(cp) ? 2 : 1;
         if (width == 2 && cursorX == cols - 1) {
             // doesn't fit in the last column — wrap first, like autowrap does
             // for a normal char; with autowrap off there's nowhere to put the
             // second half, so degrade to narrow rather than overflow the row.
             if (autowrap) {
+                wrapped[cursorY] = true;
                 cursorX = 0;
                 lineFeed();
             } else {
@@ -341,13 +511,7 @@ final class TerminalEmulator {
         glyph[cursorY][cursorX] = c;
         fg[cursorY][cursorX] = curFg;
         bg[cursorY][cursorX] = curBg;
-        // A real write always lands the true SGR state and clears any stale
-        // predicted-bit — that's the entire reconciliation mechanism: right or
-        // wrong, the next real echo unconditionally overwrites the guess.
-        flags[cursorY][cursorX] = curFlags | (speculative ? FLAG_PREDICTED : 0);
-        if (speculative) {
-            predictions.add(new Prediction(cursorY, cursorX, c, android.os.SystemClock.uptimeMillis()));
-        }
+        flags[cursorY][cursorX] = curFlags;
         if (width == 2) {
             // Continuation cell: glyph 0 is TerminalView's "don't draw" sentinel,
             // but its bg still paints so the wide glyph's background stays solid.
@@ -364,6 +528,13 @@ final class TerminalEmulator {
         }
     }
 
+    private static boolean isZeroWidth(int cp) {
+        return (cp >= 0x0300 && cp <= 0x036F)      // combining diacritics
+                || (cp >= 0x200B && cp <= 0x200F)   // ZW space / joiners / marks
+                || (cp >= 0xFE00 && cp <= 0xFE0F)   // variation selectors (emoji VS16)
+                || (cp >= 0x1F3FB && cp <= 0x1F3FF); // skin-tone modifiers
+    }
+
     /** Coarse East-Asian "Wide"/"Fullwidth" ranges, plus common emoji blocks —
      *  not a complete Unicode width table, but enough that CJK text and emoji
      *  in prompts/status bars (Zellij's, tmux's) don't desync column counts. */
@@ -378,33 +549,8 @@ final class TerminalEmulator {
                 || (cp >= 0x20000 && cp <= 0x3FFFD); // CJK extension planes
     }
 
-    // --- predictive local echo ---------------------------------------
-
-    /** Speculatively draw a plain keystroke before its real echo arrives.
-     *  Conservative on purpose: refuses anywhere a guess is likely wrong or
-     *  ambiguous. Returns false (no-op) when it declines to predict. */
-    synchronized boolean predict(int codePoint) {
-        if (onAlt || wrapPending || isWide(codePoint)) return false;
-        putCodePoint(codePoint, true);
-        return true;
-    }
-
-    synchronized boolean hasPendingPredictions() {
-        return !predictions.isEmpty();
-    }
-
-    /** Revert any prediction older than {@link #PREDICTION_TIMEOUT_MS} that
-     *  was never confirmed (e.g. a password prompt with echo off) back to a
-     *  blank cell — a guess must never sit on screen looking real forever. */
-    synchronized void expireStalePredictions() {
-        long now = android.os.SystemClock.uptimeMillis();
-        while (!predictions.isEmpty() && now - predictions.peek().atMillis >= PREDICTION_TIMEOUT_MS) {
-            Prediction p = predictions.poll();
-            if (p.y < glyph.length && p.x < glyph[p.y].length
-                    && (flags[p.y][p.x] & FLAG_PREDICTED) != 0 && glyph[p.y][p.x] == p.expected) {
-                blankCell(p.y, p.x);
-            }
-        }
+    boolean wrapPending() {
+        return wrapPending;
     }
 
     private void lineFeed() {
@@ -424,27 +570,24 @@ final class TerminalEmulator {
     }
 
     private void scrollUp(int n) {
+        predictor.invalidate();
         for (int k = 0; k < n; k++) {
             if (!onAlt && scrollTop == 0) {
-                // A line leaving the live grid will never receive its real echo
-                // at these coordinates again — expireStalePredictions() only
-                // ever inspects the live grid, so an unconfirmed predicted bit
-                // copied into scrollback as-is would stay underlined forever.
-                for (int x = 0; x < flags[0].length; x++) flags[0][x] &= ~FLAG_PREDICTED;
-                scrollback.add(new Line(glyph[0], fg[0], bg[0], flags[0]));
+                scrollback.add(new Line(glyph[0], fg[0], bg[0], flags[0], wrapped[0]));
                 if (scrollback.size() > SCROLLBACK_MAX) scrollback.remove(0);
             }
             for (int y = scrollTop; y < scrollBottom; y++) {
-                glyph[y] = glyph[y + 1]; fg[y] = fg[y + 1]; bg[y] = bg[y + 1]; flags[y] = flags[y + 1];
+                moveRow(y + 1, y);
             }
             blankRow(scrollBottom);
         }
     }
 
     private void scrollDown(int n) {
+        predictor.invalidate();
         for (int k = 0; k < n; k++) {
             for (int y = scrollBottom; y > scrollTop; y--) {
-                glyph[y] = glyph[y - 1]; fg[y] = fg[y - 1]; bg[y] = bg[y - 1]; flags[y] = flags[y - 1];
+                moveRow(y - 1, y);
             }
             blankRow(scrollTop);
         }
@@ -452,9 +595,10 @@ final class TerminalEmulator {
 
     private void insertLines(int n) {
         if (cursorY < scrollTop || cursorY > scrollBottom) return;
+        predictor.invalidate();
         for (int k = 0; k < n; k++) {
             for (int y = scrollBottom; y > cursorY; y--) {
-                glyph[y] = glyph[y - 1]; fg[y] = fg[y - 1]; bg[y] = bg[y - 1]; flags[y] = flags[y - 1];
+                moveRow(y - 1, y);
             }
             blankRow(cursorY);
         }
@@ -462,9 +606,10 @@ final class TerminalEmulator {
 
     private void deleteLines(int n) {
         if (cursorY < scrollTop || cursorY > scrollBottom) return;
+        predictor.invalidate();
         for (int k = 0; k < n; k++) {
             for (int y = cursorY; y < scrollBottom; y++) {
-                glyph[y] = glyph[y + 1]; fg[y] = fg[y + 1]; bg[y] = bg[y + 1]; flags[y] = flags[y + 1];
+                moveRow(y + 1, y);
             }
             blankRow(scrollBottom);
         }
@@ -490,6 +635,7 @@ final class TerminalEmulator {
 
     private void eraseDisplay(int mode) {
         if (mode == 0) {
+            wrapped[cursorY] = false;
             for (int x = cursorX; x < cols; x++) blankCell(cursorY, x);
             for (int y = cursorY + 1; y < rows; y++) blankRow(y);
         } else if (mode == 1) {
@@ -502,6 +648,7 @@ final class TerminalEmulator {
 
     private void eraseLine(int mode) {
         if (mode == 0) {
+            wrapped[cursorY] = false;
             for (int x = cursorX; x < cols; x++) blankCell(cursorY, x);
         } else if (mode == 1) {
             for (int x = 0; x <= cursorX && x < cols; x++) blankCell(cursorY, x);
@@ -545,9 +692,10 @@ final class TerminalEmulator {
 
     private void switchAlt(boolean on) {
         if (on == onAlt) return;
-        predictions.clear();
+        predictor.invalidate();
         if (on) {
-            altGlyph = glyph; altFg = fg; altBg = bg; altFlags = flags;
+            altGlyph = glyph; altFg = fg; altBg = bg; altFlags = flags; altWrapped = wrapped;
+            wrapped = new boolean[rows];
             glyph = blankGlyph(cols, rows);
             fg = filled(cols, rows, DEFAULT);
             bg = filled(cols, rows, DEFAULT);
@@ -556,7 +704,7 @@ final class TerminalEmulator {
             cursorX = 0; cursorY = 0;
             onAlt = true;
         } else {
-            glyph = altGlyph; fg = altFg; bg = altBg; flags = altFlags;
+            glyph = altGlyph; fg = altFg; bg = altBg; flags = altFlags; wrapped = altWrapped;
             cursorX = savedX; cursorY = savedY;
             onAlt = false;
         }
@@ -566,9 +714,10 @@ final class TerminalEmulator {
 
     /** Wipe the screen, scrollback and parser — for reattaching to a session. */
     synchronized void reset() {
-        predictions.clear();
+        predictor.invalidate();
         onAlt = false;
         scrollback.clear();
+        wrapped = new boolean[rows];
         glyph = blankGlyph(cols, rows);
         fg = filled(cols, rows, DEFAULT);
         bg = filled(cols, rows, DEFAULT);
@@ -619,7 +768,13 @@ final class TerminalEmulator {
         flags[y][x] = 0;
     }
 
+    private void moveRow(int from, int to) {
+        glyph[to] = glyph[from]; fg[to] = fg[from]; bg[to] = bg[from]; flags[to] = flags[from];
+        wrapped[to] = wrapped[from];
+    }
+
     private void blankRow(int y) {
+        wrapped[y] = false;
         glyph[y] = new char[cols];
         java.util.Arrays.fill(glyph[y], ' ');
         fg[y] = filledRow(cols, DEFAULT);

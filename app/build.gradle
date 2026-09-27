@@ -36,6 +36,11 @@ android {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+
+    // Plain JUnit: android.* stubs (Log, SystemClock) return defaults instead of throwing.
+    testOptions {
+        unitTests.returnDefaultValues = true
+    }
 }
 
 dependencies {

@@ -835,6 +835,15 @@ class Config {
     }
 
     /** Default frame rate for the Dev screen mirror. */
+    /** Shell text size (sp), set by pinching the terminal; kept for the next shell. */
+    static float getDevTermFontSp(Context context) {
+        return prefs(context).getFloat("dev_term_font", 16f);
+    }
+
+    static void setDevTermFontSp(Context context, float sp) {
+        prefs(context).edit().putFloat("dev_term_font", sp).apply();
+    }
+
     static int getDevScreenFps(Context context) {
         return prefs(context).getInt("dev_screen_fps", 12);
     }

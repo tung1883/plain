@@ -14,8 +14,12 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewConfiguration;
 
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * The desktop mirror. The pointer is tracked <b>on the phone</b> as a
@@ -64,9 +68,6 @@ final class RemoteScreenView extends View {
     private final RectF baseRect = new RectF();
     private final ExecutorService decoder = Executors.newSingleThreadExecutor();
     private final Handler main = new Handler(Looper.getMainLooper());
-    /** Newest undecoded JPEG; older ones are dropped so we never fall behind. */
-    private final java.util.concurrent.atomic.AtomicReference<byte[]> pendingJpeg =
-            new java.util.concurrent.atomic.AtomicReference<>();
     private final java.util.concurrent.atomic.AtomicBoolean decoding =
             new java.util.concurrent.atomic.AtomicBoolean();
 
@@ -237,15 +238,57 @@ final class RemoteScreenView extends View {
 
     // --- frames -----------------------------------------------------
 
+    /** One changed rectangle of a partial update, at (x, y) in frame pixels. */
+    static final class Tile {
+        final int x, y;
+        final byte[] jpeg;
+
+        Tile(int x, int y, byte[] jpeg) {
+            this.x = x; this.y = y; this.jpeg = jpeg;
+        }
+    }
+
+    /** A full frame ({@code tiles == null}) or a partial update, as received. */
+    private static final class Update {
+        final byte[] full;
+        final int w, h;
+        final List<Tile> tiles;
+        final long arrived = android.os.SystemClock.uptimeMillis();
+
+        Update(byte[] full, int w, int h, List<Tile> tiles) {
+            this.full = full; this.w = w; this.h = h; this.tiles = tiles;
+        }
+    }
+
+    /** Received, not yet decoded, in order. Partial updates build on each other
+     *  so they're never skipped; a full frame supersedes everything before it. */
+    private final ArrayDeque<Update> pending = new ArrayDeque<>();
+
     void setFrame(byte[] jpeg) {
+        enqueue(new Update(jpeg, 0, 0, null));
+    }
+
+    void setTiles(int w, int h, List<Tile> tiles) {
+        enqueue(new Update(null, w, h, tiles));
+    }
+
+    private void enqueue(Update u) {
         if (decoder.isShutdown()) return; // a late frame after release()
-        pendingJpeg.set(jpeg); // keep only the newest
+        synchronized (pending) {
+            if (u.tiles == null) {
+                if (!pending.isEmpty()) LatencyStats.record("screen.dropped", pending.size());
+                pending.clear();
+            }
+            pending.add(u);
+        }
         kickDecoder();
     }
 
     private void kickDecoder() {
-        if (pendingJpeg.get() == null || decoder.isShutdown()) return;
-        if (!decoding.compareAndSet(false, true)) return;
+        synchronized (pending) {
+            if (pending.isEmpty()) return;
+        }
+        if (decoder.isShutdown() || !decoding.compareAndSet(false, true)) return;
         try {
             decoder.execute(this::drainDecode);
         } catch (java.util.concurrent.RejectedExecutionException ignored) {
@@ -254,24 +297,81 @@ final class RemoteScreenView extends View {
     }
 
     private void drainDecode() {
-        byte[] jpeg;
-        while ((jpeg = pendingJpeg.getAndSet(null)) != null) {
-            Bitmap bmp = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.length);
-            if (bmp != null) onDecoded(bmp);
+        while (true) {
+            Update u;
+            synchronized (pending) {
+                u = pending.poll();
+            }
+            if (u == null) break;
+            long t0 = android.os.SystemClock.uptimeMillis();
+            if (u.tiles == null) {
+                Bitmap bmp = decodeFull(u.full);
+                LatencyStats.record("screen.decode", android.os.SystemClock.uptimeMillis() - t0);
+                if (bmp != null) onDecoded(bmp, u.arrived);
+            } else {
+                List<Bitmap> parts = new ArrayList<>(u.tiles.size());
+                for (Tile t : u.tiles) parts.add(BitmapFactory.decodeByteArray(t.jpeg, 0, t.jpeg.length));
+                LatencyStats.record("screen.decode_tiles", android.os.SystemClock.uptimeMillis() - t0);
+                onTilesDecoded(u, parts);
+            }
         }
         decoding.set(false);
-        kickDecoder(); // a frame may have arrived in the gap above
+        kickDecoder(); // an update may have arrived in the gap above
     }
 
-    private void onDecoded(Bitmap bmp) {
+    /** Spare frame-sized bitmap to decode the next full frame into, instead of
+     *  allocating ~4 MB per frame (the GC pauses behind the decode spikes). */
+    private final AtomicReference<Bitmap> spare = new AtomicReference<>();
+    /** Frame swapped out on the main thread; becomes {@link #spare} once a
+     *  draw no longer references it. */
+    private Bitmap retired;
+
+    private Bitmap decodeFull(byte[] jpeg) {
+        BitmapFactory.Options o = new BitmapFactory.Options();
+        o.inMutable = true; // partial updates paint into it
+        Bitmap reuse = spare.getAndSet(null);
+        if (reuse != null && !reuse.isRecycled()) {
+            o.inBitmap = reuse;
+            try {
+                Bitmap b = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.length, o);
+                if (b != null) return b;
+            } catch (IllegalArgumentException tooSmall) {
+                reuse.recycle(); // frame grew: fall through to a fresh bitmap
+            }
+            o.inBitmap = null;
+        }
+        return BitmapFactory.decodeByteArray(jpeg, 0, jpeg.length, o);
+    }
+
+    private void onDecoded(Bitmap bmp, long arrived) {
         main.post(() -> {
+            // frame off the socket -> handed to the view (decode + main-thread wait)
+            LatencyStats.record("screen.to_view", android.os.SystemClock.uptimeMillis() - arrived);
             Bitmap old = frame;
             frame = bmp;
             boolean aspectChanged = old == null
                     || old.getWidth() * bmp.getHeight() != bmp.getWidth() * old.getHeight();
-            if (old != null) old.recycle();
+            if (retired != null) retired.recycle();
+            retired = old;
             if (aspectLock && aspectChanged) requestLayout();
             invalidate();
+        });
+    }
+
+    private void onTilesDecoded(Update u, List<Bitmap> parts) {
+        main.post(() -> {
+            Bitmap f = frame;
+            // Only valid on top of the frame they were diffed against.
+            if (f != null && f.isMutable() && f.getWidth() == u.w && f.getHeight() == u.h) {
+                Canvas c = new Canvas(f);
+                for (int i = 0; i < parts.size(); i++) {
+                    Bitmap b = parts.get(i);
+                    if (b != null) c.drawBitmap(b, u.tiles.get(i).x, u.tiles.get(i).y, null);
+                }
+                LatencyStats.record("screen.to_view", android.os.SystemClock.uptimeMillis() - u.arrived);
+                invalidate();
+            }
+            for (Bitmap b : parts) if (b != null) b.recycle();
         });
     }
 
@@ -299,6 +399,12 @@ final class RemoteScreenView extends View {
             frame.recycle();
             frame = null;
         }
+        if (retired != null) {
+            retired.recycle();
+            retired = null;
+        }
+        Bitmap s = spare.getAndSet(null);
+        if (s != null) s.recycle();
     }
 
     @Override
@@ -320,6 +426,12 @@ final class RemoteScreenView extends View {
         canvas.translate(panX, panY);
         canvas.scale(zoom, zoom, getWidth() / 2f, getHeight() / 2f);
         canvas.drawBitmap(frame, null, baseRect, paint);
+        if (retired != null) {
+            // this draw no longer uses the swapped-out frame: decode into it next
+            Bitmap old = spare.getAndSet(retired);
+            if (old != null) old.recycle();
+            retired = null;
+        }
 
         float cxp = baseRect.left + curX * baseRect.width();
         float cyp = baseRect.top + curY * baseRect.height();

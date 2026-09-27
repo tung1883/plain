@@ -241,13 +241,41 @@ final class ScreenSurface extends LinearLayout {
         screen.release();
     }
 
+    private long lastFrameAt;
+
     private void onChannelMessage(Map<String, Object> msg) {
         if (!DevProtocol.T_SCREEN_FRAME.equals(DevProtocol.type(msg))) return;
+        send(DevProtocol.screenAck(channel)); // frees the daemon to send the next one
         int sw = (int) DevProtocol.num(msg, "sw", 0);
         int sh = (int) DevProtocol.num(msg, "sh", 0);
         if (sw > 0) screen.setSourceSize(sw, sh);
+        long now = android.os.SystemClock.uptimeMillis();
+        if (lastFrameAt != 0) LatencyStats.record("screen.interval", now - lastFrameAt);
+        lastFrameAt = now;
+        List<Object> tiles = DevProtocol.list(msg, "tiles");
+        if (tiles != null) {
+            // partial update: changed rectangles to paint over the current image
+            int w = (int) DevProtocol.num(msg, "w", 0), h = (int) DevProtocol.num(msg, "h", 0);
+            List<RemoteScreenView.Tile> parts = new ArrayList<>(tiles.size());
+            int bytes = 0;
+            for (Object o : tiles) {
+                if (!(o instanceof Map)) continue;
+                @SuppressWarnings("unchecked") Map<String, Object> t = (Map<String, Object>) o;
+                byte[] jpeg = DevProtocol.bin(t, "data");
+                if (jpeg == null) continue;
+                bytes += jpeg.length;
+                parts.add(new RemoteScreenView.Tile((int) DevProtocol.num(t, "x", 0),
+                        (int) DevProtocol.num(t, "y", 0), jpeg));
+            }
+            LatencyStats.record("screen.tiles_kb", bytes / 1024.0);
+            screen.setTiles(w, h, parts);
+            return;
+        }
         byte[] data = DevProtocol.bin(msg, "data");
-        if (data != null) screen.setFrame(data);
+        if (data != null) {
+            LatencyStats.record("screen.full_kb", data.length / 1024.0);
+            screen.setFrame(data);
+        }
     }
 
     private void send(Map<String, Object> message) {

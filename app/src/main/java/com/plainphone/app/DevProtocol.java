@@ -45,6 +45,7 @@ final class DevProtocol {
     static final String T_PTY_DATA = "pty.data";
     static final String T_PTY_RESIZE = "pty.resize";
     static final String T_PTY_EXIT = "pty.exit";
+    static final String T_PTY_ACK = "pty.ack";
     static final String T_PTY_CLOSE = "pty.close";
     static final String T_SESSION_LIST = "session.list";
     static final String T_SESSION_OPEN = "session.open";
@@ -56,6 +57,7 @@ final class DevProtocol {
     static final String T_SCREEN_START = "screen.start";
     static final String T_SCREEN_FRAME = "screen.frame";
     static final String T_SCREEN_STOP = "screen.stop";
+    static final String T_SCREEN_ACK = "screen.ack";
     static final String T_INPUT_MOVE = "input.move";
     static final String T_INPUT_POINT = "input.point";
     static final String T_INPUT_CLICK = "input.click";
@@ -189,6 +191,13 @@ final class DevProtocol {
         return m;
     }
 
+    /** Keystrokes numbered for echo acks ({@code echo_ack} capability). */
+    static Map<String, Object> ptyData(long ch, byte[] data, long seq) {
+        Map<String, Object> m = ptyData(ch, data);
+        m.put("seq", seq);
+        return m;
+    }
+
     static Map<String, Object> ptyResize(long ch, int cols, int rows) {
         Map<String, Object> m = msg(T_PTY_RESIZE);
         m.put("ch", ch);
@@ -247,6 +256,17 @@ final class DevProtocol {
         m.put("max_w", (long) maxWidth);
         m.put("fps", (long) fps);
         m.put("cursor", drawCursor);
+        // Flow control: the daemon keeps at most a couple of frames un-acked
+        // in flight instead of filling the socket with stale ones.
+        m.put("ack", true);
+        // Partial updates: after the first full frame, only changed tiles.
+        m.put("tiles", true);
+        return m;
+    }
+
+    static Map<String, Object> screenAck(long ch) {
+        Map<String, Object> m = msg(T_SCREEN_ACK);
+        m.put("ch", ch);
         return m;
     }
 

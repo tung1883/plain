@@ -22,10 +22,17 @@ import java.nio.charset.StandardCharsets;
  * IME input into the bytes a PTY expects. Sizes its column / row count to the
  * view and reports it through {@link #onResize} so the caller can send
  * {@code pty.resize}.
+ *
+ * <p>Pinch changes the text size (like Termux): the grid re-lays out, the
+ * emulator reflows its text to the new width, and the size is remembered
+ * ({@link Config#getDevTermFontSp}) for the next shell.
  */
 final class TerminalView extends View {
 
-    interface OnInput { void bytes(byte[] data); }
+    /** Outbound bytes, numbered so the daemon's echo acks can refer to them. */
+    interface OnInput { void bytes(byte[] data, long seq); }
+    /** Smoothed round trip to the daemon in ms, or negative if unknown. */
+    interface Rtt { double ms(); }
     interface OnResize { void size(int cols, int rows); }
 
     private static final int DEFAULT_FG = 0xFFD2D2D2;
@@ -44,9 +51,11 @@ final class TerminalView extends View {
 
     OnInput onInput;
     OnResize onResize;
+    Rtt rtt;
+    private long nextSeq = 1;
+    /** Guesses drawn at all (mosh: only once the round trip is noticeable). */
+    private boolean showGuesses = true;
     private boolean ctrlArmed, altArmed, shiftArmed;
-    /** True while the IME is mid-composition (suggestion strip up, nothing committed yet). */
-    private boolean composing;
     /** Fired when the sticky modifiers auto-clear after a keystroke. */
     Runnable onModsCleared;
 
@@ -58,7 +67,7 @@ final class TerminalView extends View {
 
     private final float density;
     private float fontSp;
-    private static final float FONT_MIN = 4f, FONT_MAX = 26f, FONT_DEFAULT = 16f;
+    private static final float FONT_MIN = 4f, FONT_MAX = 26f;
     private final ScaleGestureDetector scaleDetector;
 
     TerminalView(Context context) {
@@ -70,7 +79,7 @@ final class TerminalView extends View {
         density = context.getResources().getDisplayMetrics().scaledDensity;
 
         text.setTypeface(Fonts.cascadiaMono(context));
-        fontSp = FONT_DEFAULT;
+        fontSp = Config.getDevTermFontSp(context);
         applyFont();
 
         term = new TerminalEmulator(cols, rows, this::emit);
@@ -92,6 +101,11 @@ final class TerminalView extends View {
                         removeCallbacks(settle);
                         postDelayed(settle, 180);
                         return true;
+                    }
+
+                    @Override
+                    public void onScaleEnd(ScaleGestureDetector d) {
+                        Config.setDevTermFontSp(getContext(), fontSp);
                     }
                 });
     }
@@ -123,15 +137,14 @@ final class TerminalView extends View {
     void reset() {
         term.reset();
         scrollLines = 0;
-        removeCallbacks(expirySweep);
-        predictionPolling = false;
+        removeCallbacks(sweep);
+        sweeping = false;
         postInvalidate();
     }
 
     void feed(byte[] data, int len) {
         int before = term.scrollbackSize();
         term.feed(data, len);
-        term.expireStalePredictions(); // real output is also a chance to sweep stale guesses
         if (scrollLines > 0) {
             // keep the same history visible as new lines push in
             scrollLines = Math.min(term.scrollbackSize(), scrollLines + term.scrollbackSize() - before);
@@ -190,15 +203,66 @@ final class TerminalView extends View {
         clearMods();
     }
 
-    void sendBytes(byte[] data) {
-        if (data != null && data.length > 0 && onInput != null) {
-            if (scrollLines != 0) {
-                scrollLines = 0; // snap to the live bottom on any input
-                postInvalidate();
-            }
-            onInput.bytes(data);
-        }
+    /** The daemon can ack echoes; without that, guesses could never be judged. */
+    void setEchoAck(boolean on) {
+        term.predictor.enabled = on;
+        if (!on) term.predictor.invalidate();
     }
+
+    /** Echo ack: the daemon fed input up to {@code seq} to the shell and the
+     *  output since then has arrived. */
+    void ack(long seq) {
+        term.predictor.onAck(seq);
+        postInvalidate();
+    }
+
+    /** User keystrokes: predicted locally (where possible) as they go out. */
+    void sendBytes(byte[] data) {
+        send(data, true);
+    }
+
+    private void send(byte[] data, boolean user) {
+        if (data == null || data.length == 0 || onInput == null) return;
+        if (scrollLines != 0) scrollLines = 0; // snap to the live bottom on any input
+        long seq = nextSeq++;
+        if (user) {
+            boolean instant = term.predictor.onInput(data, seq) && showGuesses();
+            if (data[0] >= 0x20 && data[0] != 0x7f && data.length <= 4) {
+                // share of plain keystrokes drawn before their echo (avg of 0/1)
+                LatencyStats.record("shell.instant", instant ? 1 : 0);
+            }
+            if (!sweeping && term.predictor.pending()) {
+                sweeping = true;
+                postDelayed(sweep, SWEEP_MS);
+            }
+        }
+        onInput.bytes(data, seq);
+        postInvalidate();
+    }
+
+    /** Mosh's display rule: guesses only once the round trip is noticeable
+     *  (on above 30 ms, off below 20 ms — hysteresis so it doesn't flap). */
+    private boolean showGuesses() {
+        double ms = rtt != null ? rtt.ms() : -1;
+        if (ms < 0) return showGuesses;
+        if (ms > 30) showGuesses = true;
+        else if (ms < 20) showGuesses = false;
+        return showGuesses;
+    }
+
+    private boolean sweeping;
+    private static final long SWEEP_MS = 100;
+
+    /** While guesses are pending: expire ones that never got an ack, and
+     *  redraw so the slow-guess underline appears on time. Stops itself. */
+    private final Runnable sweep = new Runnable() {
+        @Override public void run() {
+            term.predictor.expire();
+            invalidate();
+            if (term.predictor.pending()) postDelayed(this, SWEEP_MS);
+            else sweeping = false;
+        }
+    };
 
     void sendString(String s) {
         sendBytes(s.getBytes(StandardCharsets.UTF_8));
@@ -206,7 +270,7 @@ final class TerminalView extends View {
 
     private void emit(byte[] data) {
         // replies the emulator generates itself (e.g. cursor-position report)
-        sendBytes(data);
+        send(data, false);
     }
 
     @Override
@@ -228,6 +292,11 @@ final class TerminalView extends View {
         int sb = term.scrollbackSize();
         int off = Math.min(scrollLines, sb);
         final float left = getPaddingLeft();
+        boolean show = off == 0 && showGuesses();
+        java.util.List<EchoPredictor.Cell> guesses = show
+                ? term.predictor.visibleCells() : java.util.Collections.emptyList();
+        // With a cursor prediction, the cursor is drawn there instead.
+        int[] guessCursor = show ? term.predictor.visibleCursor() : null;
 
         for (int y = 0; y < rows; y++) {
             int virt = sb - off + y;
@@ -249,14 +318,13 @@ final class TerminalView extends View {
                 int cflags = flRow[x];
                 boolean inverse = (cflags & TerminalEmulator.FLAG_INVERSE) != 0;
                 boolean bold = (cflags & TerminalEmulator.FLAG_BOLD) != 0;
-                boolean predicted = (cflags & TerminalEmulator.FLAG_PREDICTED) != 0;
                 int fgc = resolve(fRow[x], true, bold);
                 int bgc = resolve(bRow[x], false, false);
                 if (inverse) {
                     int t = fgc; fgc = bgc; bgc = t;
                 }
                 boolean cursorHere = focused && term.cursorVisible && off == 0 && gy >= 0
-                        && x == term.cursorX && gy == term.cursorY;
+                        && guessCursor == null && x == term.cursorX && gy == term.cursorY;
                 if (cursorHere) {
                     int t = fgc; fgc = bgc; bgc = t;
                     if (bgc == DEFAULT_BG) bgc = DEFAULT_FG;
@@ -272,15 +340,44 @@ final class TerminalView extends View {
                     text.setFakeBoldText(bold);
                     canvas.drawText(String.valueOf(g), left + x * charW, top + baseline, text);
                 }
-                if (predicted) {
-                    // Unconfirmed keystroke (predictive local echo) — underline in
-                    // the cell's own resolved colour so it reads right under
-                    // inverse/cursor swaps too, with zero extra branching above.
-                    fill.setColor(fgc);
-                    float lineY = top + baseline + charH * 0.08f;
-                    canvas.drawRect(left + x * charW, lineY,
-                            left + (x + 1) * charW, lineY + Math.max(1f, density), fill);
-                }
+            }
+        }
+        drawGuesses(canvas, guesses, guessCursor, left, focused && term.cursorVisible);
+    }
+
+    /** Unconfirmed keystrokes (predictive local echo), drawn over the grid;
+     *  the real echo replaces them once it arrives. Underlined only when
+     *  they're slow to confirm (mosh: round trip over 80 ms, or any guess
+     *  pending past 250 ms). */
+    private void drawGuesses(Canvas canvas, java.util.List<EchoPredictor.Cell> guesses, int[] cursor,
+                             float left, boolean drawCursor) {
+        if (guesses.isEmpty() && cursor == null) return;
+        double ms = rtt != null ? rtt.ms() : -1;
+        boolean underline = ms > 80 || term.predictor.glitching();
+        text.setFakeBoldText(false);
+        for (EchoPredictor.Cell c : guesses) {
+            if (c.y >= rows || c.x >= term.cols) continue;
+            float x0 = left + c.x * charW, top = c.y * charH;
+            fill.setColor(DEFAULT_BG);
+            canvas.drawRect(x0, top, x0 + charW, top + charH, fill);
+            if (c.ch == ' ') continue;
+            text.setColor(DEFAULT_FG);
+            canvas.drawText(String.valueOf(c.ch), x0, top + baseline, text);
+            if (underline && !c.weak) {
+                fill.setColor(DEFAULT_FG);
+                float lineY = top + baseline + charH * 0.08f;
+                canvas.drawRect(x0, lineY, x0 + charW, lineY + Math.max(1f, density), fill);
+            }
+        }
+        if (cursor != null && drawCursor && cursor[0] < rows && cursor[1] < term.cols) {
+            float x0 = left + cursor[1] * charW, top = cursor[0] * charH;
+            fill.setColor(DEFAULT_FG);
+            canvas.drawRect(x0, top, x0 + charW, top + charH, fill);
+            char under = term.glyph[cursor[0]][cursor[1]];
+            for (EchoPredictor.Cell c : guesses) if (c.y == cursor[0] && c.x == cursor[1]) under = c.ch;
+            if (under != ' ' && under != 0) {
+                text.setColor(DEFAULT_BG);
+                canvas.drawText(String.valueOf(under), x0, top + baseline, text);
             }
         }
     }
@@ -349,21 +446,8 @@ final class TerminalView extends View {
         return new BaseInputConnection(this, false) {
             @Override
             public boolean commitText(CharSequence textIn, int newCursorPosition) {
-                composing = false;
                 type(textIn.toString());
                 return true;
-            }
-
-            @Override
-            public boolean setComposingText(CharSequence textIn, int newCursorPosition) {
-                composing = textIn != null && textIn.length() > 0;
-                return super.setComposingText(textIn, newCursorPosition);
-            }
-
-            @Override
-            public boolean finishComposingText() {
-                composing = false;
-                return super.finishComposingText();
             }
 
             @Override
@@ -386,8 +470,10 @@ final class TerminalView extends View {
         };
     }
 
+    /** Committed text (one key, or an IME commit). Predicted locally by
+     *  {@link EchoPredictor} when it's a single plain char; a multi-char
+     *  commit (autocorrect replacing a word) is never guessed. */
     private void type(String s) {
-        maybePredict(s);
         byte[] body = (ctrlArmed && s.length() == 1)
                 ? new byte[]{control(s.charAt(0))}
                 : s.getBytes(StandardCharsets.UTF_8);
@@ -400,52 +486,6 @@ final class TerminalView extends View {
         sendBytes(body);
         clearMods();
     }
-
-    /** Predictive local echo: draw a plausible-looking keystroke immediately
-     *  (underlined, unconfirmed) rather than waiting a full round trip. Very
-     *  conservative — only a single plain printable char, no armed modifier,
-     *  not mid-IME-composition; {@link TerminalEmulator#predict} adds its own
-     *  grid-level checks (alt-screen, wrap boundary, wide chars) on top.
-     *
-     *  <p>Deliberately does NOT predict multi-codepoint commits. Those aren't
-     *  reliably "the user typed several characters in a row" — an IME's most
-     *  common reason to commit more than one codepoint at once is autocorrect
-     *  replacing an earlier word via deleteSurroundingText + a fresh commit,
-     *  and this code has no visibility into that delete. Predicting the
-     *  replacement text on top of a guess that was never un-predicted just
-     *  draws overlapping garbage. Single-char commits are never corrections. */
-    private void maybePredict(String s) {
-        if (ctrlArmed || altArmed || composing) return;
-        if (s.codePointCount(0, s.length()) != 1) return;
-        int cp = s.codePointAt(0);
-        if (cp < 0x20 || cp == 0x7f) return;
-        if (!term.predict(cp)) return;
-        invalidate();
-        if (!predictionPolling) {
-            predictionPolling = true;
-            postDelayed(expirySweep, PREDICTION_SWEEP_MS);
-        }
-    }
-
-    private boolean predictionPolling;
-    private static final long PREDICTION_SWEEP_MS = 850; // > TerminalEmulator's own timeout
-
-    /** Self-rescheduling safety net: a prediction can go unconfirmed forever if
-     *  the shell never echoes at all (a password prompt) — {@link #feed} sweeps
-     *  stale ones on every real byte, but with no output at all this is the
-     *  only thing that ever clears one. Stops rescheduling itself once nothing
-     *  is pending, so idle typing costs zero timers. */
-    private final Runnable expirySweep = new Runnable() {
-        @Override public void run() {
-            term.expireStalePredictions();
-            if (term.hasPendingPredictions()) {
-                postDelayed(this, PREDICTION_SWEEP_MS);
-            } else {
-                predictionPolling = false;
-            }
-            postInvalidate();
-        }
-    };
 
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {

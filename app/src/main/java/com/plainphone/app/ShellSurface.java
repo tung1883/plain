@@ -42,6 +42,8 @@ final class ShellSurface extends LinearLayout {
     private long sessionId = -1;
     private boolean opening;
     private long statusHoldUntil;
+    /** When the oldest keystroke still waiting for any shell output was sent, 0 = none. */
+    private long echoPendingSince;
 
     private Callbacks cb = new Callbacks() {};
 
@@ -54,9 +56,15 @@ final class ShellSurface extends LinearLayout {
 
         term = new TerminalView(ctx);
         term.setPadding(dp(10), 0, 0, 0); // breathing room on the left edge
-        term.onInput = bytes -> {
-            if (channel >= 0 && connection != null) connection.send(DevProtocol.ptyData(channel, bytes));
+        term.onInput = (bytes, seq) -> {
+            if (channel >= 0 && connection != null) {
+                if (echoPendingSince == 0) echoPendingSince = SystemClock.uptimeMillis();
+                connection.send(connection.hasCap("echo_ack")
+                        ? DevProtocol.ptyData(channel, bytes, seq)
+                        : DevProtocol.ptyData(channel, bytes));
+            }
         };
+        term.rtt = () -> connection != null ? connection.srttMs() : -1;
         term.onResize = (cols, rows) -> {
             if (channel >= 0 && connection != null) connection.send(DevProtocol.ptyResize(channel, cols, rows));
         };
@@ -153,6 +161,7 @@ final class ShellSurface extends LinearLayout {
         opening = true;
         channel = conn.openChannel(sink);
         term.reset();
+        term.setEchoAck(conn.hasCap("echo_ack"));
         conn.send(DevProtocol.sessionOpen(channel,
                 sessionId >= 0 ? sessionId : null, null,
                 Math.max(term.cols(), 20), Math.max(term.rows(), 6)));
@@ -194,7 +203,20 @@ final class ShellSurface extends LinearLayout {
             }
         } else if (DevProtocol.T_PTY_DATA.equals(type)) {
             byte[] data = DevProtocol.bin(msg, "data");
-            if (data != null) term.feed(data, data.length);
+            if (echoPendingSince != 0) {
+                // keystroke -> first output after it (the echo), end to end
+                LatencyStats.record("shell.echo", SystemClock.uptimeMillis() - echoPendingSince);
+                echoPendingSince = 0;
+            }
+            if (data != null) {
+                long t0 = SystemClock.uptimeMillis();
+                term.feed(data, data.length);
+                LatencyStats.record("shell.feed", SystemClock.uptimeMillis() - t0);
+            }
+            long ack = DevProtocol.num(msg, "ack", -1);
+            if (ack >= 0) term.ack(ack);
+        } else if (DevProtocol.T_PTY_ACK.equals(type)) {
+            term.ack(DevProtocol.num(msg, "seq", -1));
         } else if (DevProtocol.T_PTY_EXIT.equals(type)) {
             cb.onExit((int) DevProtocol.num(msg, "code", 0));
         }
