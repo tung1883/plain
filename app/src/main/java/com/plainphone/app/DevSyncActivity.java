@@ -90,6 +90,8 @@ public class DevSyncActivity extends Activity {
         StringBuilder sb = new StringBuilder(dir).append(" · ").append(sched);
         if (DevSyncJobs.pending(this, pair.id)) {
             sb.append("\nSyncing…");
+        } else if (pair.lastError != null) {
+            sb.append("\nFailed: ").append(pair.lastError);
         } else if (pair.lastConflicts > 0) {
             sb.append("\n").append(pair.lastConflicts).append(pair.lastConflicts == 1 ? " conflict" : " conflicts")
                     .append(" needs review");

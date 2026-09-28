@@ -37,6 +37,13 @@ import java.util.Set;
  *       present in the baseline but now missing on one side is a deletion —
  *       propagated only when {@link DevSyncPair#deletesPropagate()}.
  * </ul>
+ *
+ * <p>Deciding "same" is cheap first, like rsync's quick check: a path where
+ * each side still matches its own baseline record (size + modified time), or
+ * where both sides have the same size and modified time, is unchanged without
+ * reading it. Only paths whose sizes match but times don't are hashed — on
+ * both sides, the daemon's half through {@code sync.hash} — so a big folder
+ * that hasn't changed costs a directory walk, not reading every byte.
  */
 final class DevSyncRunner {
 
@@ -44,21 +51,27 @@ final class DevSyncRunner {
 
     interface KeepAlive { void keepAlive(); }
 
-    static void run(Context context, JobQueue.Job job, DevSyncPair pair, DevSyncClient client, KeepAlive keepAlive) {
+    static void run(Context context, JobQueue.Job job, DevSyncPair pair, DevSyncClient client,
+                    boolean remoteCanHash, KeepAlive keepAlive) {
         Uri tree = pair.localTree();
-        boolean hash = true; // always compare mtime + size + checksum, no user-chosen mode anymore
 
         List<DevSyncLocal.Entry> localList;
         List<DevSyncClient.RemoteEntry> remoteList;
+        long runStart = now();
         try {
-            localList = DevSyncLocal.walk(context, tree, hash);
-            remoteList = client.syncList(pair.remotePath, hash);
+            long t0 = now();
+            localList = DevSyncLocal.walk(context, tree);
+            LatencyStats.record("sync.list_local", now() - t0);
+            t0 = now();
+            remoteList = client.syncList(pair.remotePath);
+            LatencyStats.record("sync.list_remote", now() - t0);
         } catch (Exception e) {
             android.util.Log.w("DevSyncRunner", "listing failed for pair " + pair.id, e);
             pair.lastRunAt = System.currentTimeMillis();
             pair.lastFailed = 1;
             pair.lastSynced = 0;
             pair.lastConflicts = 0;
+            pair.lastError = "couldn't list files: " + e.getMessage();
             pair.save(context);
             return;
         }
@@ -74,11 +87,8 @@ final class DevSyncRunner {
         allPaths.addAll(remote.keySet());
         allPaths.addAll(baseline.keySet());
 
-        List<String> toPush = new ArrayList<>();
-        List<String> toPull = new ArrayList<>();
-        List<String> toDeleteLocal = new ArrayList<>();
-        List<String> toDeleteRemote = new ArrayList<>();
-        int conflicts = 0;
+        Plan plan = new Plan();
+        List<String> needHash = new ArrayList<>();
 
         for (String path : allPaths) {
             DevSyncLocal.Entry L = local.get(path);
@@ -86,46 +96,84 @@ final class DevSyncRunner {
             DevSyncJobs.BaselineEntry B = baseline.get(path);
 
             if (L != null && R != null) {
-                if (sameByMode(pair, L, R)) continue;
-                if (pair.isMirror()) {
-                    boolean localChanged = B == null || !localMatchesBaseline(pair, L, B);
-                    boolean remoteChanged = B == null || !remoteMatchesBaseline(pair, R, B);
-                    if (localChanged && !remoteChanged) {
-                        toPush.add(path);
-                    } else if (remoteChanged && !localChanged) {
-                        toPull.add(path);
-                    } else {
-                        conflicts++;
-                        if (L.mtimeMs >= R.mtimeMs) toPush.add(path); else toPull.add(path);
-                    }
-                } else if (DevSyncPair.DIR_PUSH.equals(pair.direction)) {
-                    toPush.add(path);
-                } else {
-                    toPull.add(path);
+                boolean lSame = B != null && B.localSame(L.size, L.mtimeMs);
+                boolean rSame = B != null && B.remoteSame(R.size, R.mtimeMs);
+                if (lSame && rSame) continue; // neither side touched since the last sync
+                if (L.size == R.size && DevSyncJobs.sameTime(L.mtimeMs, R.mtimeMs)) {
+                    baseline.put(path, both(L, R, B != null ? B.hash : null)); // quick check: equal
+                    continue;
                 }
+                if (L.size == R.size && remoteCanHash) {
+                    needHash.add(path); // might be equal with a different timestamp: look inside
+                    continue;
+                }
+                plan.differ(pair, path, L, R, lSame, rSame);
             } else if (L != null) {
                 if (DevSyncPair.DIR_PULL.equals(pair.direction)) continue;
                 if (pair.isMirror() && B != null) {
-                    if (pair.deletesPropagate()) toDeleteLocal.add(path);
+                    if (pair.deletesPropagate()) plan.deleteLocal.add(path);
                 } else {
-                    toPush.add(path);
+                    plan.push.add(path);
                 }
             } else if (R != null) {
                 if (DevSyncPair.DIR_PUSH.equals(pair.direction)) continue;
                 if (pair.isMirror() && B != null) {
-                    if (pair.deletesPropagate()) toDeleteRemote.add(path);
+                    if (pair.deletesPropagate()) plan.deleteRemote.add(path);
                 } else {
-                    toPull.add(path);
+                    plan.pull.add(path);
                 }
+            } else {
+                baseline.remove(path); // gone from both sides
             }
-            // else: gone from both sides — just falls out of the baseline below.
         }
 
-        int total = toPush.size() + toPull.size() + toDeleteLocal.size() + toDeleteRemote.size();
-        Set<String> done = DevSyncJobs.readDone(context, job.id);
         DevSyncJobs.Snapshot snap = new DevSyncJobs.Snapshot();
         snap.jobId = job.id;
         snap.pairId = pair.id;
+
+        if (!needHash.isEmpty()) {
+            long hashStart = now();
+            Map<String, String> remoteHash = new java.util.HashMap<>();
+            try {
+                client.hashRemote(pair.remotePath, needHash, (p, sha) -> {
+                    keepAlive.keepAlive();
+                    snap.currentPath = "checking " + p;
+                    snap.currentDirection = null;
+                    DevSyncJobs.publish(snap);
+                    remoteHash.put(p, sha);
+                });
+            } catch (IOException e) {
+                android.util.Log.w("DevSyncRunner", "remote hashing failed", e); // unhashed paths just transfer
+            }
+            for (String path : needHash) {
+                keepAlive.keepAlive();
+                DevSyncLocal.Entry L = local.get(path);
+                DevSyncClient.RemoteEntry R = remote.get(path);
+                DevSyncJobs.BaselineEntry B = baseline.get(path);
+                String hr = remoteHash.get(path);
+                long th = now();
+                String hl = hr == null ? null : DevSyncLocal.hash(context, tree, path);
+                if (hr != null) LatencyStats.record("sync.hash_local", now() - th);
+                if (hl != null && hl.equals(hr)) {
+                    baseline.put(path, both(L, R, hl)); // same content, different timestamps
+                } else {
+                    plan.differ(pair, path, L, R,
+                            B != null && B.localSame(L.size, L.mtimeMs),
+                            B != null && B.remoteSame(R.size, R.mtimeMs));
+                }
+            }
+            android.util.Log.i(LatencyStats.TAG, "sync " + pair.id + ": hashed " + needHash.size()
+                    + " file(s) in " + (now() - hashStart) + " ms");
+        }
+        long planDone = now();
+        long bytesMoved = 0;
+
+        List<String> toPush = plan.push, toPull = plan.pull;
+        List<String> toDeleteLocal = plan.deleteLocal, toDeleteRemote = plan.deleteRemote;
+        int conflicts = plan.conflicts;
+
+        int total = toPush.size() + toPull.size() + toDeleteLocal.size() + toDeleteRemote.size();
+        Set<String> done = DevSyncJobs.readDone(context, job.id);
         snap.totalFiles = total;
         snap.conflicts = conflicts;
         DevSyncJobs.publishNow(snap);
@@ -141,9 +189,14 @@ final class DevSyncRunner {
             DevSyncJobs.publish(snap);
             try {
                 DevSyncLocal.Entry L = local.get(path);
-                pushOne(context, pair, client, path, L);
-                baseline.put(path, new DevSyncJobs.BaselineEntry(L.size, L.mtimeMs, L.sha256));
+                retryOnNewLink(client, () -> pushOne(context, pair, client, path, L));
+                bytesMoved += L.size;
+                // the daemon stamps the upload with the phone's modified time
+                baseline.put(path, new DevSyncJobs.BaselineEntry(L.size, L.mtimeMs, L.size, L.mtimeMs, null));
                 synced++;
+            } catch (LinkGone e) {
+                abort(context, pair, baseline, synced, failed, conflicts);
+                return;
             } catch (Exception e) {
                 android.util.Log.w("DevSyncRunner", "push failed: " + path, e);
                 failed++;
@@ -165,9 +218,19 @@ final class DevSyncRunner {
             DevSyncJobs.publish(snap);
             try {
                 DevSyncClient.RemoteEntry R = remote.get(path);
-                pullOne(context, pair, client, path, R);
-                baseline.put(path, new DevSyncJobs.BaselineEntry(R.size, R.mtimeMs, R.sha256));
+                retryOnNewLink(client, () -> pullOne(context, pair, client, path, R));
+                bytesMoved += R.size;
+                // the local copy's modified time is "now": record what it actually is
+                long ts = now();
+                DevSyncLocal.Entry after = DevSyncLocal.stat(context, tree, path);
+                LatencyStats.record("sync.pull_stat", now() - ts);
+                baseline.put(path, new DevSyncJobs.BaselineEntry(
+                        after != null ? after.size : -1, after != null ? after.mtimeMs : 0,
+                        R.size, R.mtimeMs, null));
                 synced++;
+            } catch (LinkGone e) {
+                abort(context, pair, baseline, synced, failed, conflicts);
+                return;
             } catch (Exception e) {
                 android.util.Log.w("DevSyncRunner", "pull failed: " + path, e);
                 failed++;
@@ -202,8 +265,11 @@ final class DevSyncRunner {
             if (done.contains(key)) continue;
             keepAlive.keepAlive();
             try {
-                client.deleteRemote(remotePathFor(pair, path));
+                retryOnNewLink(client, () -> client.deleteRemote(remotePathFor(pair, path)));
                 baseline.remove(path);
+            } catch (LinkGone e) {
+                abort(context, pair, baseline, synced, failed, conflicts);
+                return;
             } catch (Exception e) {
                 android.util.Log.w("DevSyncRunner", "remote delete failed: " + path, e);
                 failed++;
@@ -215,30 +281,92 @@ final class DevSyncRunner {
         }
 
         DevSyncJobs.writeBaseline(context, pair.id, baseline);
+        long transferMs = now() - planDone;
+        android.util.Log.i(LatencyStats.TAG, String.format(java.util.Locale.US,
+                "sync %s: %d file(s), %.1f MB in %.1f s (%.2f MB/s) — listing+checks %.1f s, total %.1f s,"
+                        + " %d up / %d down / %d unchanged-by-check, %d failed",
+                pair.id, toPush.size() + toPull.size(), bytesMoved / 1e6, transferMs / 1000.0,
+                transferMs > 0 ? bytesMoved / 1e6 / (transferMs / 1000.0) : 0.0,
+                (planDone - runStart) / 1000.0, (now() - runStart) / 1000.0,
+                toPush.size(), toPull.size(), allPaths.size() - total, failed));
         pair.lastRunAt = System.currentTimeMillis();
         pair.lastSynced = synced;
         pair.lastFailed = failed;
         pair.lastConflicts = conflicts;
+        pair.lastError = null;
         pair.save(context);
         snap.doneFiles = total;
         DevSyncJobs.publishNow(snap);
     }
 
-    /** A file is unchanged only when modified time, size, AND checksum all agree —
-     *  no user-chosen mode anymore, just the strictest combination of all three. */
-    private static boolean sameByMode(DevSyncPair pair, DevSyncLocal.Entry L, DevSyncClient.RemoteEntry R) {
-        return Math.abs(L.mtimeMs - R.mtimeMs) <= 1000 && L.size == R.size
-                && L.sha256 != null && L.sha256.equals(R.sha256);
+    interface Transfer { void run() throws IOException; }
+
+    /** The link dropped and didn't come back: stop the run (nothing left can work). */
+    private static final class LinkGone extends IOException {
+        LinkGone() { super("lost the connection to the PC"); }
     }
 
-    private static boolean localMatchesBaseline(DevSyncPair pair, DevSyncLocal.Entry L, DevSyncJobs.BaselineEntry B) {
-        return Math.abs(L.mtimeMs - B.mtimeMs) <= 1000 && L.size == B.size
-                && L.sha256 != null && L.sha256.equals(B.hash);
+    /** Runs one transfer; if the link drops under it, moves to the new connection
+     *  and runs it once more — it resumes from its partial data (the daemon's
+     *  {@code .partial} for uploads, the local cache file for downloads). */
+    private static void retryOnNewLink(DevSyncClient client, Transfer t) throws IOException {
+        try {
+            t.run();
+        } catch (DevSyncClient.LinkLost first) {
+            android.util.Log.w("DevSyncRunner", "link dropped mid-transfer, reconnecting");
+            if (!client.reconnect()) throw new LinkGone();
+            try {
+                t.run();
+            } catch (DevSyncClient.LinkLost again) {
+                if (!client.reconnect()) throw new LinkGone();
+                throw again; // this file fails; the link is back for the rest
+            }
+        }
     }
 
-    private static boolean remoteMatchesBaseline(DevSyncPair pair, DevSyncClient.RemoteEntry R, DevSyncJobs.BaselineEntry B) {
-        return Math.abs(R.mtimeMs - B.mtimeMs) <= 1000 && R.size == B.size
-                && R.sha256 != null && R.sha256.equals(B.hash);
+    /** Ends a run cut short by a lost link: keep what did finish (so the next
+     *  run skips it) and say why on the pair's row. */
+    private static void abort(Context context, DevSyncPair pair, Map<String, DevSyncJobs.BaselineEntry> baseline,
+                              int synced, int failed, int conflicts) {
+        android.util.Log.w("DevSyncRunner", "sync " + pair.id + ": connection lost, stopping this run");
+        DevSyncJobs.writeBaseline(context, pair.id, baseline);
+        pair.lastRunAt = System.currentTimeMillis();
+        pair.lastSynced = synced;
+        pair.lastFailed = failed + 1;
+        pair.lastConflicts = conflicts;
+        pair.lastError = "lost the connection to the PC after " + synced + " file(s); the next run continues";
+        pair.save(context);
+    }
+
+    private static DevSyncJobs.BaselineEntry both(DevSyncLocal.Entry L, DevSyncClient.RemoteEntry R, String hash) {
+        return new DevSyncJobs.BaselineEntry(L.size, L.mtimeMs, R.size, R.mtimeMs, hash);
+    }
+
+    /** What a run will do, built up path by path. */
+    private static final class Plan {
+        final List<String> push = new ArrayList<>(), pull = new ArrayList<>();
+        final List<String> deleteLocal = new ArrayList<>(), deleteRemote = new ArrayList<>();
+        int conflicts;
+
+        /** A path on both sides whose content differs (or couldn't be compared). */
+        void differ(DevSyncPair pair, String path, DevSyncLocal.Entry L, DevSyncClient.RemoteEntry R,
+                    boolean localSameAsBaseline, boolean remoteSameAsBaseline) {
+            if (pair.isMirror()) {
+                boolean localChanged = !localSameAsBaseline, remoteChanged = !remoteSameAsBaseline;
+                if (localChanged && !remoteChanged) {
+                    push.add(path);
+                } else if (remoteChanged && !localChanged) {
+                    pull.add(path);
+                } else {
+                    conflicts++;
+                    if (L.mtimeMs >= R.mtimeMs) push.add(path); else pull.add(path);
+                }
+            } else if (DevSyncPair.DIR_PUSH.equals(pair.direction)) {
+                push.add(path);
+            } else {
+                pull.add(path);
+            }
+        }
     }
 
     private static String remotePathFor(DevSyncPair pair, String relPath) {
@@ -250,8 +378,14 @@ final class DevSyncRunner {
     private static void pushOne(Context context, DevSyncPair pair, DevSyncClient client, String relPath, DevSyncLocal.Entry local) throws IOException {
         Uri tree = pair.localTree();
         String remotePath = remotePathFor(pair, relPath);
+        long t0 = now();
         long resumeOffset = client.putBegin(remotePath, local.size, local.mtimeMs);
-        try (InputStream in = DevSyncLocal.open(context, tree, relPath)) {
+        LatencyStats.record("sync.put_begin_wait", now() - t0); // idle round trip per file
+        long t1 = now();
+        InputStream opened = DevSyncLocal.open(context, tree, relPath);
+        LatencyStats.record("sync.local_find", now() - t1);
+        long t2 = now();
+        try (InputStream in = opened) {
             if (in == null) throw new IOException("local file vanished: " + relPath);
             skipFully(in, resumeOffset);
             long offset = resumeOffset;
@@ -263,7 +397,12 @@ final class DevSyncRunner {
                 offset += n;
             }
         }
-        if (!client.putEnd()) throw new IOException("daemon rejected upload: " + relPath);
+        long sent = now() - t2;
+        long t3 = now();
+        boolean ok = client.putEnd();
+        LatencyStats.record("sync.put_end_wait", now() - t3); // includes the link draining queued chunks
+        recordRate("sync.put_mbps", local.size - resumeOffset, sent + (now() - t3));
+        if (!ok) throw new IOException("daemon rejected upload: " + relPath);
     }
 
     private static void skipFully(InputStream in, long n) throws IOException {
@@ -296,20 +435,36 @@ final class DevSyncRunner {
         long resumeOffset = cache.exists() ? cache.length() : 0;
         if (resumeOffset > remote.size) { cache.delete(); resumeOffset = 0; }
 
+        long t0 = now();
         try (RandomAccessFile raf = new RandomAccessFile(cache, "rw")) {
             client.getFile(remotePathFor(pair, relPath), resumeOffset, (offset, data) -> {
                 raf.seek(offset);
                 raf.write(data);
             });
         }
+        recordRate("sync.get_mbps", remote.size - resumeOffset, now() - t0);
 
+        long t1 = now();
+        OutputStream created = DevSyncLocal.create(context, pair.localTree(), relPath);
+        LatencyStats.record("sync.local_create", now() - t1); // find + delete old + mkdirs + create
+        long t2 = now();
         try (InputStream in = new java.io.FileInputStream(cache);
-             OutputStream out = DevSyncLocal.create(context, pair.localTree(), relPath)) {
+             OutputStream out = created) {
             byte[] buf = new byte[64 * 1024];
             int n;
             while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
         }
+        recordRate("sync.copy_to_folder_mbps", remote.size, now() - t2); // the second write
         cache.delete();
+    }
+
+    private static long now() {
+        return android.os.SystemClock.uptimeMillis();
+    }
+
+    /** MB/s for one file; skipped for tiny files where it's all noise. */
+    private static void recordRate(String name, long bytes, long ms) {
+        if (bytes >= 256 * 1024 && ms > 0) LatencyStats.record(name, bytes / 1e6 / (ms / 1000.0));
     }
 
     private static String cacheName(String relPath) {

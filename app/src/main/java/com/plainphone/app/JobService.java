@@ -663,6 +663,7 @@ public class JobService extends Service {
             android.util.Log.w("JobService", "dev sync: " + pair.hostId + " not reachable, skipping this run");
             pair.lastRunAt = System.currentTimeMillis();
             pair.lastFailed = 1;
+            pair.lastError = "PC not reachable";
             pair.save(app);
             DevSyncJobs.finish(app, job);
             running = false;
@@ -686,6 +687,7 @@ public class JobService extends Service {
         if (connection == null) {
             pair.lastRunAt = System.currentTimeMillis();
             pair.lastFailed = 1;
+            pair.lastError = "PC not reachable";
             pair.save(app);
             try { unbindService(sc); } catch (IllegalArgumentException ignored) { }
             DevSyncJobs.finish(app, job);
@@ -694,10 +696,17 @@ public class JobService extends Service {
             return;
         }
 
-        DevSyncClient client = new DevSyncClient(connection);
+        DevService service = holder[0];
+        DevSyncClient client = new DevSyncClient(connection, () -> {
+            // DevService reconnects on its own; nudge it in case it gave up
+            DevService.connect(app, pair.hostId);
+            return DevService.isConnected(pair.hostId) ? service.connection(pair.hostId) : null;
+        });
         try {
             keepAlive(job);
-            DevSyncRunner.run(app, job, pair, client, () -> keepAlive(job));
+            java.util.Collection<?> caps = holder[0].caps(pair.hostId);
+            boolean canHash = caps != null && caps.contains(DevProtocol.CAP_SYNC_HASH);
+            DevSyncRunner.run(app, job, pair, client, canHash, () -> keepAlive(job));
         } finally {
             client.close();
             try { unbindService(sc); } catch (IllegalArgumentException ignored) { }

@@ -81,6 +81,8 @@ final class DevProtocol {
     static final String T_CLIP = "clip";
     static final String T_FS_LIST = "fs.list";
     static final String T_SYNC_LIST = "sync.list";
+    static final String T_SYNC_HASH = "sync.hash";
+    static final String T_SYNC_HASH_END = "sync.hash.end";
     static final String T_SYNC_PUT_BEGIN = "sync.put.begin";
     static final String T_SYNC_PUT_READY = "sync.put.ready";
     static final String T_SYNC_PUT_CHUNK = "sync.put.chunk";
@@ -100,6 +102,8 @@ final class DevProtocol {
     static final String CAP_METRICS = "metrics";
     static final String CAP_CLIP = "clip";
     static final String CAP_SYNC = "sync";
+    /** Daemon can hash a chosen set of files ({@code sync.hash}). */
+    static final String CAP_SYNC_HASH = "sync_hash";
 
     /** Chunk size for {@code sync.put.chunk}/{@code sync.get.chunk} — well under
      *  {@link #MAX_FRAME} once msgpack map overhead is counted. */
@@ -396,6 +400,14 @@ final class DevProtocol {
         m.put("ch", ch);
         m.put("root", root);
         if (hash) m.put("hash", Boolean.TRUE);
+        return m;
+    }
+
+    static Map<String, Object> syncHash(long ch, String root, java.util.List<String> paths) {
+        Map<String, Object> m = msg(T_SYNC_HASH);
+        m.put("ch", ch);
+        m.put("root", root);
+        m.put("paths", new java.util.ArrayList<Object>(paths));
         return m;
     }
 

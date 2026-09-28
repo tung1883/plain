@@ -33,17 +33,16 @@ final class DevSyncLocal {
         final String path; // relative, forward-slashed
         final long size;
         final long mtimeMs;
-        final String sha256; // null unless requested
-        Entry(String path, long size, long mtimeMs, String sha256) {
+        Entry(String path, long size, long mtimeMs) {
             this.path = path;
             this.size = size;
             this.mtimeMs = mtimeMs;
-            this.sha256 = sha256;
         }
     }
 
-    /** Every file under {@code treeUri}, relative path from the tree root. */
-    static List<Entry> walk(Context context, Uri treeUri, boolean hash) {
+    /** Every file under {@code treeUri}, relative path from the tree root —
+     *  sizes and modified times only (see {@link #hash} for content). */
+    static List<Entry> walk(Context context, Uri treeUri) {
         List<Entry> out = new ArrayList<>();
         ContentResolver cr = context.getContentResolver();
         String rootDocId = DocumentsContract.getTreeDocumentId(treeUri);
@@ -70,13 +69,33 @@ final class DevSyncLocal {
                     if (DocumentsContract.Document.MIME_TYPE_DIR.equals(mime)) {
                         queue.add(new String[]{docId, rel});
                     } else {
-                        String sha = hash ? hashOf(cr, DocumentsContract.buildDocumentUriUsingTree(treeUri, docId)) : null;
-                        out.add(new Entry(rel, size, mtime, sha));
+                        out.add(new Entry(rel, size, mtime));
                     }
                 }
             }
         }
         return out;
+    }
+
+    /** SHA-256 of {@code relPath}'s content, or null if it can't be read. */
+    static String hash(Context context, Uri treeUri, String relPath) {
+        Uri fileUri = findFile(context, treeUri, relPath);
+        return fileUri == null ? null : hashOf(context.getContentResolver(), fileUri);
+    }
+
+    /** Current size and modified time of {@code relPath}, or null if it's missing. */
+    static Entry stat(Context context, Uri treeUri, String relPath) {
+        Uri fileUri = findFile(context, treeUri, relPath);
+        if (fileUri == null) return null;
+        try (Cursor c = context.getContentResolver().query(fileUri, new String[]{
+                DocumentsContract.Document.COLUMN_SIZE,
+                DocumentsContract.Document.COLUMN_LAST_MODIFIED,
+        }, null, null, null)) {
+            if (c == null || !c.moveToFirst()) return null;
+            return new Entry(relPath, c.getLong(0), c.getLong(1));
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     private static String hashOf(ContentResolver cr, Uri fileUri) {

@@ -121,16 +121,35 @@ final class DevSyncJobs {
 
     // --- per-pair sync baseline: last known synced state of every file -----
 
+    /** Each side's size + modified time right after the last sync of a path
+     *  (-1 = unknown), plus its content hash when one was computed. The two
+     *  sides are kept separately because a transfer changes the destination's
+     *  modified time (Android's storage API can't set it), so "same as last
+     *  sync" has to be judged per side, not by comparing the sides. */
     static final class BaselineEntry {
-        long size;
-        long mtimeMs;
-        String hash; // null unless the pair's detect mode is checksum
+        final long localSize, localMtime, remoteSize, remoteMtime;
+        final String hash;
 
-        BaselineEntry(long size, long mtimeMs, String hash) {
-            this.size = size;
-            this.mtimeMs = mtimeMs;
+        BaselineEntry(long localSize, long localMtime, long remoteSize, long remoteMtime, String hash) {
+            this.localSize = localSize;
+            this.localMtime = localMtime;
+            this.remoteSize = remoteSize;
+            this.remoteMtime = remoteMtime;
             this.hash = hash;
         }
+
+        boolean localSame(long size, long mtime) {
+            return localSize >= 0 && size == localSize && sameTime(mtime, localMtime);
+        }
+
+        boolean remoteSame(long size, long mtime) {
+            return remoteSize >= 0 && size == remoteSize && sameTime(mtime, remoteMtime);
+        }
+    }
+
+    /** Modified times match within 2 s (FAT-formatted SD cards store 2 s steps). */
+    static boolean sameTime(long a, long b) {
+        return Math.abs(a - b) <= 2000;
     }
 
     static Map<String, BaselineEntry> readBaseline(Context context, String pairId) {
@@ -150,8 +169,13 @@ final class DevSyncJobs {
             while (keys.hasNext()) {
                 String path = keys.next();
                 JSONObject e = root.getJSONObject(path);
-                out.put(path, new BaselineEntry(e.optLong("size", 0), e.optLong("mtime_ms", 0),
-                        e.isNull("hash") ? null : e.optString("hash", null)));
+                String hash = e.isNull("hash") ? null : e.optString("hash", null);
+                // Older baselines kept one side only, and which one depended on the
+                // direction: treat both as unknown — the next run re-checks by content.
+                out.put(path, e.has("ls")
+                        ? new BaselineEntry(e.optLong("ls", -1), e.optLong("lm", 0),
+                                e.optLong("rs", -1), e.optLong("rm", 0), hash)
+                        : new BaselineEntry(-1, 0, -1, 0, hash));
             }
         } catch (IOException | JSONException ignored) {
         }
@@ -162,10 +186,13 @@ final class DevSyncJobs {
         JSONObject root = new JSONObject();
         try {
             for (Map.Entry<String, BaselineEntry> e : baseline.entrySet()) {
+                BaselineEntry b = e.getValue();
                 JSONObject o = new JSONObject();
-                o.put("size", e.getValue().size);
-                o.put("mtime_ms", e.getValue().mtimeMs);
-                if (e.getValue().hash != null) o.put("hash", e.getValue().hash);
+                o.put("ls", b.localSize);
+                o.put("lm", b.localMtime);
+                o.put("rs", b.remoteSize);
+                o.put("rm", b.remoteMtime);
+                if (b.hash != null) o.put("hash", b.hash);
                 root.put(e.getKey(), o);
             }
         } catch (JSONException ignored) {

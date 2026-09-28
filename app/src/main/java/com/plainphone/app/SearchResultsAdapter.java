@@ -186,6 +186,20 @@ class SearchResultsAdapter extends BaseAdapter {
         } else {
             subtitle.setText(result.subtitle);
             subtitle.setTypeface(typeface);
+            // A "\n" in the subtitle means separate lines (e.g. a sync pair's
+            // schedule, then its status); otherwise one line, cut in the middle.
+            int lines = 1;
+            for (int i = 0; i < result.subtitle.length(); i++) {
+                if (result.subtitle.charAt(i) == '\n') lines++;
+            }
+            if (lines > 1) {
+                subtitle.setSingleLine(false);
+                subtitle.setMaxLines(lines);
+                subtitle.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            } else {
+                subtitle.setSingleLine(true);
+                subtitle.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
+            }
             subtitle.setVisibility(View.VISIBLE);
         }
 

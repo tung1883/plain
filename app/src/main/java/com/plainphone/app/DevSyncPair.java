@@ -41,6 +41,8 @@ final class DevSyncPair {
     // Last-run summary, for the pair list row.
     long lastRunAt;
     int lastSynced, lastFailed, lastConflicts;
+    /** Why the last run failed as a whole (couldn't connect / list), else null. */
+    String lastError;
 
     DevSyncPair(String id) {
         this.id = id;
@@ -79,6 +81,7 @@ final class DevSyncPair {
                 p.lastSynced = o.optInt("last_synced", 0);
                 p.lastFailed = o.optInt("last_failed", 0);
                 p.lastConflicts = o.optInt("last_conflicts", 0);
+                p.lastError = o.isNull("last_error") ? null : o.optString("last_error", null);
                 out.add(p);
             }
         } catch (JSONException ignored) {
@@ -141,6 +144,7 @@ final class DevSyncPair {
                 o.put("last_synced", p.lastSynced);
                 o.put("last_failed", p.lastFailed);
                 o.put("last_conflicts", p.lastConflicts);
+                if (p.lastError != null) o.put("last_error", p.lastError);
                 arr.put(o);
             }
         } catch (JSONException ignored) {

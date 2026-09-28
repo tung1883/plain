@@ -20,7 +20,7 @@
 | D→C | `{t:"welcome", proto:2, host, os:"linux\|macos\|windows", caps}` |
 | D→C | `{t:"error", code:"auth", msg}` then close — bad token |
 
-- `caps` ⊆ `["pty","session","proc","metrics","clip","sync","echo_ack","screen","input"]` (`screen`/`input` are build-time).
+- `caps` ⊆ `["pty","session","proc","metrics","clip","sync","sync_hash","echo_ack","screen","input"]` (`screen`/`input` are build-time).
 - Client pings `{t:"ping"}` every 15 s → `{t:"pong"}`. 20 s silence = dead.
 
 ## Channels
@@ -179,7 +179,10 @@ survives a daemon restart, not just a dropped connection.
 | D→C | `{t:"fs.list", ch, entries:[{name, is_dir}]}` |
 | C→D | `{t:"sync.list", ch, root, hash?:bool}` — recursive listing of one root; `hash` only when the pair's detect mode is checksum (hashing every file is expensive, so the client only asks for it when it needs it) |
 | D→C | `{t:"sync.list", ch, entries:[{path, size, mtime_ms, sha256?}]}` — `path` is relative to `root`, forward-slashed |
-| C→D | `{t:"sync.put.begin", ch, path, size, mtime_ms}` — upload, phone → daemon |
+| C→D | `{t:"sync.hash", ch, root, paths:[…]}` — hash just these files (`sync_hash` cap); clients use it only for paths whose size matches but mtime doesn't |
+| D→C | `{t:"sync.hash", ch, path, sha256?}` × N — one per file as it finishes; no `sha256` = unreadable |
+| D→C | `{t:"sync.hash.end", ch}` |
+| C→D | `{t:"sync.put.begin", ch, path, size, mtime_ms}` — upload, phone → daemon; the finished file gets `mtime_ms` as its modified time |
 | D→C | `{t:"sync.put.ready", ch, resume_offset}` — bytes of `<path>.partial` already on disk; the client resumes from here, not necessarily 0 |
 | C→D | `{t:"sync.put.chunk", ch, offset, data:<bin>}` × N, ≤256 KiB each |
 | C→D | `{t:"sync.put.end", ch}` — daemon renames `.partial` into place |
@@ -190,6 +193,10 @@ survives a daemon restart, not just a dropped connection.
 | D→C | `{t:"sync.get.end", ch, ok}` |
 | C→D | `{t:"sync.delete", ch, path}` — mirror cleanup, only sent when a pair has delete-propagation on |
 | D→C | `{t:"sync.delete.done", ch, ok}` |
+
+`fs.list`, `sync.list`, `sync.hash` and `sync.delete` run off the connection's
+frame loop and reply when done, so a long listing or hash never stalls pings,
+shells or the screen on the same connection.
 
 ## Errors
 
