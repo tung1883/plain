@@ -118,7 +118,13 @@ public class RecordingPlayerActivity extends Activity {
             return;
         }
 
-        RecorderService.startPlayback(this, recId, docId, name, format);
+        boolean alreadyPlayingThis = RecorderService.isActive(this)
+                && "playing a recording".equals(RecorderService.activeDetail())
+                && java.util.Objects.equals(RecorderService.activePlayRecId(), recId)
+                && java.util.Objects.equals(RecorderService.activePlayDocId(), docId);
+        if (!alreadyPlayingThis) {
+            RecorderService.startPlayback(this, recId, docId, name, format);
+        }
         bindService(new Intent(this, RecorderService.class), conn, Context.BIND_AUTO_CREATE);
     }
 

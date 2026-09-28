@@ -47,7 +47,17 @@ class SearchResult {
     /** Never fire this from the keyboard's Go/Enter key — a stray match must not lock the phone. */
     boolean guarded;
 
+    /** Show a leading live-activity dot — used for the "recording in progress" card. */
+    boolean liveDot;
+
+    /** Labels for up to two trailing inline buttons (e.g. "Pause", "Stop") that fire
+     *  instead of the row's own action — null means no button in that slot. */
+    String actionLabel;
+    String actionLabel2;
+
     private final Action action;
+    private Action secondaryAction;
+    private Action secondaryAction2;
 
     SearchResult(Kind kind, String title, String subtitle, int score, Action action) {
         this(kind, title, subtitle, score, action, null);
@@ -78,8 +88,32 @@ class SearchResult {
         return this;
     }
 
+    SearchResult live() {
+        this.liveDot = true;
+        return this;
+    }
+
+    SearchResult withAction(String label, Action run) {
+        if (this.actionLabel == null) {
+            this.actionLabel = label;
+            this.secondaryAction = run;
+        } else {
+            this.actionLabel2 = label;
+            this.secondaryAction2 = run;
+        }
+        return this;
+    }
+
     void activate() {
         action.run();
+    }
+
+    void runAction() {
+        if (secondaryAction != null) secondaryAction.run();
+    }
+
+    void runAction2() {
+        if (secondaryAction2 != null) secondaryAction2.run();
     }
 }
 

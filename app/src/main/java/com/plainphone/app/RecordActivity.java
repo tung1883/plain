@@ -186,17 +186,6 @@ public class RecordActivity extends Activity {
         sp.topMargin = 20;
         root.addView(sub, sp);
 
-        TextView hint = new TextView(this);
-        hint.setText("Keeps recording if you leave — control it from the shade");
-        hint.setTextColor(0xFF5C5C5C);
-        hint.setTextSize(11);
-        hint.setTypeface(font);
-        hint.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams hp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        hp.topMargin = 8;
-        root.addView(hint, hp);
-
         LinearLayout buttons = new LinearLayout(this);
         buttons.setOrientation(LinearLayout.HORIZONTAL);
         buttons.setGravity(Gravity.CENTER);

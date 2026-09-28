@@ -98,9 +98,34 @@ abstract class PluginPanel implements PanelContent, SelectionHost {
         }
     }
 
-    @Override public void onShow() { refreshGate(); }
-    @Override public void onLeave() { exitSelection(); }
-    @Override public void onClose() { exitSelection(); }
+    @Override public void onShow() {
+        refreshGate();
+        if (section() == HomeMode.RECORDER) recorderTickHandler.post(recorderTick);
+    }
+
+    @Override public void onLeave() {
+        exitSelection();
+        recorderTickHandler.removeCallbacks(recorderTick);
+    }
+
+    @Override public void onClose() {
+        exitSelection();
+        recorderTickHandler.removeCallbacks(recorderTick);
+    }
+
+    private final android.os.Handler recorderTickHandler =
+            new android.os.Handler(android.os.Looper.getMainLooper());
+    private final Runnable recorderTick = new Runnable() {
+        @Override
+        public void run() {
+            // Skipped mid multi-select — a full list rebuild every second while the user is
+            // picking rows to delete reset scroll/checked state under them, looking like flicker.
+            if (RecorderService.isActive(ctx) && !selecting) {
+                refresh();
+            }
+            recorderTickHandler.postDelayed(this, 1000);
+        }
+    };
 
     void refreshGate() {
         Lock lk = lock();

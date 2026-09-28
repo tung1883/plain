@@ -65,6 +65,20 @@ public class RecorderService extends Service {
     private static volatile boolean active;
     private static volatile boolean vaultPlay;
     private static volatile String activeDetail;
+    private static volatile long recStartRealtime;
+    private static volatile boolean recPausedStatic;
+    private static volatile long recPausedAccumMs;
+    private static volatile long recPauseStartRealtime;
+
+    // Playback snapshot, refreshed each tick — lets the home card show a live
+    // position without binding.
+    private static volatile String activePlayRecId;
+    private static volatile String activePlayDocId;
+    private static volatile String activePlayFormat;
+    private static volatile String activePlayName;
+    private static volatile int activePlayPositionMs;
+    private static volatile int activePlayDurationMs;
+    private static volatile boolean activePlaying;
 
     /** True while a recording or playback is running in this process. */
     static boolean isActive(Context context) {
@@ -79,6 +93,40 @@ public class RecorderService extends Service {
     /** "recording" / "playing a recording" for the lock-all confirmation, or null. */
     static String activeDetail() {
         return activeDetail;
+    }
+
+    /** Elapsed time of the recording in progress, pause-aware, without binding. */
+    static long activeRecordingElapsedMs() {
+        long start = recStartRealtime;
+        if (start == 0) return 0;
+        long now = SystemClock.elapsedRealtime();
+        long pauseStart = recPauseStartRealtime;
+        long paused = recPausedAccumMs + (pauseStart == 0 ? 0 : now - pauseStart);
+        return Math.max(0, now - start - paused);
+    }
+
+    static boolean activeRecordingPaused() {
+        return recPausedStatic;
+    }
+
+    /** Name / position / duration of the track playing right now, without binding. */
+    static String activePlayName() { return activePlayName; }
+    static String activePlayRecId() { return activePlayRecId; }
+    static String activePlayDocId() { return activePlayDocId; }
+    static int activePlayPositionMs() { return activePlayPositionMs; }
+    static int activePlayDurationMs() { return activePlayDurationMs; }
+    static boolean activePlayingNow() { return activePlaying; }
+
+    /** Intent to reopen the player screen on the track playing right now. */
+    static Intent activePlayerIntent(Context ctx) {
+        Intent i = new Intent(ctx, RecordingPlayerActivity.class);
+        if (activePlayDocId != null) {
+            i.putExtra("docId", activePlayDocId).putExtra("name", activePlayName)
+                    .putExtra("format", activePlayFormat);
+        } else {
+            i.putExtra("recId", activePlayRecId);
+        }
+        return i;
     }
 
     enum Mode { NONE, RECORDING, PLAYING }
@@ -213,6 +261,9 @@ public class RecorderService extends Service {
         updateWakeLock();
         updateNotification();
         lastRecNotif = SystemClock.uptimeMillis();
+        recStartRealtime = SystemClock.elapsedRealtime();
+        recPausedAccumMs = 0;
+        recPauseStartRealtime = 0;
         handler.post(recTick);
     }
 
@@ -233,6 +284,14 @@ public class RecorderService extends Service {
 
     private void setRecordingPaused(boolean paused) {
         if (capture == null) return;
+        recPausedStatic = paused;
+        long now = SystemClock.elapsedRealtime();
+        if (paused) {
+            recPauseStartRealtime = now;
+        } else if (recPauseStartRealtime != 0) {
+            recPausedAccumMs += now - recPauseStartRealtime;
+            recPauseStartRealtime = 0;
+        }
         if (paused) capture.pause();
         else capture.resume();
         updateWakeLock();
@@ -296,6 +355,9 @@ public class RecorderService extends Service {
         mode = Mode.PLAYING;
         active = true;
         activeDetail = "playing a recording";
+        activePlayRecId = playRecId;
+        activePlayDocId = playDocId;
+        activePlayFormat = playFormat;
         setUpSession();
         ensureVaultWatcher();
         goForeground(playForegroundType());                 // claim foreground before any decrypt
@@ -369,6 +431,9 @@ public class RecorderService extends Service {
         }
         playName = r.displayName();
         playFormat = r.format;
+        activePlayRecId = playRecId;
+        activePlayDocId = playDocId;
+        activePlayFormat = playFormat;
 
         if (!openPlayer(0)) {
             finishAndStop();
@@ -638,6 +703,10 @@ public class RecorderService extends Service {
     }
 
     private void updateSessionState() {
+        activePlayName = safeName();
+        activePlayPositionMs = position();
+        activePlayDurationMs = duration();
+        activePlaying = player != null && player.isPlaying();
         if (session == null) return;
         boolean playing = player != null && player.isPlaying();
         long actions = PlaybackState.ACTION_PLAY_PAUSE | PlaybackState.ACTION_PLAY
@@ -813,6 +882,17 @@ public class RecorderService extends Service {
         active = false;
         vaultPlay = false;
         activeDetail = null;
+        recStartRealtime = 0;
+        recPausedStatic = false;
+        recPausedAccumMs = 0;
+        recPauseStartRealtime = 0;
+        activePlayRecId = null;
+        activePlayDocId = null;
+        activePlayFormat = null;
+        activePlayName = null;
+        activePlayPositionMs = 0;
+        activePlayDurationMs = 0;
+        activePlaying = false;
         stopForeground(STOP_FOREGROUND_REMOVE);
         stopSelf();
     }
@@ -828,6 +908,17 @@ public class RecorderService extends Service {
         active = false;
         vaultPlay = false;
         activeDetail = null;
+        recStartRealtime = 0;
+        recPausedStatic = false;
+        recPausedAccumMs = 0;
+        recPauseStartRealtime = 0;
+        activePlayRecId = null;
+        activePlayDocId = null;
+        activePlayFormat = null;
+        activePlayName = null;
+        activePlayPositionMs = 0;
+        activePlayDurationMs = 0;
+        activePlaying = false;
     }
 
     // --- binder surface (activities poll this) -------------------

@@ -467,7 +467,7 @@ class UiKit {
         }
     }
 
-    private static StateListDrawable buttonBackground(Context c) {
+    static StateListDrawable buttonBackground(Context c) {
         return pressable(c, Color.BLACK, Color.DKGRAY, Color.WHITE, 2f, R_SM);
     }
 }

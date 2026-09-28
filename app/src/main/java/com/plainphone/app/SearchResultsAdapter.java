@@ -10,6 +10,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.BaseAdapter;
+import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -161,14 +162,44 @@ class SearchResultsAdapter extends BaseAdapter {
         LinearLayout textCol = (LinearLayout) view.getChildAt(1);
         TextView title = (TextView) textCol.getChildAt(0);
         TextView subtitle = (TextView) textCol.getChildAt(1);
+        Button action = (Button) view.getChildAt(2);
+        Button action2 = (Button) view.getChildAt(3);
 
         if (result.showCheck) {
             marker.setVisibility(View.VISIBLE);
             marker.setText(result.checked ? "[x]" : "[ ]");
             marker.setTextColor(result.checked ? Color.WHITE : Color.GRAY);
             marker.setTypeface(typeface);
+        } else if (result.liveDot) {
+            marker.setVisibility(View.VISIBLE);
+            marker.setText("●");
+            marker.setTextColor(Color.WHITE);
+            marker.setTypeface(typeface);
         } else {
             marker.setVisibility(View.GONE);
+        }
+
+        if (result.actionLabel != null) {
+            action.setVisibility(View.VISIBLE);
+            action.setText(result.actionLabel);
+            action.setTypeface(typeface);
+            action.setTextSize("❚❚".equals(result.actionLabel) ? 13 : 17);
+            action.setTextColor("■".equals(result.actionLabel) ? 0xFFE84C3D : Color.WHITE);
+            action.setOnClickListener(v -> result.runAction());
+        } else {
+            action.setVisibility(View.GONE);
+            action.setOnClickListener(null);
+        }
+        if (result.actionLabel2 != null) {
+            action2.setVisibility(View.VISIBLE);
+            action2.setText(result.actionLabel2);
+            action2.setTypeface(typeface);
+            action2.setTextSize("❚❚".equals(result.actionLabel2) ? 13 : 17);
+            action2.setTextColor("■".equals(result.actionLabel2) ? 0xFFE84C3D : Color.WHITE);
+            action2.setOnClickListener(v -> result.runAction2());
+        } else {
+            action2.setVisibility(View.GONE);
+            action2.setOnClickListener(null);
         }
 
         title.setText(result.title);
@@ -208,6 +239,36 @@ class SearchResultsAdapter extends BaseAdapter {
         return view;
     }
 
+    /** A row's inline control (Pause / Play / Stop) — drawn on canvas rather than a text
+     *  glyph, in a fixed-size box so it lines up with its neighbor regardless of the app font. */
+    private Button actionButton(Context context) {
+        Button b = new Button(context);
+        b.setTextColor(Color.WHITE);
+        b.setTextSize(17);
+        b.setAllCaps(false);
+        b.setBackground(null);
+        b.setPadding(0, 0, 0, 0);
+        b.setMinWidth(0);
+        b.setMinimumWidth(0);
+        b.setMinHeight(0);
+        b.setMinimumHeight(0);
+        b.setIncludeFontPadding(false);
+        b.setGravity(Gravity.CENTER);
+        b.setVisibility(View.GONE);
+        // A focusable descendant otherwise steals the whole row's click handling from
+        // ListView's OnItemClickListener — the row stops responding everywhere but the button.
+        b.setFocusable(false);
+        b.setFocusableInTouchMode(false);
+        return b;
+    }
+
+    private LinearLayout.LayoutParams actionParams(Context context, int leftMargin) {
+        int box = UiKit.dp(context, 40);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(box, box);
+        lp.leftMargin = leftMargin;
+        return lp;
+    }
+
     private LinearLayout newResultView() {
         LinearLayout view = new LinearLayout(context);
         view.setOrientation(LinearLayout.HORIZONTAL);
@@ -245,6 +306,13 @@ class SearchResultsAdapter extends BaseAdapter {
 
         view.addView(textCol, new LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        Button action = actionButton(context);
+        view.addView(action, actionParams(context, 20));
+
+        Button action2 = actionButton(context);
+        view.addView(action2, actionParams(context, 4));
+
         return view;
     }
 

@@ -51,6 +51,12 @@ final class RecorderSection {
         rows.add(new SearchResult(K, "+ New recording", null, -1,
                 () -> a.startActivity(new Intent(a, RecordActivity.class))));
 
+        String detail = RecorderService.isActive(a) ? RecorderService.activeDetail() : null;
+        if (detail != null && android.os.SystemClock.elapsedRealtime() >= suppressCardUntil) {
+            if ("recording".equals(detail)) rows.add(recordingCard(host));
+            else if ("playing a recording".equals(detail)) rows.add(playbackCard(host));
+        }
+
         for (Recording r : Recorder.orderedAll(a)) {
             final String id = r.id;
             rows.add(new SearchResult(K, r.displayName(), r.subtitle(), -1, () -> open(a, id), r));
@@ -69,8 +75,97 @@ final class RecorderSection {
         }));
     }
 
+    // Set the instant a Stop tap fires so the card hides right away instead of waiting on the
+    // async ACTION_STOP round trip — a fixed window rather than "until the service goes idle",
+    // since that observation depends on some render() landing in the gap, which isn't guaranteed
+    // (a fast stop-then-restart could otherwise leave the card permanently suppressed).
+    private static volatile long suppressCardUntil;
+    private static final long SUPPRESS_MS = 1200;
+
+    private static SearchResult recordingCard(SectionHost host) {
+        Activity a = host.activity();
+        boolean paused = RecorderService.activeRecordingPaused();
+        return new SearchResult(SearchResult.Kind.RECORDING, "Recording",
+                fmtTime(RecorderService.activeRecordingElapsedMs()), -1,
+                () -> a.startActivity(new Intent(a, RecordActivity.class)))
+                .live()
+                .withAction(paused ? "▶" : "❚❚", () -> togglePause(host, paused))
+                .withAction("■", () -> stopActive(host));
+    }
+
+    private static SearchResult playbackCard(SectionHost host) {
+        Activity a = host.activity();
+        String name = RecorderService.activePlayName();
+        String sub = fmtTime(RecorderService.activePlayPositionMs()) + " / "
+                + fmtTime(RecorderService.activePlayDurationMs());
+        boolean playing = RecorderService.activePlayingNow();
+        return new SearchResult(SearchResult.Kind.RECORDING, name == null ? "Recording" : name, sub, -1,
+                () -> a.startActivity(RecorderService.activePlayerIntent(a)))
+                .live()
+                .withAction(playing ? "❚❚" : "▶", () -> {
+                    boolean want = !playing;
+                    a.startForegroundService(new Intent(a, RecorderService.class)
+                            .setAction(RecorderService.ACTION_PLAY_TOGGLE));
+                    host.refresh();
+                    pollUntil(host, () -> RecorderService.activePlayingNow() == want, 12);
+                })
+                .withAction("■", () -> stopActive(host));
+    }
+
+    private static void togglePause(SectionHost host, boolean paused) {
+        Activity a = host.activity();
+        boolean want = !paused;
+        a.startForegroundService(new Intent(a, RecorderService.class)
+                .setAction(paused ? RecorderService.ACTION_RESUME : RecorderService.ACTION_PAUSE));
+        host.refresh();
+        pollUntil(host, () -> RecorderService.activeRecordingPaused() == want, 12);
+    }
+
+    // ACTION_PAUSE/RESUME/PLAY_TOGGLE are handled async — startForegroundService() round-trips
+    // through the system before the service flips its static state, so a single fixed-delay
+    // refresh either fires too early (stale) or leaves a visible gap. Poll in short bursts and
+    // stop as soon as the state actually matches instead of guessing a delay.
+    private static void pollUntil(SectionHost host, java.util.function.BooleanSupplier done, int triesLeft) {
+        if (triesLeft <= 0) return;
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+            host.refresh();
+            if (!done.getAsBoolean()) pollUntil(host, done, triesLeft - 1);
+        }, 30);
+    }
+
+    private static void stopActive(SectionHost host) {
+        suppressCardUntil = android.os.SystemClock.elapsedRealtime() + SUPPRESS_MS;
+        Activity a = host.activity();
+        a.startForegroundService(new Intent(a, RecorderService.class)
+                .setAction(RecorderService.ACTION_STOP));
+        host.refresh();
+        // ACTION_STOP is handled async (posted to the service's queue) — persistRecording()
+        // hasn't run yet at this point, so the new recording isn't in the list. Catch it once
+        // that's had time to land rather than waiting on the 1s home tick.
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(host::refresh, 400);
+    }
+
+    private static String fmtTime(long ms) {
+        long s = Math.max(0, ms) / 1000;
+        return (s / 60) + ":" + String.format(Locale.US, "%02d", s % 60);
+    }
+
     static String selectionId(Object payload) {
         return payload instanceof Recording ? ((Recording) payload).id : null;
+    }
+
+    private static boolean isPlayingAnyOf(List<Recording> sel) {
+        if (!"playing a recording".equals(RecorderService.activeDetail())) return false;
+        String recId = RecorderService.activePlayRecId();
+        String docId = RecorderService.activePlayDocId();
+        for (Recording r : sel) {
+            if (Recorder.isVaulted(r.id)) {
+                if (docId != null && Recorder.docIdOf(r.id).equals(docId)) return true;
+            } else if (recId != null && r.id.equals(recId)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     static void renderSelection(SelectionHost host, List<Object> rows) {
@@ -127,6 +222,15 @@ final class RecorderSection {
         actions.add(new BarAction("Delete", () -> VaultUi.confirm(a,
                 "Delete " + sel.size() + " recording" + (sel.size() == 1 ? "" : "s") + "?",
                 null, "Delete", () -> {
+                    // The file's still open in the MediaPlayer, so this wouldn't crash even
+                    // without the check — it'd just keep playing a file with no list entry
+                    // until something needs to reopen it (skip, vault relock/resume), which
+                    // then fails silently. Stop it up front instead of leaving that orphan.
+                    if (isPlayingAnyOf(sel)) {
+                        suppressCardUntil = android.os.SystemClock.elapsedRealtime() + SUPPRESS_MS;
+                        a.startForegroundService(new Intent(a, RecorderService.class)
+                                .setAction(RecorderService.ACTION_STOP));
+                    }
                     for (Recording r : sel) {
                         if (Recorder.isVaulted(r.id)) Recorder.deleteVaultRecording(a, r.id);
                         else Recorder.deleteLocal(a, r);

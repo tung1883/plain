@@ -422,6 +422,8 @@ public class MainActivity extends Activity implements SelectionHost {
             Tips.maybeAutoAdvance(this);
             refreshTipRow();
             scheduleTipRotation();
+            recorderTickHandler.removeCallbacks(recorderTick);
+            recorderTickHandler.post(recorderTick);
             if (search.getText().length() == 0 && !searchImeVisible) releaseSearchFocus(false);
         }
     }
@@ -432,6 +434,7 @@ public class MainActivity extends Activity implements SelectionHost {
         searchImeVisible = false;
         tipHandler.removeCallbacks(tipRotate);
         artHandler.removeCallbacks(artRotate);
+        recorderTickHandler.removeCallbacks(recorderTick);
         VaultJobs.removeListener(vaultJobListener);
         ImportJobs.removeListener(importJobListener);
     }
@@ -484,6 +487,7 @@ public class MainActivity extends Activity implements SelectionHost {
         searchHandler.removeCallbacksAndMessages(null);
         tipHandler.removeCallbacks(tipRotate);
         artHandler.removeCallbacks(artRotate);
+        recorderTickHandler.removeCallbacks(recorderTick);
         FileIndex.setListener(null);
         if (statsPanel != null) statsPanel.shutdown();
     }
@@ -505,6 +509,21 @@ public class MainActivity extends Activity implements SelectionHost {
         int minutes = Config.getTipRotateMinutes(this);
         if (minutes > 0) tipHandler.postDelayed(tipRotate, minutes * 60_000L);
     }
+
+    private final Handler recorderTickHandler = new Handler(Looper.getMainLooper());
+    private final Runnable recorderTick = new Runnable() {
+        @Override
+        public void run() {
+            // Gated to the Recorder section, and skipped mid multi-select — a full
+            // list rebuild every second while the user is picking rows to delete
+            // reset scroll/checked state under them and looked like flickering.
+            if (RecorderService.isActive(MainActivity.this)
+                    && homeMode == HomeMode.RECORDER && selectMode == null) {
+                filter(search.getText().toString());
+            }
+            recorderTickHandler.postDelayed(this, 1000);
+        }
+    };
 
     private void refreshTimeBlockRow() {
         List<TimeBlock> active = TimeBlockRules.getActiveBlocks(this);
@@ -736,6 +755,7 @@ public class MainActivity extends Activity implements SelectionHost {
         Tips.advance(this);
         refreshTipRow();
         scheduleTipRotation();
+        recorderTickHandler.post(recorderTick);
 
         LinearLayout menuColumn = new LinearLayout(this);
         menuColumn.setOrientation(LinearLayout.VERTICAL);
