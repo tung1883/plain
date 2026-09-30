@@ -25,7 +25,7 @@ public class SettingsActivity extends Activity {
     static final String EXTRA_DESTINATION = "destination";
 
     private static final List<String> SECTION_ORDER =
-            Arrays.asList("Appearance", "Apps", "Plugins", "Permissions");
+            Arrays.asList("Appearance", "Apps", "Plugins", "Nerd extras", "Permissions");
 
     private LinearLayout root;
     private Typeface georgia;
@@ -125,6 +125,8 @@ entries.add(new Entry("Appearance", "Home screen art", row("Home screen art",
         entries.add(new Entry("Apps", "Time blocks", row("Time blocks",
                 v -> startActivity(new Intent(this, TimeBlocksActivity.class)))));
 
+        if (Config.isNerdMode(this)) addNerdExtras(entries);
+
         entries.add(new Entry("Permissions", "App access", row("App access",
                 v -> startActivity(new Intent(this, AppAccessActivity.class)))));
 
@@ -140,6 +142,39 @@ entries.add(new Entry("Appearance", "Home screen art", row("Home screen art",
             }
             root.addView(entry.view);
         }
+    }
+
+    /** The extras that need WRITE_SECURE_SETTINGS; only offered in Nerd mode. */
+    private void addNerdExtras(List<Entry> entries) {
+        boolean granted = SecureSettings.canWrite(this);
+
+        entries.add(new Entry("Nerd extras", "1 Accessibility service",
+                row("Accessibility service: " + (AppMonitorService.isEnabled(this) ? "On" : "Off"),
+                        v -> startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)))));
+
+        entries.add(new Entry("Nerd extras", "2 Permission",
+                row("Permission: " + (granted ? "Granted" : "Not granted"),
+                        granted ? null : v -> startActivity(new Intent(this, HowToActivity.class)))));
+
+        entries.add(new Entry("Nerd extras", "3 Blocking apps",
+                row("Blocking apps: " + Config.getBankingPackages(this).size(),
+                        v -> openPicker(granted, AppPickerActivity.KIND_BANKING))));
+
+        String monochrome = Config.MONO_ALL.equals(Config.getMonochromeMode(this))
+                ? "Whole screen" : String.valueOf(Config.getMonochromePackages(this).size());
+        entries.add(new Entry("Nerd extras", "4 Monochrome",
+                row("Monochrome: " + monochrome,
+                        v -> openPicker(granted, AppPickerActivity.KIND_MONOCHROME))));
+    }
+
+    private void openPicker(boolean granted, String kind) {
+        if (!granted) {
+            android.widget.Toast.makeText(this, "Grant the permission first",
+                    android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
+        startActivity(new Intent(this, AppPickerActivity.class)
+                .putExtra(AppPickerActivity.EXTRA_KIND, kind));
     }
 
 private TextView sectionHeader(String label) {
