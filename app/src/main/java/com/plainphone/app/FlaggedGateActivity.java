@@ -19,12 +19,19 @@ public class FlaggedGateActivity extends Activity {
     private String label;
     private TextView text;
     private Runnable pending;
+    private int generation;   // which gate this screen belongs to, see ForegroundExtras
+    private boolean engineStarted;   // opened by the app watcher, not by a tap in Plain
+    private boolean onward;   // opened the app, so accessibility stays as it is
+    private boolean over;   // gating a page already on screen underneath, see NoobBackend
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         packageName = getIntent().getStringExtra("package");
         label = getIntent().getStringExtra("label");
+        over = getIntent().getBooleanExtra("over", false);
+        generation = ForegroundExtras.gateGeneration();
+        engineStarted = getIntent().getBooleanExtra("engine", false);
 
         Typeface georgia = Fonts.current(this);
 
@@ -44,7 +51,10 @@ public class FlaggedGateActivity extends Activity {
         Button close = new Button(this);
         close.setText("Close");
         UiKit.style(this, close);
-        close.setOnClickListener(v -> finish());
+        close.setOnClickListener(v -> {
+            if (over || engineStarted) NoobBackend.goHome(this);   // the gated app is right underneath
+            finish();
+        });
         LinearLayout.LayoutParams closeParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         closeParams.topMargin = 48;
@@ -89,10 +99,20 @@ public class FlaggedGateActivity extends Activity {
             showLockout(lockoutUntil);
             return;
         }
-        Intent launchIntent = openIntent();
-        if (launchIntent != null) {
-            AppMonitorService.skipFlaggedGateFor(packageName);
-            startActivity(launchIntent);
+        Intent launchIntent = over ? null : openIntent();
+        if (over || launchIntent != null) {
+            onward = true;
+            GateEngine.skipFlaggedGateFor(packageName);
+            android.content.Context app = getApplicationContext();
+            ForegroundExtras.beforeLaunch(app, packageName);
+            if (launchIntent != null) {
+                // Stay up until the app has been started, so nothing shows through in between.
+                ForegroundExtras.afterA11yOff(app, () -> {
+                    app.startActivity(launchIntent);
+                    finish();
+                });
+                return;
+            }
         }
         finish();
     }
@@ -129,6 +149,7 @@ public class FlaggedGateActivity extends Activity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        if (!onward) ForegroundExtras.gateClosedWithoutOpening(this, generation);
         handler.removeCallbacksAndMessages(null);
     }
 }

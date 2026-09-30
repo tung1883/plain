@@ -394,6 +394,9 @@ public class MainActivity extends Activity implements SelectionHost {
     @Override
     protected void onResume() {
         super.onResume();
+        ForegroundExtras.reapplyWholeScreenMonochrome(this);
+        ForegroundExtras.resumeIfIdle(this);   // Home is showing, so no banking app is
+        ForegroundWatcher.sync(this);
         VaultJobs.resumeIfPending(this);
         VaultJobs.addListener(vaultJobListener);
         ImportJobs.resumeIfPending(this);
@@ -761,7 +764,7 @@ public class MainActivity extends Activity implements SelectionHost {
         menuColumn.setOrientation(LinearLayout.VERTICAL);
 
         TextView screenOffRow = buildRow(georgia, "Screen off");
-        screenOffRow.setOnClickListener(v -> AppMonitorService.lockScreen());
+        screenOffRow.setOnClickListener(v -> ScreenLock.lockOrRequest(this));
         menuColumn.addView(screenOffRow, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
@@ -3439,7 +3442,9 @@ public class MainActivity extends Activity implements SelectionHost {
         row.setPadding(48, 8, 48, 36);
         row.setOnClickListener(v -> {
             if (currentTipEntry != null && currentTipEntry.kind == Tips.Kind.WARNING) {
-                startActivity(new Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS));
+                startActivity(new Intent(Config.isNerdMode(this)
+                        ? android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS
+                        : android.provider.Settings.ACTION_USAGE_ACCESS_SETTINGS));
                 return;
             }
             Tips.advance(this);
@@ -3486,6 +3491,7 @@ public class MainActivity extends Activity implements SelectionHost {
 
     private void launchApp(ResolveInfo info) {
         String pkg = info.activityInfo.packageName;
+        ForegroundExtras.beforeOpen(this, pkg);   // a blocking app: accessibility off before any gate
 
         TimeBlock blockingBlock = TimeBlockRules.getBlockingBlock(this, pkg);
         if (blockingBlock != null) {
@@ -3521,7 +3527,8 @@ public class MainActivity extends Activity implements SelectionHost {
 
         Intent launchIntent = pm.getLaunchIntentForPackage(pkg);
         if (launchIntent != null) {
-            startActivity(launchIntent);
+            ForegroundExtras.beforeLaunch(this, pkg);
+            ForegroundExtras.afterA11yOff(this, () -> startActivity(launchIntent));
         }
     }
 

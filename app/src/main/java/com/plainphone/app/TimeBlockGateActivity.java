@@ -12,11 +12,17 @@ import android.widget.TextView;
 
 public class TimeBlockGateActivity extends Activity {
 
+    private int generation;   // which gate this screen belongs to, see ForegroundExtras
+    private boolean onward;   // handed on to the override flow, so accessibility stays as it is
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         String packageName = getIntent().getStringExtra("package");
         String blockId = getIntent().getStringExtra("blockId");
+        generation = ForegroundExtras.gateGeneration();
+        boolean over = getIntent().getBooleanExtra("over", false)
+                || getIntent().getBooleanExtra("engine", false);   // the blocked page is right underneath
 
         TimeBlock block = TimeBlock.findById(Config.getTimeBlocks(this), blockId);
         String name = block != null ? block.name : "a time block";
@@ -45,6 +51,7 @@ public class TimeBlockGateActivity extends Activity {
             Intent intent = new Intent(this, TimeBlockOverridePinActivity.class);
             intent.putExtra("package", packageName);
             intent.putExtra("blockId", blockId);
+            onward = true;
             startActivity(intent);
             finish();
         });
@@ -56,13 +63,22 @@ public class TimeBlockGateActivity extends Activity {
         Button close = new Button(this);
         close.setText("Close");
         UiKit.style(this, close);
-        close.setOnClickListener(v -> finish());
+        close.setOnClickListener(v -> {
+            if (over) NoobBackend.goHome(this);
+            finish();
+        });
         LinearLayout.LayoutParams closeParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         closeParams.topMargin = 24;
         root.addView(close, closeParams);
 
         setContentView(root);
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (!onward) ForegroundExtras.gateClosedWithoutOpening(this, generation);
     }
 }
 

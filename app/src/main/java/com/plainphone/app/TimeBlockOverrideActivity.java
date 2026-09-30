@@ -41,8 +41,10 @@ public class TimeBlockOverrideActivity extends FrictionGateActivity {
 
         Intent launchIntent = getPackageManager().getLaunchIntentForPackage(packageName);
         if (launchIntent != null) {
-            AppMonitorService.skipTimeBlockGateFor(packageName);
-            startActivity(launchIntent);
+            GateEngine.skipTimeBlockGateFor(packageName);
+            android.content.Context app = getApplicationContext();
+            ForegroundExtras.beforeLaunch(app, packageName);
+            ForegroundExtras.afterA11yOff(app, () -> app.startActivity(launchIntent));
         }
     }
 }

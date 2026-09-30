@@ -39,8 +39,19 @@ class Tips {
     static final Entry ACCESS_WARNING = new Entry(Kind.WARNING,
             "Allow Plain's accessibility access for full-fledged features.");
 
+    /** The "allow usage access" nudge shown in Noob mode. */
+    static final Entry USAGE_WARNING = new Entry(Kind.WARNING,
+            "Allow usage access so Plain can watch app opens.");
+
     static boolean warningActive(Context context) {
-        return Config.isAccessWarnEnabled(context) && !AppMonitorService.isEnabled(context);
+        if (!Config.isAccessWarnEnabled(context)) return false;
+        return Config.isNerdMode(context)
+                ? !AppMonitorService.isEnabled(context)
+                : !AllAppsUsage.hasUsageAccess(context);
+    }
+
+    static Entry warning(Context context) {
+        return Config.isNerdMode(context) ? ACCESS_WARNING : USAGE_WARNING;
     }
 
     static final String[] DEFAULT_TIPS = {
@@ -111,11 +122,11 @@ class Tips {
         int i = Config.getTipIndex(context);
 
         if (warningActive(context)) {
-            if (Math.floorMod(i, 3) == 2) return ACCESS_WARNING;
+            if (Math.floorMod(i, 3) == 2) return warning(context);
             int k = i - i / 3;   // which non-warning slot this is
             List<String> t = Config.isTipsEnabled(context) ? tips(context) : new ArrayList<>();
             List<String> q = Config.isQuotesEnabled(context) ? quotes(context) : new ArrayList<>();
-            if (t.isEmpty() && q.isEmpty()) return ACCESS_WARNING;
+            if (t.isEmpty() && q.isEmpty()) return warning(context);
             boolean pickTip = q.isEmpty() || (!t.isEmpty() && k % 2 == 0);
             return pickTip ? new Entry(Kind.TIP, t.get((k / 2) % t.size()))
                     : new Entry(Kind.QUOTE, q.get((k / 2) % q.size()));

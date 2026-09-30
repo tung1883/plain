@@ -133,7 +133,7 @@ class SearchTargets {
                 new String[]{"lock", "sleep", "turn off", "display off"}, query);
         if (screenOff != TextMatch.NO_MATCH) {
             results.add(new SearchResult(SearchResult.Kind.PLAIN, "Screen off", null,
-                    screenOff, AppMonitorService::lockScreen).guarded());
+                    screenOff, () -> ScreenLock.lockOrRequest(host)).guarded());
         }
 
         int lockAll = TextMatch.score("Lock all",

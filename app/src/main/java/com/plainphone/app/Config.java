@@ -1199,6 +1199,84 @@ class Config {
         }
     }
 
+    // --- monitor mode (Noob = usage access, Nerd = accessibility) ---
+
+    static final String MODE_NOOB = "noob";
+    static final String MODE_NERD = "nerd";
+
+    /**
+     * Which foreground source drives the gates. Unset means an install from before modes existed:
+     * it keeps working the way it did (Nerd) if the accessibility service is already on.
+     */
+    static String getMonitorMode(Context context) {
+        String stored = prefs(context).getString("monitor_mode", null);
+        if (stored == null) {
+            stored = AppMonitorService.isEnabled(context) ? MODE_NERD : MODE_NOOB;
+            prefs(context).edit().putString("monitor_mode", stored).apply();
+        }
+        return stored;
+    }
+
+    static boolean isNerdMode(Context context) {
+        return MODE_NERD.equals(getMonitorMode(context));
+    }
+
+    static void setMonitorMode(Context context, String mode) {
+        prefs(context).edit().putString("monitor_mode", mode).apply();
+    }
+
+    // --- nerd extras (need WRITE_SECURE_SETTINGS) ---
+
+    static Set<String> getBankingPackages(Context context) {
+        Set<String> stored = prefs(context).getStringSet("banking_packages", null);
+        return stored != null ? new HashSet<>(stored) : new HashSet<>();
+    }
+
+    static void setBankingPackages(Context context, Set<String> packages) {
+        prefs(context).edit().putStringSet("banking_packages", packages).apply();
+    }
+
+    static Set<String> getMonochromePackages(Context context) {
+        Set<String> stored = prefs(context).getStringSet("monochrome_packages", null);
+        return stored != null ? new HashSet<>(stored) : new HashSet<>();
+    }
+
+    static void setMonochromePackages(Context context, Set<String> packages) {
+        prefs(context).edit().putStringSet("monochrome_packages", packages).apply();
+    }
+
+    static final String MONO_APPS = "apps";
+    static final String MONO_ALL = "all";
+
+    /** "all": greyscale the whole screen, always. "apps": only while a chosen app is open. */
+    static String getMonochromeMode(Context context) {
+        return prefs(context).getString("monochrome_mode", MONO_APPS);
+    }
+
+    static void setMonochromeMode(Context context, String mode) {
+        prefs(context).edit().putString("monochrome_mode", mode).apply();
+    }
+
+    /** True while Plain has switched its own accessibility service off for a banking app. */
+    static boolean isA11ySuspended(Context context) {
+        return prefs(context).getBoolean("a11y_suspended", false);
+    }
+
+    static void setA11ySuspended(Context context, boolean suspended) {
+        prefs(context).edit().putBoolean("a11y_suspended", suspended).apply();
+    }
+
+    /** "enabled,type" of the system colour correction from before monochrome was applied; null when idle. */
+    static String getMonoSaved(Context context) {
+        return prefs(context).getString("mono_saved", null);
+    }
+
+    static void setMonoSaved(Context context, String saved) {
+        SharedPreferences.Editor edit = prefs(context).edit();
+        if (saved == null) edit.remove("mono_saved"); else edit.putString("mono_saved", saved);
+        edit.apply();
+    }
+
     private static SharedPreferences prefs(Context context) {
         return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
     }

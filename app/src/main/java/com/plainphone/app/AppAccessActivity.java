@@ -17,6 +17,7 @@ import android.view.ViewGroup;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 public class AppAccessActivity extends Activity {
 
@@ -50,11 +51,22 @@ public class AppAccessActivity extends Activity {
     private void render() {
         root.removeAllViews();
 
-        root.addView(row("Accessibility service", AppMonitorService.isEnabled(this), null,
-                v -> startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))));
+        boolean nerd = Config.isNerdMode(this);
+        root.addView(SettingsUi.row(this, "Mode", nerd ? "Nerd" : "Noob", Color.WHITE, null, false,
+                v -> showModeMenu()));
 
         root.addView(row("Usage access", AllAppsUsage.hasUsageAccess(this), null,
                 v -> startActivity(new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))));
+
+        boolean admin = ScreenLock.adminActive(this);
+        root.addView(row("Turn off screen", admin, null, v -> {
+            if (admin) {
+                ScreenLock.removeAdmin(this);
+                render();
+            } else {
+                ScreenLock.requestAdmin(this);
+            }
+        }));
 
         boolean files = FileIndex.canWalk(this) || DeviceSearch.canSearchFiles(this);
         root.addView(row("Files", files, null,
@@ -86,10 +98,72 @@ public class AppAccessActivity extends Activity {
             }));
         }
 
+        if (nerd) addNerdExtras();
+
         root.addView(sectionHeader("Granted at install"));
         root.addView(row("See installed apps", null, null, null));
         root.addView(row("Set wallpaper", null, null, null));
         root.addView(row("Uninstall apps", null, null, null));
+    }
+
+    /** The extras that need WRITE_SECURE_SETTINGS; only offered in Nerd mode. */
+    private void addNerdExtras() {
+        root.addView(sectionHeader("Nerd extras"));
+        boolean granted = SecureSettings.canWrite(this);
+
+        root.addView(row("Accessibility service", AppMonitorService.isEnabled(this), null,
+                v -> startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))));
+
+        root.addView(SettingsUi.row(this, "Permission", granted ? "Granted" : "Not granted",
+                null, false,
+                granted ? null : v -> startActivity(new Intent(this, HowToActivity.class))));
+
+        root.addView(SettingsUi.row(this, "Blocking apps",
+                String.valueOf(Config.getBankingPackages(this).size()),
+                null, !granted,
+                v -> openPicker(granted, AppPickerActivity.KIND_BANKING)));
+
+        root.addView(SettingsUi.row(this, "Monochrome",
+                Config.MONO_ALL.equals(Config.getMonochromeMode(this)) ? "Whole screen"
+                        : String.valueOf(Config.getMonochromePackages(this).size()),
+                null, !granted,
+                v -> openPicker(granted, AppPickerActivity.KIND_MONOCHROME)));
+    }
+
+    private void openPicker(boolean granted, String kind) {
+        if (!granted) {
+            Toast.makeText(this, "Grant the permission first", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        startActivity(new Intent(this, AppPickerActivity.class)
+                .putExtra(AppPickerActivity.EXTRA_KIND, kind));
+    }
+
+    private void showModeMenu() {
+        boolean nerd = Config.isNerdMode(this);
+        VaultUi.menu(this, "Mode",
+                new String[]{(nerd ? "\u25CB " : "\u25CF ") + "Noob mode",
+                        (nerd ? "\u25CF " : "\u25CB ") + "Nerd mode"},
+                new VaultUi.Choice[]{() -> chooseMode(Config.MODE_NOOB),
+                        () -> chooseMode(Config.MODE_NERD)});
+    }
+
+    private void chooseMode(String mode) {
+        if (mode.equals(Config.getMonitorMode(this))) return;
+        Config.setMonitorMode(this, mode);
+        ForegroundWatcher.sync(this);
+        render();
+
+        // Each mode needs its own switch flipped in Android settings; jump straight there.
+        if (Config.MODE_NERD.equals(mode)) {
+            if (!AppMonitorService.isEnabled(this)) {
+                startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
+            }
+        } else if (!AllAppsUsage.hasUsageAccess(this)) {
+            startActivity(new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS));
+        } else if (AppMonitorService.isEnabled(this)) {
+            startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));   // switch Plain off there
+        }
     }
 
     @Override

@@ -21,6 +21,18 @@ public class PlainApp extends Application {
     @Override
     public void onCreate() {
         super.onCreate();
+        DebugLog.init(this);   // DEBUG
+        // Turning developer options off resets the shared colour-correction setting; whole-screen
+        // monochrome puts itself back.
+        getContentResolver().registerContentObserver(
+                android.provider.Settings.Secure.getUriFor("accessibility_display_daltonizer_enabled"),
+                false, new android.database.ContentObserver(
+                        new android.os.Handler(android.os.Looper.getMainLooper())) {
+                    @Override
+                    public void onChange(boolean selfChange) {
+                        ForegroundExtras.reapplyWholeScreenMonochrome(PlainApp.this);
+                    }
+                });
         Nav.install(this);
         registerActivityLifecycleCallbacks(new ActivityLifecycleCallbacks() {
             @Override public void onActivityResumed(Activity a) { resumedActivities.incrementAndGet(); }

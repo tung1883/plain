@@ -67,6 +67,12 @@ final class VaultUi {
 
     /** A plain option menu: title + one row per label, no message body. */
     static void menu(Activity host, String title, String[] labels, Choice[] choices) {
+        menu(host, title, labels, null, choices);
+    }
+
+    /** Same, with an optional smaller grey line under each label ({@code details} may be null). */
+    static void menu(Activity host, String title, String[] labels, String[] details,
+                     Choice[] choices) {
         Typeface font = Fonts.current(host);
         LinearLayout box = new LinearLayout(host);
         box.setOrientation(LinearLayout.VERTICAL);
@@ -82,10 +88,20 @@ final class VaultUi {
 
         for (int i = 0; i < labels.length; i++) {
             Choice c = choices[i];
-            box.addView(option(host, font, labels[i], () -> {
+            TextView row = option(host, font, labels[i], () -> {
                 dialog.dismiss();
                 if (c != null) c.run();
-            }));
+            });
+            if (details != null && details[i] != null) {
+                android.text.SpannableStringBuilder text =
+                        new android.text.SpannableStringBuilder(labels[i]).append('\n');
+                int from = text.length();
+                text.append(details[i]);
+                text.setSpan(new android.text.style.RelativeSizeSpan(0.65f), from, text.length(), 0);
+                text.setSpan(new android.text.style.ForegroundColorSpan(Color.GRAY), from, text.length(), 0);
+                row.setText(text);
+            }
+            box.addView(row);
         }
 
         UiKit.finishCentered(dialog, scrim);

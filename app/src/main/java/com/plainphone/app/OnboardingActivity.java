@@ -81,14 +81,26 @@ public class OnboardingActivity extends Activity {
                 addButton("Next", v -> nextStep());
                 break;
             case 2:
-                title.setText("2. Enable the accessibility service");
-                body.setText("This lets Plain add a wait screen before addictive apps and lock the "
-                        + "screen. Tap below, go to Installed Apps\n\n"
-                        + "If it won't turn on: go to Settings → Apps → Plain, tap the ⋮ menu in the "
-                        + "top-right corner, then tap \"Allow restricted settings\" — then come back "
-                        + "here and try the toggle again.");
-                addButton("Open Accessibility settings",
-                        v -> startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
+                if (Config.isNerdMode(this)) {
+                    title.setText("2. Enable the accessibility service");
+                    body.setText("Nerd mode: Accessibility service with full-fledged features. "
+                            + "May getting blocked by some apps");
+                    addButton("Open Accessibility settings",
+                            v -> startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
+                    addLink("← Back", v -> {
+                        Config.setMonitorMode(this, Config.MODE_NOOB);
+                        renderStep();
+                    });
+                } else {
+                    title.setText("2. Allow usage access");
+                    body.setVisibility(View.GONE);
+                    addButton("Open usage access",
+                            v -> startActivity(new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)));
+                    addLink("Want full-fledged features? Nerd mode >", v -> {
+                        Config.setMonitorMode(this, Config.MODE_NERD);
+                        renderStep();
+                    });
+                }
                 addButton("Next", v -> nextStep());
                 break;
             case 3:
@@ -118,6 +130,21 @@ public class OnboardingActivity extends Activity {
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         params.topMargin = 24;
         content.addView(button, params);
+    }
+
+    private void addLink(String label, View.OnClickListener listener) {
+        TextView link = new TextView(this);
+        link.setText(label);
+        link.setTextColor(Color.GRAY);
+        link.setTextSize(14);
+        link.setTypeface(Fonts.current(this));
+        link.setPaintFlags(link.getPaintFlags() | android.graphics.Paint.UNDERLINE_TEXT_FLAG);
+        link.setOnClickListener(listener);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.topMargin = 32;
+        params.bottomMargin = 8;
+        content.addView(link, params);
     }
 
     private void nextStep() {

@@ -15,8 +15,14 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- Never granted at install: only a computer running adb can grant it (HowToActivity).
+         Unlocks the Nerd extras — banking-app accessibility switch-off and monochrome apps. -->
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS"
+        tools:ignore="ProtectedPermissions" />
 
     <!-- Dev plugin: TCP to a paired computer's plaind daemon over the local network / Tailscale. -->
     <uses-permission android:name="android.permission.INTERNET" />
@@ -184,6 +190,16 @@
 
         <activity
             android:name=".AppAccessActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
+            android:name=".HowToActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
+            android:name=".AppPickerActivity"
             android:exported="false"
             android:theme="@style/Theme.PlainPhone" />
 
@@ -550,6 +566,39 @@
             android:authorities="com.plainphone.app.files"
             android:exported="false"
             android:grantUriPermissions="true" />
+
+        <!-- Noob mode: polls usage events for the foreground app. Stays off unless a gate or
+             Nerd extra needs it (ForegroundWatcher.needed). -->
+        <service
+            android:name=".ForegroundWatcher"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Notice which app is in the foreground, without an accessibility service, to show wait screens, PINs and time blocks that the user configured and to apply per-app options" />
+        </service>
+
+        <receiver
+            android:name=".ForegroundWatcher$Receiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Force-lock only: lets Plain turn the screen off in Noob mode. Off until the user adds it. -->
+        <receiver
+            android:name=".LockAdminReceiver"
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN">
+            <meta-data
+                android:name="android.app.device_admin"
+                android:resource="@xml/device_admin_policies" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+            </intent-filter>
+        </receiver>
 
         <service
             android:name=".AppMonitorService"
