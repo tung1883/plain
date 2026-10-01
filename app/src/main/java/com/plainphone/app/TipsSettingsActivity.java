@@ -184,7 +184,9 @@ public class TipsSettingsActivity extends Activity {
         row.setPadding(48, 32, 48, 32);
         row.setGravity(Gravity.START);
         StateListDrawable bg = new StateListDrawable();
-        bg.addState(new int[]{android.R.attr.state_pressed}, new ColorDrawable(Color.DKGRAY));
+        bg.addState(new int[]{android.R.attr.state_pressed}, UiKit.pressedFill());
+        bg.setEnterFadeDuration(120);
+        bg.setExitFadeDuration(120);
         bg.addState(new int[]{}, new ColorDrawable(Color.BLACK));
         row.setBackground(bg);
         row.setOnClickListener(listener);
@@ -212,7 +214,9 @@ public class TipsSettingsActivity extends Activity {
         view.setTypeface(font);
 
         StateListDrawable background = new StateListDrawable();
-        background.addState(new int[]{android.R.attr.state_pressed}, new ColorDrawable(Color.DKGRAY));
+        background.addState(new int[]{android.R.attr.state_pressed}, UiKit.pressedFill());
+        background.setEnterFadeDuration(120);
+        background.setExitFadeDuration(120);
         background.addState(new int[]{}, new ColorDrawable(Color.BLACK));
         view.setBackground(background);
 

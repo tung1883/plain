@@ -170,7 +170,9 @@ public class ChessPgnFilesActivity extends Activity implements SelBarHost {
         row.setOrientation(LinearLayout.VERTICAL);
         row.setPadding(UiKit.dp(this, 24), UiKit.dp(this, 12), UiKit.dp(this, 24), UiKit.dp(this, 12));
         StateListDrawable bg = new StateListDrawable();
-        bg.addState(new int[]{android.R.attr.state_pressed}, new ColorDrawable(Color.DKGRAY));
+        bg.addState(new int[]{android.R.attr.state_pressed}, UiKit.pressedFill());
+        bg.setEnterFadeDuration(120);
+        bg.setExitFadeDuration(120);
         bg.addState(new int[]{}, new ColorDrawable(Color.BLACK));
         row.setBackground(bg);
         row.addView(text(16, Color.WHITE));

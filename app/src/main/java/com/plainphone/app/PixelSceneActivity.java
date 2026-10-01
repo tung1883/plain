@@ -380,7 +380,9 @@ public class PixelSceneActivity extends Activity {
 
     private StateListDrawable rowBackground() {
         StateListDrawable d = new StateListDrawable();
-        d.addState(new int[]{android.R.attr.state_pressed}, new ColorDrawable(Color.DKGRAY));
+        d.addState(new int[]{android.R.attr.state_pressed}, UiKit.pressedFill());
+        d.setEnterFadeDuration(120);
+        d.setExitFadeDuration(120);
         d.addState(new int[]{}, new ColorDrawable(Color.BLACK));
         return d;
     }

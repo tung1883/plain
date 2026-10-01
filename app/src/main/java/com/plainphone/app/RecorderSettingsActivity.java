@@ -159,7 +159,9 @@ public class RecorderSettingsActivity extends Activity {
             view.setBackgroundColor(Color.WHITE);
         } else {
             StateListDrawable bg = new StateListDrawable();
-            bg.addState(new int[]{android.R.attr.state_pressed}, new ColorDrawable(Color.DKGRAY));
+            bg.addState(new int[]{android.R.attr.state_pressed}, UiKit.pressedFill());
+            bg.setEnterFadeDuration(120);
+            bg.setExitFadeDuration(120);
             bg.addState(new int[]{}, new ColorDrawable(Color.BLACK));
             view.setBackground(bg);
         }
@@ -176,7 +178,9 @@ public class RecorderSettingsActivity extends Activity {
         view.setGravity(Gravity.START);
         view.setTypeface(font);
         StateListDrawable background = new StateListDrawable();
-        background.addState(new int[]{android.R.attr.state_pressed}, new ColorDrawable(Color.DKGRAY));
+        background.addState(new int[]{android.R.attr.state_pressed}, UiKit.pressedFill());
+        background.setEnterFadeDuration(120);
+        background.setExitFadeDuration(120);
         background.addState(new int[]{}, new ColorDrawable(Color.BLACK));
         view.setBackground(background);
         view.setOnClickListener(listener);

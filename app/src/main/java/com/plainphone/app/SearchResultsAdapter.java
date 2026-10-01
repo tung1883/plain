@@ -323,7 +323,9 @@ class SearchResultsAdapter extends BaseAdapter {
 
     private Drawable rowBackground() {
         StateListDrawable drawable = new StateListDrawable();
-        drawable.addState(new int[]{android.R.attr.state_pressed}, new ColorDrawable(Color.DKGRAY));
+        drawable.addState(new int[]{android.R.attr.state_pressed}, UiKit.pressedFill());
+        drawable.setEnterFadeDuration(120);
+        drawable.setExitFadeDuration(120);
         drawable.addState(new int[]{}, new ColorDrawable(Color.BLACK));
         return drawable;
     }

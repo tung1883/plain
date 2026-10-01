@@ -180,7 +180,9 @@ final class VaultUi {
         view.setPadding(48, 28, 48, 28);
         view.setGravity(Gravity.START);
         StateListDrawable rb = new StateListDrawable();
-        rb.addState(new int[]{android.R.attr.state_pressed}, new ColorDrawable(Color.DKGRAY));
+        rb.addState(new int[]{android.R.attr.state_pressed}, UiKit.pressedFill());
+        rb.setEnterFadeDuration(120);
+        rb.setExitFadeDuration(120);
         rb.addState(new int[]{}, new ColorDrawable(Color.BLACK));
         view.setBackground(rb);
         view.setOnClickListener(v -> onClick.run());

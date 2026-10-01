@@ -1234,7 +1234,9 @@ public class VaultActivity extends Activity {
 
     private StateListDrawable rowBg() {
         StateListDrawable bg = new StateListDrawable();
-        bg.addState(new int[]{android.R.attr.state_pressed}, new ColorDrawable(Color.DKGRAY));
+        bg.addState(new int[]{android.R.attr.state_pressed}, UiKit.pressedFill());
+        bg.setEnterFadeDuration(120);
+        bg.setExitFadeDuration(120);
         bg.addState(new int[]{}, new ColorDrawable(Color.BLACK));
         return bg;
     }

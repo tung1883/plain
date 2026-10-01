@@ -2207,7 +2207,9 @@ public class MainActivity extends Activity implements SelectionHost {
         TextView row = chessText(label, 20, color);
         row.setPadding(48, 32, 48, 32);
         StateListDrawable bg = new StateListDrawable();
-        bg.addState(new int[]{android.R.attr.state_pressed}, new ColorDrawable(Color.DKGRAY));
+        bg.addState(new int[]{android.R.attr.state_pressed}, UiKit.pressedFill());
+        bg.setEnterFadeDuration(120);
+        bg.setExitFadeDuration(120);
         bg.addState(new int[]{}, new ColorDrawable(Color.BLACK));
         row.setBackground(bg);
         row.setOnClickListener(listener);
@@ -2281,7 +2283,9 @@ public class MainActivity extends Activity implements SelectionHost {
         TextView row = chessText(label, 20, Color.WHITE);
         row.setPadding(48, 32, 48, 32);
         StateListDrawable bg = new StateListDrawable();
-        bg.addState(new int[]{android.R.attr.state_pressed}, new ColorDrawable(Color.DKGRAY));
+        bg.addState(new int[]{android.R.attr.state_pressed}, UiKit.pressedFill());
+        bg.setEnterFadeDuration(120);
+        bg.setExitFadeDuration(120);
         bg.addState(new int[]{}, new ColorDrawable(Color.BLACK));
         row.setBackground(bg);
         row.setOnClickListener(listener);
@@ -3430,7 +3434,9 @@ public class MainActivity extends Activity implements SelectionHost {
 
     private Drawable rowBackground() {
         StateListDrawable drawable = new StateListDrawable();
-        drawable.addState(new int[]{android.R.attr.state_pressed}, new ColorDrawable(Color.DKGRAY));
+        drawable.addState(new int[]{android.R.attr.state_pressed}, UiKit.pressedFill());
+        drawable.setEnterFadeDuration(120);
+        drawable.setExitFadeDuration(120);
         drawable.addState(new int[]{}, new ColorDrawable(Color.BLACK));
         return drawable;
     }

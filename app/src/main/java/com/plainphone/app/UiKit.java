@@ -1,5 +1,13 @@
 package com.plainphone.app;
 
+import android.graphics.drawable.Drawable;
+import android.graphics.RectF;
+import android.graphics.Rect;
+import android.graphics.PixelFormat;
+import android.graphics.Paint;
+import android.graphics.ColorFilter;
+import android.graphics.Canvas;
+import android.content.res.Resources;
 import android.content.Context;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
@@ -40,6 +48,57 @@ class UiKit {
     }
 
     /** Normal + pressed rounded fills, for a tappable control. */
+    /**
+     * The pressed look of a list row: black with a soft rounded pill (#262626) inset from the
+     * edges. The inset and radius shrink on small views, so it also suits narrow buttons. Pair it
+     * with a 120 ms enter/exit fade on the StateListDrawable it goes into.
+     */
+    static Drawable pressedFill() {
+        return new PressPill(-1f, -1f, -1f);
+    }
+
+    /** The same pill, but placed exactly: from {@code leftPx} to {@code rightPx}, {@code insetYPx} off top and bottom. */
+    static Drawable pressedFillAt(float leftPx, float rightPx, float insetYPx) {
+        return new PressPill(leftPx, rightPx, insetYPx);
+    }
+
+    private static final class PressPill extends Drawable {
+        private final Paint black = new Paint();
+        private final Paint pill = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final RectF rect = new RectF();
+        private final float density = Resources.getSystem().getDisplayMetrics().density;
+
+        private final float leftPx;
+        private final float rightPx;
+        private final float insetYPx;
+
+        /** A negative value means "work it out from the size" (the default row look). */
+        PressPill(float leftPx, float rightPx, float insetYPx) {
+            this.leftPx = leftPx;
+            this.rightPx = rightPx;
+            this.insetYPx = insetYPx;
+            black.setColor(Color.BLACK);
+            pill.setColor(0xFF262626);
+        }
+
+        @Override
+        public void draw(Canvas canvas) {
+            Rect b = getBounds();
+            canvas.drawRect(b, black);
+            float insetX = Math.min(12 * density, b.width() * 0.12f);
+            float insetY = insetYPx >= 0 ? insetYPx : Math.min(2 * density, b.height() * 0.06f);
+            float left = leftPx >= 0 ? b.left + Math.max(0f, leftPx) : b.left + insetX;
+            float right = rightPx >= 0 ? Math.min(b.right, b.left + rightPx) : b.right - insetX;
+            rect.set(left, b.top + insetY, right, b.bottom - insetY);
+            float radius = Math.min(14 * density, rect.height() / 2f);
+            canvas.drawRoundRect(rect, radius, radius, pill);
+        }
+
+        @Override public void setAlpha(int alpha) {}
+        @Override public void setColorFilter(ColorFilter colorFilter) {}
+        @Override public int getOpacity() { return PixelFormat.OPAQUE; }
+    }
+
     static StateListDrawable pressable(Context c, int normalFill, int pressedFill,
                                        int strokeColor, float strokePx, float radiusDp) {
         StateListDrawable s = new StateListDrawable();
@@ -88,9 +147,15 @@ class UiKit {
         b.setIncludeFontPadding(false);
         b.setPadding(BODY_INSET_PX - dp(c, 1), 0, dp(c, 12), 0);
         StateListDrawable press = new StateListDrawable();
+        // The arrow sits at the body-text inset, not centred in the button, so the pill is placed
+        // around the arrow itself: the same margin on its left and right.
+        float arrowLeft = BODY_INSET_PX - dp(c, 1);
+        float gap = dp(c, 10);
         press.addState(new int[]{android.R.attr.state_pressed},
-                new android.graphics.drawable.ColorDrawable(Color.DKGRAY));
+                pressedFillAt(arrowLeft - gap, arrowLeft + b.getPaint().measureText("\u2190") + gap, dp(c, 8)));
         press.addState(new int[]{}, new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+        press.setEnterFadeDuration(120);
+        press.setExitFadeDuration(120);
         b.setBackground(press);
         b.setOnClickListener(v -> onClick.run());
         return b;

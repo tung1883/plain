@@ -444,7 +444,9 @@ class Todos {
         row.setPadding(48, 32, 48, 32);
         row.setGravity(Gravity.START);
         StateListDrawable bg = new StateListDrawable();
-        bg.addState(new int[]{android.R.attr.state_pressed}, new ColorDrawable(Color.DKGRAY));
+        bg.addState(new int[]{android.R.attr.state_pressed}, UiKit.pressedFill());
+        bg.setEnterFadeDuration(120);
+        bg.setExitFadeDuration(120);
         bg.addState(new int[]{}, new ColorDrawable(Color.BLACK));
         row.setBackground(bg);
         row.setOnClickListener(listener);

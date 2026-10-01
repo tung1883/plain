@@ -207,7 +207,9 @@ public class VaultSettingsActivity extends Activity {
         view.setGravity(Gravity.START);
         view.setTypeface(font);
         StateListDrawable background = new StateListDrawable();
-        background.addState(new int[]{android.R.attr.state_pressed}, new ColorDrawable(Color.DKGRAY));
+        background.addState(new int[]{android.R.attr.state_pressed}, UiKit.pressedFill());
+        background.setEnterFadeDuration(120);
+        background.setExitFadeDuration(120);
         background.addState(new int[]{}, new ColorDrawable(Color.BLACK));
         view.setBackground(background);
         view.setOnClickListener(listener);

@@ -302,10 +302,12 @@ class PinPromptView extends FrameLayout {
     private StateListDrawable pressBackground() {
         GradientDrawable pressed = new GradientDrawable();
         pressed.setShape(GradientDrawable.OVAL);
-        pressed.setColor(Color.DKGRAY);
+        pressed.setColor(0xFF262626);   // same soft grey as the list-row pill, see UiKit.pressedFill
         StateListDrawable bg = new StateListDrawable();
         bg.addState(new int[]{android.R.attr.state_pressed}, pressed);
         bg.addState(new int[]{}, new ColorDrawable(Color.TRANSPARENT));
+        bg.setEnterFadeDuration(120);
+        bg.setExitFadeDuration(120);
         return bg;
     }
 

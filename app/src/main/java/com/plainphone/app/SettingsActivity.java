@@ -198,7 +198,9 @@ private TextView sectionHeader(String label) {
         view.setTypeface(georgia);
 
         StateListDrawable background = new StateListDrawable();
-        background.addState(new int[]{android.R.attr.state_pressed}, new ColorDrawable(Color.DKGRAY));
+        background.addState(new int[]{android.R.attr.state_pressed}, UiKit.pressedFill());
+        background.setEnterFadeDuration(120);
+        background.setExitFadeDuration(120);
         background.addState(new int[]{}, new ColorDrawable(Color.BLACK));
         view.setBackground(background);
 

@@ -252,7 +252,9 @@ final class ChessPuzzlesPanel {
         play.setTypeface(Fonts.current(host));
         play.setPadding(48, 32, 48, 32);
         StateListDrawable playBg = new StateListDrawable();
-        playBg.addState(new int[]{android.R.attr.state_pressed}, new ColorDrawable(Color.DKGRAY));
+        playBg.addState(new int[]{android.R.attr.state_pressed}, UiKit.pressedFill());
+        playBg.setEnterFadeDuration(120);
+        playBg.setExitFadeDuration(120);
         playBg.addState(new int[]{}, new ColorDrawable(Color.BLACK));
         play.setBackground(playBg);
         play.setOnClickListener(v -> {
@@ -334,7 +336,9 @@ final class ChessPuzzlesPanel {
         row.setTypeface(Fonts.current(host));
         row.setPadding(48, 32, 48, 32);
         StateListDrawable bg = new StateListDrawable();
-        bg.addState(new int[]{android.R.attr.state_pressed}, new ColorDrawable(Color.DKGRAY));
+        bg.addState(new int[]{android.R.attr.state_pressed}, UiKit.pressedFill());
+        bg.setEnterFadeDuration(120);
+        bg.setExitFadeDuration(120);
         bg.addState(new int[]{}, new ColorDrawable(Color.BLACK));
         row.setBackground(bg);
         row.setOnClickListener(onClick);

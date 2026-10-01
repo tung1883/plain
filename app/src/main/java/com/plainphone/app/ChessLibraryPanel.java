@@ -515,7 +515,9 @@ final class ChessLibraryPanel {
         row.setGravity(Gravity.CENTER);
         row.setPadding(48, 28, 48, 28);
         StateListDrawable bg = new StateListDrawable();
-        bg.addState(new int[]{android.R.attr.state_pressed}, new ColorDrawable(Color.DKGRAY));
+        bg.addState(new int[]{android.R.attr.state_pressed}, UiKit.pressedFill());
+        bg.setEnterFadeDuration(120);
+        bg.setExitFadeDuration(120);
         bg.addState(new int[]{}, new ColorDrawable(Color.BLACK));
         row.setBackground(bg);
         // Dismissing (any way — this row, back button, outside tap) applies the filter via
@@ -553,7 +555,9 @@ final class ChessLibraryPanel {
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(UiKit.dp(host, 24), UiKit.dp(host, 12), UiKit.dp(host, 20), UiKit.dp(host, 12));
         StateListDrawable bg = new StateListDrawable();
-        bg.addState(new int[]{android.R.attr.state_pressed}, new ColorDrawable(Color.DKGRAY));
+        bg.addState(new int[]{android.R.attr.state_pressed}, UiKit.pressedFill());
+        bg.setEnterFadeDuration(120);
+        bg.setExitFadeDuration(120);
         bg.addState(new int[]{}, new ColorDrawable(Color.BLACK));
         row.setBackground(bg);
         LinearLayout lines = new LinearLayout(host);
@@ -859,7 +863,9 @@ final class ChessLibraryPanel {
         row.setText(label);
         row.setPadding(48, 28, 48, 28);
         StateListDrawable bg = new StateListDrawable();
-        bg.addState(new int[]{android.R.attr.state_pressed}, new ColorDrawable(Color.DKGRAY));
+        bg.addState(new int[]{android.R.attr.state_pressed}, UiKit.pressedFill());
+        bg.setEnterFadeDuration(120);
+        bg.setExitFadeDuration(120);
         bg.addState(new int[]{}, new ColorDrawable(Color.BLACK));
         row.setBackground(bg);
         row.setOnClickListener(onClick);

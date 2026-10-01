@@ -338,7 +338,9 @@ public class WebTargetsActivity extends Activity {
         row.setPadding(48, 32, 48, 32);
 
         StateListDrawable background = new StateListDrawable();
-        background.addState(new int[]{android.R.attr.state_pressed}, new ColorDrawable(Color.DKGRAY));
+        background.addState(new int[]{android.R.attr.state_pressed}, UiKit.pressedFill());
+        background.setEnterFadeDuration(120);
+        background.setExitFadeDuration(120);
         background.addState(new int[]{}, new ColorDrawable(Color.BLACK));
         row.setBackground(background);
         row.setOnClickListener(listener);
