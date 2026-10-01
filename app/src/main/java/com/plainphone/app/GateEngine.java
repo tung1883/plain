@@ -363,7 +363,6 @@ final class GateEngine {
         currentGateKind = GateKind.PIN;
         startSession(packageName);
         ForegroundExtras.markGatePending(packageName, ctx);
-        DebugLog.i("PIN gate for " + packageName + " over=" + overApp);   // DEBUG
         backend().showPin(packageName, overApp);
     }
 

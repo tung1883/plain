@@ -17,7 +17,6 @@ import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.FrameLayout;
-import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -40,11 +39,9 @@ final class ScreenSurface extends LinearLayout {
     private final RemoteScreenView screen;
     private TrackpadView pad;
     private final EditText keyInput;
-    private final View keyBar;
+    private final KeyBar keyBar;
     private TextView chip;
 
-    private final LinkedHashSet<String> armedMods = new LinkedHashSet<>();
-    private final Map<String, TextView> modKeys = new HashMap<>();
 
     private DevConnection connection;
     private long channel = -1;
@@ -148,11 +145,25 @@ final class ScreenSurface extends LinearLayout {
                 send(DevProtocol.inputKey(null, "Backspace"));
                 return true;
             }
-            return false;
+            // A keyboard's Tab, Esc, arrows and so on never reach the text watcher, and Android
+            // would use Tab and the arrows to move focus; send them to the host like the key bar does.
+            String named = namedKey(code);
+            if (named == null) return false;
+            if (ev.getAction() == KeyEvent.ACTION_DOWN) {
+                List<String> mods = consumeMods();
+                if (ev.isCtrlPressed() || ev.isAltPressed() || ev.isShiftPressed()) {
+                    mods = mods == null ? new ArrayList<>() : mods;
+                    if (ev.isCtrlPressed() && !mods.contains("ctrl")) mods.add("ctrl");
+                    if (ev.isAltPressed() && !mods.contains("alt")) mods.add("alt");
+                    if (ev.isShiftPressed() && !mods.contains("shift")) mods.add("shift");
+                }
+                send(DevProtocol.inputKey(null, named, mods));
+            }
+            return true;
         });
         addView(keyInput, new LayoutParams(1, 1));
 
-        keyBar = buildKeyBar(ctx);
+        keyBar = new KeyBar(ctx, true, id -> pressKey(id));
         keyBar.setVisibility(GONE);
         addView(keyBar, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -303,29 +314,51 @@ final class ScreenSurface extends LinearLayout {
 
     // --- key bar --------------------------------------------------
 
-    private View buildKeyBar(Context ctx) {
-        LinearLayout bar = new LinearLayout(ctx);
-        bar.setOrientation(LinearLayout.HORIZONTAL);
-        bar.setPadding(dp(8), dp(10), dp(8), dp(10));
-        bar.addView(modKey(ctx, "ctrl"));
-        bar.addView(specialKey(ctx, "tab", () -> sendKey("Tab")));
-        bar.addView(modKey(ctx, "alt"));
-        bar.addView(specialKey(ctx, "esc", () -> sendKey("Escape")));
-        bar.addView(specialKey(ctx, "^C", () -> send(DevProtocol.inputKey("c", null,
-                Collections.singletonList("ctrl")))));
-        bar.addView(specialKey(ctx, "del", () -> sendKey("Delete")));
-        bar.addView(modKey(ctx, "shift"));
-        bar.addView(specialKey(ctx, "enter", () -> sendKey("Enter")));
-        bar.addView(specialKey(ctx, "↑", () -> sendKey("Up")));
-        bar.addView(specialKey(ctx, "↓", () -> sendKey("Down")));
-        bar.addView(specialKey(ctx, "←", () -> sendKey("Left")));
-        bar.addView(specialKey(ctx, "→", () -> sendKey("Right")));
+    /** What a key-bar key sends to the host PC. */
+    private void pressKey(String id) {
+        switch (id) {
+            case "Esc": sendKey("Escape"); return;
+            case "Bksp": sendKey("Backspace"); return;
+            case "PgUp": sendKey("PageUp"); return;
+            case "PgDn": sendKey("PageDown"); return;
+            case "Ins": sendKey("Insert"); return;
+            case "Del": sendKey("Delete"); return;
+            case "PrtSc": sendKey("PrintScreen"); return;
+            case "Caps": sendKey("CapsLock"); return;
+            case "Tab": case "Enter": case "Left": case "Down": case "Up": case "Right":
+            case "Home": case "End": case "Win": case "Menu":
+                sendKey(id);
+                return;
+            default: break;
+        }
+        if (id.length() == 2 && id.charAt(0) == '^') {            // ^C and friends: Ctrl held with the letter
+            List<String> mods = consumeMods();
+            mods = mods == null ? new ArrayList<>() : mods;
+            if (!mods.contains("ctrl")) mods.add("ctrl");
+            send(DevProtocol.inputKey(String.valueOf(Character.toLowerCase(id.charAt(1))), null, mods));
+        } else if (id.matches("F\\d+")) {
+            sendKey(id);
+        } else {                                                   // a symbol, typed as text
+            send(DevProtocol.inputKey(id, null, consumeMods()));
+        }
+    }
 
-        HorizontalScrollView scroller = new HorizontalScrollView(ctx);
-        scroller.setHorizontalScrollBarEnabled(false);
-        scroller.setBackgroundColor(0xFF0A0A0A);
-        scroller.addView(bar);
-        return scroller;
+    /** The host's name for a non-text key, or null for keys the text field handles itself. */
+    private static String namedKey(int code) {
+        switch (code) {
+            case KeyEvent.KEYCODE_TAB: return "Tab";
+            case KeyEvent.KEYCODE_ESCAPE: return "Escape";
+            case KeyEvent.KEYCODE_DPAD_UP: return "Up";
+            case KeyEvent.KEYCODE_DPAD_DOWN: return "Down";
+            case KeyEvent.KEYCODE_DPAD_LEFT: return "Left";
+            case KeyEvent.KEYCODE_DPAD_RIGHT: return "Right";
+            case KeyEvent.KEYCODE_FORWARD_DEL: return "Delete";
+            case KeyEvent.KEYCODE_MOVE_HOME: return "Home";
+            case KeyEvent.KEYCODE_MOVE_END: return "End";
+            case KeyEvent.KEYCODE_PAGE_UP: return "PageUp";
+            case KeyEvent.KEYCODE_PAGE_DOWN: return "PageDown";
+            default: return null;
+        }
     }
 
     private void sendKey(String named) {
@@ -333,46 +366,7 @@ final class ScreenSurface extends LinearLayout {
     }
 
     private List<String> consumeMods() {
-        if (armedMods.isEmpty()) return null;
-        List<String> out = new ArrayList<>(armedMods);
-        armedMods.clear();
-        for (Map.Entry<String, TextView> e : modKeys.entrySet()) paintKey(e.getValue(), false);
-        return out;
-    }
-
-    private TextView modKey(Context ctx, String mod) {
-        TextView k = specialKey(ctx, mod, null);
-        modKeys.put(mod, k);
-        k.setOnClickListener(v -> {
-            if (!armedMods.remove(mod)) armedMods.add(mod);
-            paintKey(k, armedMods.contains(mod));
-        });
-        return k;
-    }
-
-    private TextView specialKey(Context ctx, String label, Runnable action) {
-        TextView k = new TextView(ctx);
-        k.setText(label);
-        k.setTextSize(14);
-        k.setTypeface(Fonts.cascadiaMono(ctx));
-        k.setGravity(Gravity.CENTER);
-        k.setPadding(dp(13), dp(10), dp(13), dp(10));
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.rightMargin = dp(8);
-        k.setLayoutParams(lp);
-        paintKey(k, false);
-        if (action != null) k.setOnClickListener(v -> action.run());
-        return k;
-    }
-
-    private void paintKey(TextView k, boolean on) {
-        GradientDrawable box = new GradientDrawable();
-        box.setColor(on ? Color.WHITE : Color.BLACK);
-        box.setStroke(2, 0xFF2C2C2C);
-        box.setCornerRadius(dp(6));
-        k.setBackground(box);
-        k.setTextColor(on ? Color.BLACK : 0xFF8B8B8B);
+        return keyBar.consumeMods();
     }
 
     private void paintChip() {

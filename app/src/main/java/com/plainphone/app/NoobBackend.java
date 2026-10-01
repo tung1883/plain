@@ -25,7 +25,6 @@ final class NoobBackend implements GateEngine.Backend {
     }
 
     static void goHome(Context context) {
-        DebugLog.i("goHome by " + DebugLog.caller());   // DEBUG
         Intent home = new Intent(Intent.ACTION_MAIN)
                 .addCategory(Intent.CATEGORY_HOME)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);

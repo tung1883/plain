@@ -10,7 +10,6 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.InputMethodManager;
-import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -32,8 +31,7 @@ final class ShellSurface extends LinearLayout {
     }
 
     private final TerminalView term;
-    private final View keyBar;
-    private TextView ctrlKey, altKey, shiftKey;
+    private final KeyBar keyBar;
     private boolean kbVisible;
     private long keyBarShownAt;
 
@@ -70,7 +68,20 @@ final class ShellSurface extends LinearLayout {
         };
         addView(term, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
-        keyBar = buildKeyBar(ctx);
+        keyBar = new KeyBar(ctx, false, new KeyBar.Listener() {
+            @Override
+            public void onKey(String id) {
+                pressKey(id);
+            }
+
+            @Override
+            public void onMods(java.util.Set<String> active) {
+                term.armCtrl(active.contains("Ctrl"));
+                term.armAlt(active.contains("Alt"));
+                term.armShift(active.contains("Shift"));
+            }
+        });
+        term.onModsCleared = keyBar::consumeMods;   // locked ones are re-armed from there
         keyBar.setVisibility(GONE);
         addView(keyBar, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -238,64 +249,43 @@ final class ShellSurface extends LinearLayout {
 
     // --- key bar ----------------------------------------------------
 
-    private View buildKeyBar(Context ctx) {
-        LinearLayout bar = new LinearLayout(ctx);
-        bar.setOrientation(LinearLayout.HORIZONTAL);
-        bar.setPadding(dp(8), dp(10), dp(8), dp(10));
-
-        ctrlKey = key(ctx, "ctrl", () -> { term.armCtrl(!term.ctrlArmed()); paintMods(); });
-        altKey = key(ctx, "alt", () -> { term.armAlt(!term.altArmed()); paintMods(); });
-        shiftKey = key(ctx, "shift", () -> { term.armShift(!term.shiftArmed()); paintMods(); });
-        term.onModsCleared = this::paintMods;
-        bar.addView(ctrlKey);
-        bar.addView(key(ctx, "tab", () -> term.barKey(new byte[]{'\t'})));
-        bar.addView(altKey);
-        bar.addView(key(ctx, "esc", () -> term.barKey(new byte[]{0x1b})));
-        bar.addView(key(ctx, "^C", () -> term.sendBytes(new byte[]{0x03})));
-        bar.addView(key(ctx, "del", () -> term.barKey(TerminalView.esc("[3~"))));
-        bar.addView(shiftKey);
-        bar.addView(key(ctx, "enter", () -> term.barKey(new byte[]{'\r'})));
-        bar.addView(key(ctx, "↑", () -> term.barArrow('A')));
-        bar.addView(key(ctx, "↓", () -> term.barArrow('B')));
-        bar.addView(key(ctx, "←", () -> term.barArrow('D')));
-        bar.addView(key(ctx, "→", () -> term.barArrow('C')));
-
-        HorizontalScrollView scroller = new HorizontalScrollView(ctx);
-        scroller.setHorizontalScrollBarEnabled(false);
-        scroller.setBackgroundColor(0xFF0A0A0A);
-        scroller.addView(bar);
-        return scroller;
-    }
-
-    private TextView key(Context ctx, String label, Runnable action) {
-        TextView k = new TextView(ctx);
-        k.setText(label);
-        k.setTextSize(14);
-        k.setTypeface(Fonts.cascadiaMono(ctx));
-        k.setGravity(Gravity.CENTER);
-        k.setPadding(dp(13), dp(10), dp(13), dp(10));
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.rightMargin = dp(8);
-        k.setLayoutParams(lp);
-        paint(k, false);
-        k.setOnClickListener(v -> action.run());
-        return k;
-    }
-
-    private void paintMods() {
-        paint(ctrlKey, term.ctrlArmed());
-        paint(altKey, term.altArmed());
-        paint(shiftKey, term.shiftArmed());
-    }
-
-    private void paint(TextView k, boolean on) {
-        GradientDrawable box = new GradientDrawable();
-        box.setColor(on ? Color.WHITE : Color.BLACK);
-        box.setStroke(2, 0xFF2C2C2C);
-        box.setCornerRadius(dp(6));
-        k.setBackground(box);
-        k.setTextColor(on ? Color.BLACK : 0xFF8B8B8B);
+    /** What a key-bar key sends to the shell. */
+    private void pressKey(String id) {
+        switch (id) {
+            case "Esc": term.barKey(new byte[]{0x1b}); return;
+            // Shift+Tab is "back tab", ESC [ Z (e.g. Claude Code uses it to cycle its mode).
+            case "Tab": term.barKey(term.shiftArmed() ? TerminalView.esc("[Z") : new byte[]{'\t'}); return;
+            case "Enter": term.barKey(new byte[]{'\r'}); return;
+            case "Bksp": term.barKey(new byte[]{0x7f}); return;
+            case "Left": term.barArrow('D'); return;
+            case "Down": term.barArrow('B'); return;
+            case "Up": term.barArrow('A'); return;
+            case "Right": term.barArrow('C'); return;
+            case "Home": term.barKey(TerminalView.esc("[H")); return;
+            case "End": term.barKey(TerminalView.esc("[F")); return;
+            case "PgUp": term.barKey(TerminalView.esc("[5~")); return;
+            case "PgDn": term.barKey(TerminalView.esc("[6~")); return;
+            case "Ins": term.barKey(TerminalView.esc("[2~")); return;
+            case "Del": term.barKey(TerminalView.esc("[3~")); return;
+            case "F1": term.barKey(TerminalView.esc("OP")); return;
+            case "F2": term.barKey(TerminalView.esc("OQ")); return;
+            case "F3": term.barKey(TerminalView.esc("OR")); return;
+            case "F4": term.barKey(TerminalView.esc("OS")); return;
+            case "F5": term.barKey(TerminalView.esc("[15~")); return;
+            case "F6": term.barKey(TerminalView.esc("[17~")); return;
+            case "F7": term.barKey(TerminalView.esc("[18~")); return;
+            case "F8": term.barKey(TerminalView.esc("[19~")); return;
+            case "F9": term.barKey(TerminalView.esc("[20~")); return;
+            case "F10": term.barKey(TerminalView.esc("[21~")); return;
+            case "F11": term.barKey(TerminalView.esc("[23~")); return;
+            case "F12": term.barKey(TerminalView.esc("[24~")); return;
+            default: break;
+        }
+        if (id.length() == 2 && id.charAt(0) == '^') {            // ^C and friends
+            term.sendBytes(new byte[]{TerminalView.control(id.charAt(1))});
+        } else {                                                   // a symbol
+            term.barKey(id.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        }
     }
 
     private int dp(float v) {

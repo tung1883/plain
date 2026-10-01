@@ -46,7 +46,6 @@ public class PinGateActivity extends Activity {
                         // Over the app: finishing just uncovers the page that was there.
                         next = over ? null : openIntent();
                     }
-                    DebugLog.i("PIN ok for " + packageName + " next=" + next);   // DEBUG
                     if (next != null && !FlaggedGateActivity.class.getName().equals(
                             next.getComponent() == null ? null : next.getComponent().getClassName())) {
                         // Stay up until the app has been started: finishing first would let

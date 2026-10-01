@@ -36,7 +36,6 @@ final class SecureSettings {
         String pkg = context.getPackageName();
         String updated = removeComponent(list, pkg, AppMonitorService.class.getName());
         if (updated.equals(list == null ? "" : list)) return false;
-        DebugLog.i("SUSPEND by " + DebugLog.caller());   // DEBUG
         Config.setA11ySuspended(context, true);
         Settings.Secure.putString(context.getContentResolver(),
                 Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES, updated);
@@ -47,7 +46,6 @@ final class SecureSettings {
     /** Undo {@link #suspendAccessibility}. No-op unless Plain itself switched the service off. */
     static void resumeAccessibility(Context context) {
         if (!Config.isA11ySuspended(context)) return;
-        DebugLog.i("RESUME by " + DebugLog.caller());   // DEBUG
         if (canWrite(context)) {
             String list = Settings.Secure.getString(context.getContentResolver(),
                     Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);

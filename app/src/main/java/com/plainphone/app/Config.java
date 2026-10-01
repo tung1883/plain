@@ -844,6 +844,34 @@ class Config {
         prefs(context).edit().putFloat("dev_term_font", sp).apply();
     }
 
+    // --- dev key bar ------------------------------------------------
+
+    /** Rows of keys showing at once under the shell / Screen panel; 0 = all of them. */
+    static int getKeyBarRows(Context context) {
+        return prefs(context).getInt("keybar_rows", 2);
+    }
+
+    static void setKeyBarRows(Context context, int rows) {
+        prefs(context).edit().putInt("keybar_rows", Math.max(0, rows)).apply();
+    }
+
+    /** "small" | "medium" | "large". */
+    static String getKeyBarSize(Context context) {
+        return prefs(context).getString("keybar_size", "medium");
+    }
+
+    static void setKeyBarSize(Context context, String size) {
+        prefs(context).edit().putString("keybar_size", size).apply();
+    }
+
+    static boolean isKeyBarLabels(Context context) {
+        return prefs(context).getBoolean("keybar_labels", true);
+    }
+
+    static void setKeyBarLabels(Context context, boolean on) {
+        prefs(context).edit().putBoolean("keybar_labels", on).apply();
+    }
+
     static int getDevScreenFps(Context context) {
         return prefs(context).getInt("dev_screen_fps", 12);
     }

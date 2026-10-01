@@ -63,6 +63,9 @@ public class DevSettingsActivity extends Activity {
             render();
         }));
 
+        root.addView(row("Key bar", v ->
+                startActivity(new Intent(this, KeyBarSettingsActivity.class))));
+
         root.addView(row("Locked: " + (Lock.DEV.isLocked(this) ? "On" : "Off"),
                 v -> Lock.DEV.toggleLock(this, this::render)));
 

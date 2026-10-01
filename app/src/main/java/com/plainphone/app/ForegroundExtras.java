@@ -75,8 +75,6 @@ final class ForegroundExtras {
      * A banking app that starts while the service is still bound can notice it and close itself.
      */
     static void afterA11yOff(Context context, Runnable action) {
-        DebugLog.i("afterA11yOff suspended=" + Config.isA11ySuspended(context)
-                + " bound=" + AppMonitorService.isBound());   // DEBUG
         android.os.Handler handler = new android.os.Handler(android.os.Looper.getMainLooper());
         if (!Config.isA11ySuspended(context) || !AppMonitorService.isBound()) {
             action.run();
@@ -98,7 +96,6 @@ final class ForegroundExtras {
 
     /** A gate screen closed without opening the app: nothing is holding accessibility off any more. */
     static void gateCancelled(Context context) {
-        DebugLog.i("gateCancelled by " + DebugLog.caller());   // DEBUG
         gatePendingUntil = 0;
         SecureSettings.resumeAccessibility(context);
     }
@@ -151,8 +148,6 @@ final class ForegroundExtras {
         // No "same app as last time" shortcut: Home can flip accessibility back on without this
         // ever seeing the launcher, and the next visit to a blocking app must still switch it off.
         // Every call below is a cheap no-op when the state already matches.
-        DebugLog.i("fg " + packageName + "/" + className
-                + " pending=" + gatePending() + " suspended=" + Config.isA11ySuspended(context));   // DEBUG
         if (!SecureSettings.canWrite(context)) return;
         // Plain's own gate screens for a blocking app: keep accessibility off until it opens.
         if (packageName.equals(context.getPackageName()) && gatePending()) return;
@@ -178,7 +173,6 @@ final class ForegroundExtras {
 
     /** Called before Plain itself opens {@code packageName}: switch accessibility off first if it's a banking app. */
     static void beforeLaunch(Context context, String packageName) {
-        DebugLog.i("beforeLaunch " + packageName + " by " + DebugLog.caller());   // DEBUG
         // The gate is done but the app is not up yet. Plain's own screens closing (Home flashing
         // by) must not switch accessibility back on in that gap, or the app sees it and quits.
         gatePendingUntil = System.currentTimeMillis() + LAUNCH_PENDING_MILLIS;

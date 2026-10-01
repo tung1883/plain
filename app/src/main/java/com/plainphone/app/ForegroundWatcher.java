@@ -88,7 +88,6 @@ public class ForegroundWatcher extends Service {
     public void onCreate() {
         super.onCreate();
         running = true;
-        DebugLog.i("watcher up");   // DEBUG
         usm = (UsageStatsManager) getSystemService(Context.USAGE_STATS_SERVICE);
         GateEngine.attachNoob(this, new NoobBackend(this));
 
@@ -211,7 +210,6 @@ public class ForegroundWatcher extends Service {
     public void onDestroy() {
         super.onDestroy();
         running = false;
-        DebugLog.i("watcher down");   // DEBUG
         stopPolling();
         if (screenReceiver != null) unregisterReceiver(screenReceiver);
         GateEngine.detachNoob();

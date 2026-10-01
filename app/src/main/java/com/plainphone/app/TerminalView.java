@@ -492,6 +492,7 @@ final class TerminalView extends View {
         byte[] seq = keySequence(keyCode, event);
         if (seq != null) {
             sendBytes(seq);
+            if (keyCode == KeyEvent.KEYCODE_TAB && shiftArmed) clearMods();
             return true;
         }
         int uni = event.getUnicodeChar(event.getMetaState());
@@ -512,7 +513,9 @@ final class TerminalView extends View {
             case KeyEvent.KEYCODE_ENTER: return new byte[]{'\r'};
             case KeyEvent.KEYCODE_DEL: return new byte[]{0x7f};
             case KeyEvent.KEYCODE_FORWARD_DEL: return esc("[3~");
-            case KeyEvent.KEYCODE_TAB: return new byte[]{'\t'};
+            case KeyEvent.KEYCODE_TAB:
+                // Shift+Tab (a keyboard's Shift, or the bar's armed shift) is ESC [ Z.
+                return event.isShiftPressed() || shiftArmed ? esc("[Z") : new byte[]{'\t'};
             case KeyEvent.KEYCODE_ESCAPE: return new byte[]{0x1b};
             case KeyEvent.KEYCODE_DPAD_UP: return esc("[A");
             case KeyEvent.KEYCODE_DPAD_DOWN: return esc("[B");

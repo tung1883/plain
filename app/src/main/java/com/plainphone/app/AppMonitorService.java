@@ -59,7 +59,6 @@ public class AppMonitorService extends AccessibilityService implements GateEngin
         info.eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED;
         info.feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC;
         setServiceInfo(info);
-        DebugLog.i("a11y service connected");   // DEBUG
         engine = GateEngine.attachNerd(this, this);
         ForegroundWatcher.sync(this);
         // Switched back on a moment after a blocking app was reopened? Catch up on it.
@@ -69,7 +68,6 @@ public class AppMonitorService extends AccessibilityService implements GateEngin
     @Override
     public boolean onUnbind(android.content.Intent intent) {
 
-        DebugLog.i("a11y service unbound");   // DEBUG
         instance = null;
         removeGateUi();
         engine = null;
