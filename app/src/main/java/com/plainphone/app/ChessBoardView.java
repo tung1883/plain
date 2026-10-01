@@ -158,11 +158,13 @@ final class ChessBoardView extends View {
      *  navigate within the existing tree. */
     void resetToStartPosition() {
         boardGeneration++;
-        position = startingPosition();
-        whiteTurn = true;
-        castleRights = 1 | 2 | 4 | 8;
-        root = new MoveNode(null, position, whiteTurn, castleRights, null);
-        current = root;
+        synchronized (positionLock) {   // see restoreNode
+            position = startingPosition();
+            whiteTurn = true;
+            castleRights = 1 | 2 | 4 | 8;
+            root = new MoveNode(null, position, whiteTurn, castleRights, null);
+            current = root;
+        }
         selectedRow = selectedCol = -1;
         draggingPiece = false;
         dragRow = dragCol = -1;
@@ -207,11 +209,13 @@ final class ChessBoardView extends View {
         if (castling.indexOf('k') >= 0) rights |= 4;
         if (castling.indexOf('q') >= 0) rights |= 8;
 
-        position = board;
-        whiteTurn = white;
-        castleRights = rights;
-        root = new MoveNode(null, position, whiteTurn, castleRights, null);
-        current = root;
+        synchronized (positionLock) {   // see restoreNode
+            position = board;
+            whiteTurn = white;
+            castleRights = rights;
+            root = new MoveNode(null, position, whiteTurn, castleRights, null);
+            current = root;
+        }
         selectedRow = selectedCol = -1;
         draggingPiece = false;
         dragRow = dragCol = -1;
@@ -971,10 +975,16 @@ final class ChessBoardView extends View {
      *  displayed position. Doesn't touch the tree — see {@link #jumpToNode}. */
     private void restoreNode(MoveNode node) {
         boardGeneration++;
-        current = node;
-        position = copy(node.board);
-        whiteTurn = node.whiteTurn;
-        castleRights = node.castleRights;
+        // The analysis thread's pvToSan plays a line out on `position` and undoes it a moment
+        // later, under positionLock. Swapping the array in between would make its undo write
+        // the old line's squares onto this new board (a piece vanishing, or a stray one), so
+        // the swap waits for any such excursion to finish.
+        synchronized (positionLock) {
+            current = node;
+            position = copy(node.board);
+            whiteTurn = node.whiteTurn;
+            castleRights = node.castleRights;
+        }
         selectedRow = selectedCol = -1;
         updateGameOverStatus();
         // Suppressed during loadSanMoves's replay (see bulkLoading) — a move already in the
@@ -1319,7 +1329,7 @@ final class ChessBoardView extends View {
      *  from {@link GameState} because search needs this thousands of times per double-tap
      *  and can't afford a full board copy each time. */
     private static final class UndoInfo {
-        char moving, captured, rookPiece;
+        char moving, captured, rookPiece, rookToPrev;
         boolean wasCastle;
         int rookFromCol, rookToCol, prevCastleRights;
     }
@@ -1341,6 +1351,7 @@ final class ChessBoardView extends View {
             u.rookFromCol = toCol > fromCol ? 7 : 0;
             u.rookToCol = toCol > fromCol ? 5 : 3;
             u.rookPiece = position[toRow][u.rookFromCol];
+            u.rookToPrev = position[toRow][u.rookToCol];   // occupied only when a stale line is replayed
             position[toRow][u.rookToCol] = u.rookPiece;
             position[toRow][u.rookFromCol] = 0;
         }
@@ -1355,7 +1366,7 @@ final class ChessBoardView extends View {
         position[toRow][toCol] = u.captured;
         if (u.wasCastle) {
             position[toRow][u.rookFromCol] = u.rookPiece;
-            position[toRow][u.rookToCol] = 0;
+            position[toRow][u.rookToCol] = u.rookToPrev;
         }
         castleRights = u.prevCastleRights;
     }
