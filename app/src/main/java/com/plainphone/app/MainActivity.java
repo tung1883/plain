@@ -3543,8 +3543,11 @@ public class MainActivity extends Activity implements SelectionHost {
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackground(popupBackground());
-        root.setPadding(0, 8, 0, 8);
+        root.setBackground(UiKit.dialogBackground(this));
+        UiKit.clipRounded(this, root, UiKit.R_MD);
+        // Inset so the full-bleed option rows don't paint over the box border
+        // (bottom inset clears the rounded-corner arc too).
+        root.setPadding(2, 24, 2, UiKit.dp(this, UiKit.R_MD));
 
         root.addView(UiKit.dialogTitle(this, label.toString()));
 
@@ -3598,8 +3601,11 @@ public class MainActivity extends Activity implements SelectionHost {
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackground(popupBackground());
-        root.setPadding(0, 8, 0, 8);
+        root.setBackground(UiKit.dialogBackground(this));
+        UiKit.clipRounded(this, root, UiKit.R_MD);
+        // Inset so the full-bleed option rows don't paint over the box border
+        // (bottom inset clears the rounded-corner arc too).
+        root.setPadding(2, 24, 2, UiKit.dp(this, UiKit.R_MD));
 
         root.addView(UiKit.dialogTitle(this, title));
 
@@ -3635,12 +3641,6 @@ public class MainActivity extends Activity implements SelectionHost {
         row.setBackground(rowBackground());
         row.setOnClickListener(listener);
         return row;
-    }
-
-    private Drawable popupBackground() {
-        android.graphics.drawable.GradientDrawable box = new android.graphics.drawable.GradientDrawable();
-        box.setColor(Color.BLACK);
-        return box;
     }
 
     private void setBlackWallpaperOnce() {
