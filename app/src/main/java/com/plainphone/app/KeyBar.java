@@ -30,8 +30,11 @@ import java.util.Set;
 final class KeyBar extends LinearLayout {
 
     interface Listener {
-        /** A non-modifier key, by its label ("Tab", "Left", "^C", "F5", "|" ...). */
-        void onKey(String id);
+        /** A non-modifier key went down, by its label ("Tab", "Left", "^C", "F5", "|" ...). */
+        void onKeyDown(String id);
+
+        /** The finger came off that key (or the bar started scrolling instead). */
+        default void onKeyUp(String id) {}
 
         /** Ctrl/Alt/Shift changed: the set of modifiers now in effect ("Ctrl", "Alt", "Shift"). */
         default void onMods(Set<String> active) {}
@@ -240,7 +243,25 @@ final class KeyBar extends LinearLayout {
             modViews.put(id, k);
             k.setOnClickListener(v -> onModTap(id));
         } else {
-            k.setOnClickListener(v -> listener.onKey(id));
+            // Down and up are told apart so a key can really be held: down while the finger is on it.
+            k.setOnTouchListener((v, ev) -> {
+                switch (ev.getActionMasked()) {
+                    case MotionEvent.ACTION_DOWN:
+                        v.setPressed(true);
+                        listener.onKeyDown(id);
+                        return true;
+                    case MotionEvent.ACTION_UP:
+                        v.setPressed(false);
+                        listener.onKeyUp(id);
+                        return true;
+                    case MotionEvent.ACTION_CANCEL:   // e.g. the bar took the drag to scroll
+                        v.setPressed(false);
+                        listener.onKeyUp(id);
+                        return true;
+                    default:
+                        return true;
+                }
+            });
         }
         paintKey(k, 0, screenOnly);
         return k;

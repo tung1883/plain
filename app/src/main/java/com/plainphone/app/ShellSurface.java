@@ -70,8 +70,14 @@ final class ShellSurface extends LinearLayout {
 
         keyBar = new KeyBar(ctx, false, new KeyBar.Listener() {
             @Override
-            public void onKey(String id) {
+            public void onKeyDown(String id) {
                 pressKey(id);
+                startRepeat(id);
+            }
+
+            @Override
+            public void onKeyUp(String id) {
+                stopRepeat();
             }
 
             @Override
@@ -248,6 +254,39 @@ final class ShellSurface extends LinearLayout {
     }
 
     // --- key bar ----------------------------------------------------
+
+    private static final long REPEAT_DELAY_MS = 400;
+    private static final long REPEAT_EVERY_MS = 40;
+    private Runnable repeater;
+
+    /**
+     * A terminal only ever sees characters, so holding a key means sending it again and again:
+     * after a short delay, then steadily, until the finger lifts (what a keyboard's auto-repeat does).
+     */
+    private void startRepeat(String id) {
+        stopRepeat();
+        repeater = new Runnable() {
+            @Override
+            public void run() {
+                pressKey(id);
+                postDelayed(this, REPEAT_EVERY_MS);
+            }
+        };
+        postDelayed(repeater, REPEAT_DELAY_MS);
+    }
+
+    private void stopRepeat() {
+        if (repeater != null) {
+            removeCallbacks(repeater);
+            repeater = null;
+        }
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        stopRepeat();
+        super.onDetachedFromWindow();
+    }
 
     /** What a key-bar key sends to the shell. */
     private void pressKey(String id) {

@@ -163,7 +163,17 @@ final class ScreenSurface extends LinearLayout {
         });
         addView(keyInput, new LayoutParams(1, 1));
 
-        keyBar = new KeyBar(ctx, true, id -> pressKey(id));
+        keyBar = new KeyBar(ctx, true, new KeyBar.Listener() {
+            @Override
+            public void onKeyDown(String id) {
+                holdKey(id);
+            }
+
+            @Override
+            public void onKeyUp(String id) {
+                releaseKey();
+            }
+        });
         keyBar.setVisibility(GONE);
         addView(keyBar, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -314,32 +324,89 @@ final class ScreenSurface extends LinearLayout {
 
     // --- key bar --------------------------------------------------
 
-    /** What a key-bar key sends to the host PC. */
-    private void pressKey(String id) {
-        switch (id) {
-            case "Esc": sendKey("Escape"); return;
-            case "Bksp": sendKey("Backspace"); return;
-            case "PgUp": sendKey("PageUp"); return;
-            case "PgDn": sendKey("PageDown"); return;
-            case "Ins": sendKey("Insert"); return;
-            case "Del": sendKey("Delete"); return;
-            case "PrtSc": sendKey("PrintScreen"); return;
-            case "Caps": sendKey("CapsLock"); return;
-            case "Tab": case "Enter": case "Left": case "Down": case "Up": case "Right":
-            case "Home": case "End": case "Win": case "Menu":
-                sendKey(id);
-                return;
-            default: break;
+    private static final long REPEAT_DELAY_MS = 400;
+    private static final long REPEAT_EVERY_MS = 40;
+    private Runnable repeater;
+    private boolean holding;
+
+    /**
+     * A key-bar key goes down on the host and stays down until the finger lifts. After a short
+     * delay it is pressed again every few tens of ms, which is what makes an editor repeat it
+     * (an injected key is not auto-repeated by Windows); the host lets go on its own if these stop.
+     */
+    private void holdKey(String id) {
+        releaseKey();
+        // An older plaind does not know held keys: tap once, as before.
+        if (connection == null || !connection.hasCap("keyhold")) {
+            tapKey(id);
+            return;
         }
+        List<String> mods = consumeMods();
+        String key = hostKey(id);
         if (id.length() == 2 && id.charAt(0) == '^') {            // ^C and friends: Ctrl held with the letter
-            List<String> mods = consumeMods();
             mods = mods == null ? new ArrayList<>() : mods;
             if (!mods.contains("ctrl")) mods.add("ctrl");
-            send(DevProtocol.inputKey(String.valueOf(Character.toLowerCase(id.charAt(1))), null, mods));
-        } else if (id.matches("F\\d+")) {
-            sendKey(id);
-        } else {                                                   // a symbol, typed as text
-            send(DevProtocol.inputKey(id, null, consumeMods()));
+        }
+        final String k = key;
+        final List<String> m = mods;
+        holding = true;
+        send(DevProtocol.inputKeyDown(k, m));
+        repeater = new Runnable() {
+            @Override
+            public void run() {
+                send(DevProtocol.inputKeyDown(k, m));
+                postDelayed(this, REPEAT_EVERY_MS);
+            }
+        };
+        postDelayed(repeater, REPEAT_DELAY_MS);
+    }
+
+    /** One press and release, for a host that cannot hold keys. */
+    private void tapKey(String id) {
+        String key = hostKey(id);
+        List<String> mods = consumeMods();
+        if (id.length() == 2 && id.charAt(0) == '^') {            // ^C and friends: Ctrl held with the letter
+            mods = mods == null ? new ArrayList<>() : mods;
+            if (!mods.contains("ctrl")) mods.add("ctrl");
+            send(DevProtocol.inputKey(key, null, mods));
+        } else if (key.length() == 1) {                            // a symbol, typed as text
+            send(DevProtocol.inputKey(key, null, mods));
+        } else {
+            send(DevProtocol.inputKey(null, key, mods));
+        }
+    }
+
+    private void releaseKey() {
+        if (repeater != null) {
+            removeCallbacks(repeater);
+            repeater = null;
+        }
+        if (holding) {
+            holding = false;
+            send(DevProtocol.inputKeyUp());
+        }
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        releaseKey();
+        super.onDetachedFromWindow();
+    }
+
+    /** The host's name for a key-bar key: a key name, or the one character it types. */
+    private static String hostKey(String id) {
+        switch (id) {
+            case "Esc": return "Escape";
+            case "Bksp": return "Backspace";
+            case "PgUp": return "PageUp";
+            case "PgDn": return "PageDown";
+            case "Ins": return "Insert";
+            case "Del": return "Delete";
+            case "PrtSc": return "PrintScreen";
+            case "Caps": return "CapsLock";
+            default:
+                if (id.length() == 2 && id.charAt(0) == '^') return String.valueOf(Character.toLowerCase(id.charAt(1)));
+                return id;   // Tab, Enter, arrows, Home, End, Win, Menu, F1..F12, or a symbol
         }
     }
 

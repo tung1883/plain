@@ -64,6 +64,8 @@ final class DevProtocol {
     static final String T_INPUT_DOWN = "input.down";
     static final String T_INPUT_UP = "input.up";
     static final String T_INPUT_KEY = "input.key";
+    static final String T_INPUT_KEYDOWN = "input.keydown";
+    static final String T_INPUT_KEYUP = "input.keyup";
     static final String T_INPUT_ZOOM = "input.zoom";
     static final String T_PROC_LIST = "proc.list";
     static final String T_PROC_KILL = "proc.kill";
@@ -321,6 +323,22 @@ final class DevProtocol {
         if (key != null) m.put("key", key);
         if (mods != null && !mods.isEmpty()) m.put("mods", new ArrayList<Object>(mods));
         return m;
+    }
+
+    /**
+     * A key pressed and held on the host. Send it again every few tens of ms while it stays down
+     * (a repeat) and {@link #inputKeyUp} when let go; the host also lets go if the repeats stop.
+     * {@code key}: a name ("Enter", "F5", "Left") or one character; {@code mods} are held around it.
+     */
+    static Map<String, Object> inputKeyDown(String key, List<String> mods) {
+        Map<String, Object> m = msg(T_INPUT_KEYDOWN);
+        m.put("key", key);
+        if (mods != null && !mods.isEmpty()) m.put("mods", new ArrayList<Object>(mods));
+        return m;
+    }
+
+    static Map<String, Object> inputKeyUp() {
+        return msg(T_INPUT_KEYUP);
     }
 
     static Map<String, Object> procList(long ch) {
