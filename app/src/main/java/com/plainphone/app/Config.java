@@ -1275,10 +1275,18 @@ class Config {
 
     static final String MONO_APPS = "apps";
     static final String MONO_ALL = "all";
+    static final String MONO_OFF = "off";
 
-    /** "all": greyscale the whole screen, always. "apps": only while a chosen app is open. */
+    /** "all": greyscale the whole screen, always. "apps": only while a chosen app is open. "off": never. */
     static String getMonochromeMode(Context context) {
         return prefs(context).getString("monochrome_mode", MONO_APPS);
+    }
+
+    static String monochromeLabel(Context context) {
+        String mode = Config.getMonochromeMode(context);
+        if (Config.MONO_ALL.equals(mode)) return "Whole screen";
+        if (Config.MONO_OFF.equals(mode)) return "Off";
+        return String.valueOf(Config.getMonochromePackages(context).size());
     }
 
     static void setMonochromeMode(Context context, String mode) {

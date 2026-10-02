@@ -155,7 +155,8 @@ final class ForegroundExtras {
         Set<String> mono = Config.getMonochromePackages(context);
         if (Config.MONO_ALL.equals(Config.getMonochromeMode(context))) {
             SecureSettings.monochromeOn(context);
-        } else if (mono.contains(packageName)) {
+        } else if (Config.MONO_APPS.equals(Config.getMonochromeMode(context))
+                && mono.contains(packageName)) {
             SecureSettings.monochromeOn(context);
         } else {
             SecureSettings.monochromeOff(context);

@@ -36,6 +36,7 @@ public class AppPickerActivity extends Activity {
     private List<String> labels;
     private ArrayAdapter<String> adapter;
     private ListView listView;
+    private TextView offRow;
     private TextView wholeScreenRow;
     private TextView specificAppsRow;
 
@@ -75,8 +76,10 @@ public class AppPickerActivity extends Activity {
         }
 
         if (!banking) {
+            offRow = modeRow(font, Config.MONO_OFF);
             wholeScreenRow = modeRow(font, Config.MONO_ALL);
             specificAppsRow = modeRow(font, Config.MONO_APPS);
+            screen.addView(offRow);
             screen.addView(wholeScreenRow);
             screen.addView(specificAppsRow);
             refreshMode();
@@ -155,12 +158,13 @@ public class AppPickerActivity extends Activity {
         return row;
     }
 
-    /** "Whole screen" hides the app list: it doesn't depend on which app is open. */
+    /** The app list only matters for "Specific apps". */
     private void refreshMode() {
-        boolean whole = Config.MONO_ALL.equals(Config.getMonochromeMode(this));
-        wholeScreenRow.setText((whole ? "\u25CF " : "\u25CB ") + "Whole screen");
-        specificAppsRow.setText((whole ? "\u25CB " : "\u25CF ") + "Specific apps");
-        listView.setVisibility(whole ? View.GONE : View.VISIBLE);
+        String mode = Config.getMonochromeMode(this);
+        offRow.setText((Config.MONO_OFF.equals(mode) ? "● " : "○ ") + "Off");
+        wholeScreenRow.setText((Config.MONO_ALL.equals(mode) ? "● " : "○ ") + "Whole screen");
+        specificAppsRow.setText((Config.MONO_APPS.equals(mode) ? "● " : "○ ") + "Specific apps");
+        listView.setVisibility(Config.MONO_APPS.equals(mode) ? View.VISIBLE : View.GONE);
     }
 
     private Set<String> current() {

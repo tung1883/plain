@@ -160,8 +160,7 @@ entries.add(new Entry("Appearance", "Home screen art", row("Home screen art",
                 row("Blocking apps: " + Config.getBankingPackages(this).size(),
                         v -> openPicker(granted, AppPickerActivity.KIND_BANKING))));
 
-        String monochrome = Config.MONO_ALL.equals(Config.getMonochromeMode(this))
-                ? "Whole screen" : String.valueOf(Config.getMonochromePackages(this).size());
+        String monochrome = Config.monochromeLabel(this);
         entries.add(new Entry("Nerd extras", "4 Monochrome",
                 row("Monochrome: " + monochrome,
                         v -> openPicker(granted, AppPickerActivity.KIND_MONOCHROME))));

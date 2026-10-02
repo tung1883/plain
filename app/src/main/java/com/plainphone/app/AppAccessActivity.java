@@ -114,8 +114,7 @@ public class AppAccessActivity extends Activity {
                 v -> openPicker(granted, AppPickerActivity.KIND_BANKING)));
 
         root.addView(SettingsUi.row(this, "Monochrome",
-                Config.MONO_ALL.equals(Config.getMonochromeMode(this)) ? "Whole screen"
-                        : String.valueOf(Config.getMonochromePackages(this).size()),
+                Config.monochromeLabel(this),
                 null, !granted,
                 v -> openPicker(granted, AppPickerActivity.KIND_MONOCHROME)));
     }
