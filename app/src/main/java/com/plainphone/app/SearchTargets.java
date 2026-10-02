@@ -129,11 +129,11 @@ class SearchTargets {
     static List<SearchResult> plain(Activity host, TextMatch.Query query) {
         List<SearchResult> results = new ArrayList<>();
 
-        int screenOff = TextMatch.score("Screen off",
-                new String[]{"lock", "sleep", "turn off", "display off"}, query);
+        int screenOff = ScreenLock.available(host) ? TextMatch.score("Screen off",
+                new String[]{"lock", "sleep", "turn off", "display off"}, query) : TextMatch.NO_MATCH;
         if (screenOff != TextMatch.NO_MATCH) {
             results.add(new SearchResult(SearchResult.Kind.PLAIN, "Screen off", null,
-                    screenOff, () -> ScreenLock.lockOrRequest(host)).guarded());
+                    screenOff, () -> ScreenLock.lock(host)).guarded());
         }
 
         int lockAll = TextMatch.score("Lock all",

@@ -96,6 +96,8 @@ public class MainActivity extends Activity implements SelectionHost {
     private VDragStrip headerStrip;
     private TextView chevLeft, chevRight;
     private LinearLayout tipRow;
+    private TextView screenOffRowView;
+    private TextView spacerRowView;
     private TextView tipKicker;
     private TextView tipBody;
     private View homeFocusSink;
@@ -394,6 +396,11 @@ public class MainActivity extends Activity implements SelectionHost {
     @Override
     protected void onResume() {
         super.onResume();
+        if (screenOffRowView != null) {
+            boolean available = ScreenLock.available(this);
+            screenOffRowView.setVisibility(available ? View.VISIBLE : View.GONE);
+            spacerRowView.setVisibility(available ? View.GONE : View.INVISIBLE);
+        }
         ForegroundExtras.reapplyWholeScreenMonochrome(this);
         ForegroundExtras.resumeIfIdle(this);   // Home is showing, so no banking app is
         ForegroundWatcher.sync(this);
@@ -764,7 +771,9 @@ public class MainActivity extends Activity implements SelectionHost {
         menuColumn.setOrientation(LinearLayout.VERTICAL);
 
         TextView screenOffRow = buildRow(georgia, "Screen off");
-        screenOffRow.setOnClickListener(v -> ScreenLock.lockOrRequest(this));
+        screenOffRow.setOnClickListener(v -> ScreenLock.lock(this));
+        screenOffRowView = screenOffRow;
+        screenOffRow.setVisibility(ScreenLock.available(this) ? View.VISIBLE : View.GONE);
         menuColumn.addView(screenOffRow, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
@@ -777,6 +786,13 @@ public class MainActivity extends Activity implements SelectionHost {
         settingsRow.setOnClickListener(v -> startActivity(new Intent(this, SettingsGateActivity.class)));
         menuColumn.addView(settingsRow, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        // Noob mode has no Screen off: keep three rows, with the last one blank.
+        TextView spacerRow = buildRow(georgia, "Screen off");
+        menuColumn.addView(spacerRow, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        spacerRowView = spacerRow;
+        spacerRow.setVisibility(ScreenLock.available(this) ? View.GONE : View.INVISIBLE);
 
         menuRow = new LinearLayout(this);
         menuRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -1278,8 +1294,8 @@ public class MainActivity extends Activity implements SelectionHost {
         if (chessMetaBlock == null) return;
         ChessLibrary.Entry e = chessCurrentEntry;
         boolean known = e != null;
-        chessMetaBlock.setVisibility(known ? View.VISIBLE : View.GONE);
-        chessPgnRow.setVisibility(known ? View.VISIBLE : View.GONE);
+        chessMetaBlock.setVisibility(known ? View.VISIBLE : View.INVISIBLE);
+        chessPgnRow.setVisibility(known ? View.VISIBLE : View.INVISIBLE);
         if (!known) return;
 
         chessMetaPlayers.setText(ChessBoardView.shortName(e.white) + " vs " + ChessBoardView.shortName(e.black));
@@ -1385,9 +1401,9 @@ public class MainActivity extends Activity implements SelectionHost {
     private void chessSelectTab(int index) {
         if (index == chessActiveTab) return;
         chessActiveTab = index;
-        chessBoardTabContent.setVisibility(index == 0 ? View.VISIBLE : View.GONE);
-        chessPuzzlesPanel.view().setVisibility(index == 1 ? View.VISIBLE : View.GONE);
-        chessLibraryPanel.view().setVisibility(index == 2 ? View.VISIBLE : View.GONE);
+        chessBoardTabContent.setVisibility(index == 0 ? View.VISIBLE : View.INVISIBLE);
+        chessPuzzlesPanel.view().setVisibility(index == 1 ? View.VISIBLE : View.INVISIBLE);
+        chessLibraryPanel.view().setVisibility(index == 2 ? View.VISIBLE : View.INVISIBLE);
         chessRestyleTabs();
         if (index == 1) chessPuzzlesPanel.onShown();
         if (index == 2) chessLibraryPanel.refresh();
@@ -2569,7 +2585,7 @@ public class MainActivity extends Activity implements SelectionHost {
         List<String> engineLines = chessBoard.engineSummary();
         for (int i = 0; i < chessEngineLines.length; i++) {
             boolean has = i < engineLines.size();
-            chessEngineLines[i].setVisibility(has ? View.VISIBLE : View.GONE);
+            chessEngineLines[i].setVisibility(has ? View.VISIBLE : View.INVISIBLE);
             if (has) chessEngineLines[i].setText(engineLines.get(i));
         }
         chessMovesGrid.refresh(); // comments render inline in the grid, right under their move
@@ -2606,7 +2622,7 @@ public class MainActivity extends Activity implements SelectionHost {
         List<String> engineLines = chessBoard.engineSummary();
         for (int i = 0; i < chessEngineLines.length; i++) {
             boolean has = i < engineLines.size();
-            chessEngineLines[i].setVisibility(has ? View.VISIBLE : View.GONE);
+            chessEngineLines[i].setVisibility(has ? View.VISIBLE : View.INVISIBLE);
             if (has) chessEngineLines[i].setText(engineLines.get(i));
         }
     }
@@ -2623,16 +2639,16 @@ public class MainActivity extends Activity implements SelectionHost {
 
         if (headerStrip != null) {
             boolean showStrip = needle.isEmpty() && !selecting;
-            headerStrip.setVisibility(showStrip ? View.VISIBLE : View.GONE);
+            headerStrip.setVisibility(showStrip ? View.VISIBLE : View.INVISIBLE);
             if (showStrip) modeToggleScroller.post(this::updateHeaderChevrons);
         }
         if (menuRow != null) {
-            menuRow.setVisibility(needle.isEmpty() && !selecting ? View.VISIBLE : View.GONE);
+            menuRow.setVisibility(needle.isEmpty() && !selecting ? View.VISIBLE : View.INVISIBLE);
         }
         if (menuDivider != null) {
-            menuDivider.setVisibility(needle.isEmpty() && !selecting ? View.VISIBLE : View.GONE);
+            menuDivider.setVisibility(needle.isEmpty() && !selecting ? View.VISIBLE : View.INVISIBLE);
         }
-        selectionBar.setVisibility(selecting ? View.VISIBLE : View.GONE);
+        selectionBar.setVisibility(selecting ? View.VISIBLE : View.INVISIBLE);
         refreshTipRow();
         if (tipRow != null && selecting) tipRow.setVisibility(View.GONE);
 
@@ -2641,8 +2657,8 @@ public class MainActivity extends Activity implements SelectionHost {
         boolean showStats = homeMode == HomeMode.STATS && needle.isEmpty() && !statsLocked;
         boolean showChess = homeMode == HomeMode.CHESS && needle.isEmpty() && !selecting;
         if (statsPanel != null) {
-            statsPanel.view().setVisibility(showStats ? View.VISIBLE : View.GONE);
-            if (chessPanel != null) chessPanel.setVisibility(showChess ? View.VISIBLE : View.GONE);
+            statsPanel.view().setVisibility(showStats ? View.VISIBLE : View.INVISIBLE);
+            if (chessPanel != null) chessPanel.setVisibility(showChess ? View.VISIBLE : View.INVISIBLE);
             listView.setVisibility(showStats || showChess ? View.GONE : View.VISIBLE);
             if (showStats && !statsPanelShown) {
                 statsPanelShown = true;

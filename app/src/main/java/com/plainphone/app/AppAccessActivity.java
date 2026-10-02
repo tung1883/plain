@@ -58,16 +58,6 @@ public class AppAccessActivity extends Activity {
         root.addView(row("Usage access", AllAppsUsage.hasUsageAccess(this), null,
                 v -> startActivity(new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))));
 
-        boolean admin = ScreenLock.adminActive(this);
-        root.addView(row("Turn off screen", admin, null, v -> {
-            if (admin) {
-                ScreenLock.removeAdmin(this);
-                render();
-            } else {
-                ScreenLock.requestAdmin(this);
-            }
-        }));
-
         boolean files = FileIndex.canWalk(this) || DeviceSearch.canSearchFiles(this);
         root.addView(row("Files", files, null,
                 v -> DeviceSearch.requestFullFileAccess(this)));
@@ -150,20 +140,31 @@ public class AppAccessActivity extends Activity {
 
     private void chooseMode(String mode) {
         if (mode.equals(Config.getMonitorMode(this))) return;
+        boolean nerd = Config.MODE_NERD.equals(mode);
+
+        // Each mode needs its own switch flipped in Android settings. Ask first; switch only on Ok.
+        if (nerd && !AppMonitorService.isEnabled(this)) {
+            VaultUi.confirm(this, "Turn on Accessibility Service", null,
+                    "Ok", () -> {
+                        applyMode(mode);
+                        startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
+                    }, "Close", null);
+        } else if (!nerd && !AllAppsUsage.hasUsageAccess(this)) {
+            VaultUi.confirm(this, "Allow Usage access", null,
+                    "Ok", () -> {
+                        applyMode(mode);
+                        startActivity(new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS));
+                    }, "Close", null);
+        } else {
+            applyMode(mode);
+        }
+    }
+
+    private void applyMode(String mode) {
         Config.setMonitorMode(this, mode);
+        if (!Config.MODE_NERD.equals(mode)) AppMonitorService.disable();
         ForegroundWatcher.sync(this);
         render();
-
-        // Each mode needs its own switch flipped in Android settings; jump straight there.
-        if (Config.MODE_NERD.equals(mode)) {
-            if (!AppMonitorService.isEnabled(this)) {
-                startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
-            }
-        } else if (!AllAppsUsage.hasUsageAccess(this)) {
-            startActivity(new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS));
-        } else if (AppMonitorService.isEnabled(this)) {
-            startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));   // switch Plain off there
-        }
     }
 
     @Override

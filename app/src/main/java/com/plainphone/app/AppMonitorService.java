@@ -30,6 +30,12 @@ public class AppMonitorService extends AccessibilityService implements GateEngin
         }
     }
 
+    /** Switch the service off from inside the app; no permission needed. */
+    static void disable() {
+        AppMonitorService service = instance;
+        if (service != null) service.disableSelf();
+    }
+
     /** The system still has this service bound (it can take a moment to let go after being switched off). */
     static boolean isBound() {
         return instance != null;
