@@ -1294,8 +1294,8 @@ public class MainActivity extends Activity implements SelectionHost {
         if (chessMetaBlock == null) return;
         ChessLibrary.Entry e = chessCurrentEntry;
         boolean known = e != null;
-        chessMetaBlock.setVisibility(known ? View.VISIBLE : View.INVISIBLE);
-        chessPgnRow.setVisibility(known ? View.VISIBLE : View.INVISIBLE);
+        chessMetaBlock.setVisibility(known ? View.VISIBLE : View.GONE);
+        chessPgnRow.setVisibility(known ? View.VISIBLE : View.GONE);
         if (!known) return;
 
         chessMetaPlayers.setText(ChessBoardView.shortName(e.white) + " vs " + ChessBoardView.shortName(e.black));
@@ -1401,9 +1401,9 @@ public class MainActivity extends Activity implements SelectionHost {
     private void chessSelectTab(int index) {
         if (index == chessActiveTab) return;
         chessActiveTab = index;
-        chessBoardTabContent.setVisibility(index == 0 ? View.VISIBLE : View.INVISIBLE);
-        chessPuzzlesPanel.view().setVisibility(index == 1 ? View.VISIBLE : View.INVISIBLE);
-        chessLibraryPanel.view().setVisibility(index == 2 ? View.VISIBLE : View.INVISIBLE);
+        chessBoardTabContent.setVisibility(index == 0 ? View.VISIBLE : View.GONE);
+        chessPuzzlesPanel.view().setVisibility(index == 1 ? View.VISIBLE : View.GONE);
+        chessLibraryPanel.view().setVisibility(index == 2 ? View.VISIBLE : View.GONE);
         chessRestyleTabs();
         if (index == 1) chessPuzzlesPanel.onShown();
         if (index == 2) chessLibraryPanel.refresh();
@@ -2585,7 +2585,7 @@ public class MainActivity extends Activity implements SelectionHost {
         List<String> engineLines = chessBoard.engineSummary();
         for (int i = 0; i < chessEngineLines.length; i++) {
             boolean has = i < engineLines.size();
-            chessEngineLines[i].setVisibility(has ? View.VISIBLE : View.INVISIBLE);
+            chessEngineLines[i].setVisibility(has ? View.VISIBLE : View.GONE);
             if (has) chessEngineLines[i].setText(engineLines.get(i));
         }
         chessMovesGrid.refresh(); // comments render inline in the grid, right under their move
@@ -2622,7 +2622,7 @@ public class MainActivity extends Activity implements SelectionHost {
         List<String> engineLines = chessBoard.engineSummary();
         for (int i = 0; i < chessEngineLines.length; i++) {
             boolean has = i < engineLines.size();
-            chessEngineLines[i].setVisibility(has ? View.VISIBLE : View.INVISIBLE);
+            chessEngineLines[i].setVisibility(has ? View.VISIBLE : View.GONE);
             if (has) chessEngineLines[i].setText(engineLines.get(i));
         }
     }
@@ -2639,16 +2639,16 @@ public class MainActivity extends Activity implements SelectionHost {
 
         if (headerStrip != null) {
             boolean showStrip = needle.isEmpty() && !selecting;
-            headerStrip.setVisibility(showStrip ? View.VISIBLE : View.INVISIBLE);
+            headerStrip.setVisibility(showStrip ? View.VISIBLE : View.GONE);
             if (showStrip) modeToggleScroller.post(this::updateHeaderChevrons);
         }
         if (menuRow != null) {
-            menuRow.setVisibility(needle.isEmpty() && !selecting ? View.VISIBLE : View.INVISIBLE);
+            menuRow.setVisibility(needle.isEmpty() && !selecting ? View.VISIBLE : View.GONE);
         }
         if (menuDivider != null) {
-            menuDivider.setVisibility(needle.isEmpty() && !selecting ? View.VISIBLE : View.INVISIBLE);
+            menuDivider.setVisibility(needle.isEmpty() && !selecting ? View.VISIBLE : View.GONE);
         }
-        selectionBar.setVisibility(selecting ? View.VISIBLE : View.INVISIBLE);
+        selectionBar.setVisibility(selecting ? View.VISIBLE : View.GONE);
         refreshTipRow();
         if (tipRow != null && selecting) tipRow.setVisibility(View.GONE);
 
@@ -2657,8 +2657,8 @@ public class MainActivity extends Activity implements SelectionHost {
         boolean showStats = homeMode == HomeMode.STATS && needle.isEmpty() && !statsLocked;
         boolean showChess = homeMode == HomeMode.CHESS && needle.isEmpty() && !selecting;
         if (statsPanel != null) {
-            statsPanel.view().setVisibility(showStats ? View.VISIBLE : View.INVISIBLE);
-            if (chessPanel != null) chessPanel.setVisibility(showChess ? View.VISIBLE : View.INVISIBLE);
+            statsPanel.view().setVisibility(showStats ? View.VISIBLE : View.GONE);
+            if (chessPanel != null) chessPanel.setVisibility(showChess ? View.VISIBLE : View.GONE);
             listView.setVisibility(showStats || showChess ? View.GONE : View.VISIBLE);
             if (showStats && !statsPanelShown) {
                 statsPanelShown = true;
