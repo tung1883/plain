@@ -23,6 +23,37 @@ public class SearchSettingsActivity extends Activity {
     private LinearLayout root;
     private Typeface georgia;
 
+    private static final String[][] ENGINES = {
+            {"Google", "https://www.google.com/search?q=%s"},
+            {"DuckDuckGo", "https://duckduckgo.com/?q=%s"},
+            {"Bing", "https://www.bing.com/search?q=%s"},
+            {"Brave", "https://search.brave.com/search?q=%s"},
+            {"Startpage", "https://www.startpage.com/do/search?q=%s"},
+            {"Ecosia", "https://www.ecosia.org/search?q=%s"},
+            {"Yahoo", "https://search.yahoo.com/search?p=%s"},
+    };
+
+    private String engineName() {
+        String current = Config.getSearchEngine(this);
+        for (String[] engine : ENGINES) if (engine[1].equals(current)) return engine[0];
+        return "Custom";
+    }
+
+    private void showEngineMenu() {
+        String current = Config.getSearchEngine(this);
+        String[] labels = new String[ENGINES.length];
+        VaultUi.Choice[] choices = new VaultUi.Choice[ENGINES.length];
+        for (int i = 0; i < ENGINES.length; i++) {
+            String[] engine = ENGINES[i];
+            labels[i] = (engine[1].equals(current) ? "\u25CF " : "\u25CB ") + engine[0];
+            choices[i] = () -> {
+                Config.setSearchEngine(this, engine[1]);
+                render();
+            };
+        }
+        VaultUi.menu(this, "Search engine", labels, choices);
+    }
+
     private static class Entry {
         final String sortKey;
         final View view;
@@ -65,6 +96,9 @@ public class SearchSettingsActivity extends Activity {
         entries.add(new Entry("My web searches", row(
                 "My web searches" + (webTargets > 0 ? " (" + webTargets + ")" : ""),
                 v -> startActivity(new android.content.Intent(this, WebTargetsActivity.class)))));
+
+        entries.add(new Entry("Search engine", row(
+                "Search engine: " + engineName(), v -> showEngineMenu())));
 
         entries.add(new Entry("Lock search", row(
                 "Lock search: " + (Lock.SEARCH.isLocked(this) ? "On" : "Off"),

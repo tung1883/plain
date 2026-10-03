@@ -124,7 +124,7 @@ class Config {
     }
 
     static String getSearchEngine(Context context) {
-        return prefs(context).getString("search_engine", "https://www.google.com/search?q=%s");
+        return prefs(context).getString("search_engine", "https://duckduckgo.com/?q=%s");
     }
 
     static void setSearchEngine(Context context, String urlTemplate) {

@@ -1,7 +1,6 @@
 package com.plainphone.app;
 
 import android.app.Activity;
-import android.app.SearchManager;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
@@ -61,13 +60,9 @@ class WebSearch {
     }
 
     private static Intent targetIntent(Activity host, String browser, String typed, boolean isUrl) {
-        if (!isUrl) {
-            Intent search = new Intent(Intent.ACTION_WEB_SEARCH);
-            search.putExtra(SearchManager.QUERY, typed);
-            search.setPackage(browser);
-            if (search.resolveActivity(host.getPackageManager()) != null) return search;
-        }
-
+        // Always a plain URL, using the engine chosen in Search settings. ACTION_WEB_SEARCH would
+        // follow the browser's own engine, but Firefox answers it with "Invalid Address" when it
+        // is cold-started by that intent.
         String url = isUrl ? asUrl(typed) : searchUrl(host, typed);
         Intent view = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
         view.setPackage(browser);
