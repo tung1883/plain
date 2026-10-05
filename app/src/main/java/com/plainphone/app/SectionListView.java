@@ -62,9 +62,11 @@ final class SectionListView extends ListView {
 
     void refresh() {
         int y = getFirstVisiblePosition();
+        View first = getChildAt(0);
+        int offset = first != null ? first.getTop() : 0;
         rows.clear();
         if (provider != null) provider.fill(rows);
         adapter.notifyDataSetChanged();
-        if (y > 0 && y < rows.size()) setSelection(y);
+        if (y > 0 && y < rows.size()) setSelectionFromTop(y, offset);
     }
 }

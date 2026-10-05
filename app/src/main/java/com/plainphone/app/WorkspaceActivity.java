@@ -5,6 +5,7 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
+import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.os.Handler;
@@ -125,6 +126,16 @@ public class WorkspaceActivity extends Activity implements DevService.StateListe
     protected void onActivityResult(int req, int res, Intent data) {
         super.onActivityResult(req, res, data);
         SectionImports.onResult(this, req, res, data, () -> panelHost.notifyResumed());
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int req, String[] permissions, int[] results) {
+        super.onRequestPermissionsResult(req, permissions, results);
+        if (req != RecorderPanel.REQ_MIC) return;
+        boolean granted = results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED;
+        for (Panel p : panelHost.panels()) {
+            if (p.content instanceof RecorderPanel) ((RecorderPanel) p.content).onMicResult(granted);
+        }
     }
 
     @Override

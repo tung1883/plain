@@ -48,8 +48,7 @@ final class RecorderSection {
             rows.add(new SearchResult(K, "+ Import audio", null, -1,
                     () -> host.pickImport(HomeMode.RECORDER, "audio/*")));
         }
-        rows.add(new SearchResult(K, "+ New recording", null, -1,
-                () -> a.startActivity(new Intent(a, RecordActivity.class))));
+        rows.add(new SearchResult(K, "+ New recording", null, -1, host::startTake));
 
         String detail = RecorderService.isActive(a) ? RecorderService.activeDetail() : null;
         if (detail != null && android.os.SystemClock.elapsedRealtime() >= suppressCardUntil) {
@@ -82,12 +81,14 @@ final class RecorderSection {
     private static volatile long suppressCardUntil;
     private static final long SUPPRESS_MS = 1200;
 
+    static void suppressCard() {
+        suppressCardUntil = android.os.SystemClock.elapsedRealtime() + SUPPRESS_MS;
+    }
+
     private static SearchResult recordingCard(SectionHost host) {
-        Activity a = host.activity();
         boolean paused = RecorderService.activeRecordingPaused();
         return new SearchResult(SearchResult.Kind.RECORDING, "Recording",
-                fmtTime(RecorderService.activeRecordingElapsedMs()), -1,
-                () -> a.startActivity(new Intent(a, RecordActivity.class)))
+                fmtTime(RecorderService.activeRecordingElapsedMs()), -1, host::startTake)
                 .live()
                 .withAction(paused ? "▶" : "❚❚", () -> togglePause(host, paused))
                 .withAction("■", () -> stopActive(host));
@@ -134,7 +135,7 @@ final class RecorderSection {
     }
 
     private static void stopActive(SectionHost host) {
-        suppressCardUntil = android.os.SystemClock.elapsedRealtime() + SUPPRESS_MS;
+        suppressCard();
         Activity a = host.activity();
         a.startForegroundService(new Intent(a, RecorderService.class)
                 .setAction(RecorderService.ACTION_STOP));

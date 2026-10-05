@@ -1,6 +1,7 @@
 package com.plainphone.app;
 
 import android.app.Activity;
+import android.content.Intent;
 
 /**
  * What a home-plugin section ({@link TodoSection}, {@link NotesSection},
@@ -30,6 +31,12 @@ interface SectionHost {
 
     /** Open the vault unlock screen (unlock-only). The section re-renders on return. */
     void unlockVault();
+
+    /** "+ New recording" and the live card: home opens the full-screen take, a panel shows it inline. */
+    default void startTake() {
+        Activity a = activity();
+        a.startActivity(new Intent(a, RecordActivity.class));
+    }
 
     static SearchResult inert(SearchResult.Kind kind, String title) {
         return new SearchResult(kind, title, null, -1, () -> {});

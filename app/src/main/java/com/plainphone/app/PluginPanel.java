@@ -1,10 +1,10 @@
 package com.plainphone.app;
 
 import android.content.Context;
-import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
+import android.widget.LinearLayout;
 
 import java.util.Collection;
 import java.util.LinkedHashSet;
@@ -65,14 +65,16 @@ abstract class PluginPanel implements PanelContent, SelectionHost {
             list.refresh();
             return true;
         });
-        root.addView(list, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-
+        // Column like the home screen: selection bar on top (under the header), list below it.
         bar = new SelectionBar(ctx);
-        FrameLayout.LayoutParams bp = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-                Gravity.BOTTOM);
-        root.addView(bar, bp);
+        LinearLayout col = new LinearLayout(ctx);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.addView(bar, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        col.addView(list, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        root.addView(col, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
         Lock lk = lock();
         gate = new LockGate(ctx, "Tap to unlock " + title(), () -> {
