@@ -947,6 +947,37 @@ class Config {
         prefs(context).edit().putInt("chess_puzzlegen_cursor_" + scopeKey, cursor).apply();
     }
 
+    // --- puzzle generation on a computer (see ChessPcRunner) ---------------------
+
+    static final String CHESS_GEN_TARGET_PHONE = "phone";
+
+    /** "phone", or the id of the paired computer ({@link DevHost#id}) to generate on. */
+    static String getChessGenTarget(Context context) {
+        return prefs(context).getString("chess_gen_target", CHESS_GEN_TARGET_PHONE);
+    }
+
+    static void setChessGenTarget(Context context, String target) {
+        prefs(context).edit().putString("chess_gen_target", target).apply();
+    }
+
+    /** Engine depth preset for generating on a computer: 0 fast, 1 balanced (default), 2 deep. */
+    static int getChessPcDepth(Context context) {
+        return Math.max(0, Math.min(2, prefs(context).getInt("chess_pc_depth", 1)));
+    }
+
+    static void setChessPcDepth(Context context, int preset) {
+        prefs(context).edit().putInt("chess_pc_depth", preset).apply();
+    }
+
+    /** Use lichess's own (stricter) thresholds instead of the relaxed defaults. */
+    static boolean getChessPcStrict(Context context) {
+        return prefs(context).getBoolean("chess_pc_strict", false);
+    }
+
+    static void setChessPcStrict(Context context, boolean strict) {
+        prefs(context).edit().putBoolean("chess_pc_strict", strict).apply();
+    }
+
     /** Called after a PGN source is deleted from the library — line offsets across the whole
      *  file shift, so the ALL-scope cursor (and the deleted source's own, now-meaningless
      *  cursor) can no longer be trusted; both are cleared, forcing a from-scratch rescan next

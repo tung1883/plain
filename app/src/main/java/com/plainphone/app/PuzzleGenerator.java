@@ -28,6 +28,10 @@ final class PuzzleGenerator {
     private static final int DEFENSE_DEPTH = 10;  // opponent's forced defense in a mate line
 
     private static final double NON_MATE_WIN_THRESHOLD = 0.6;
+    // Upstream uses 0.6 / 0.7. Relaxed: on-device evals are shallow, so strict margins reject
+    // nearly every candidate (2000 games gave ~7 puzzles).
+    private static final double SWING_THRESHOLD = 0.4;     // win-chance jump that flags a candidate
+    private static final double ONLY_MOVE_MARGIN = 0.5;    // best vs second-best win-chance gap
     private static final Score MATE_SOON = Score.mate(15);
 
     private final StockfishEngine engine;
@@ -132,7 +136,7 @@ final class PuzzleGenerator {
     private boolean isValidAttack(NextPair pair, boolean winner) throws IOException {
         if (pair.secondScore == null) return true;
         if (isValidMateInOne(pair, winner)) return true;
-        return pair.bestScore.winChances() > pair.secondScore.winChances() + 0.7;
+        return pair.bestScore.winChances() > pair.secondScore.winChances() + ONLY_MOVE_MARGIN;
     }
 
     // --- cooking: verifying a forced line exists ---------------------------------------
@@ -215,7 +219,7 @@ final class PuzzleGenerator {
             ChessPuzzles.Puzzle p = tryMate(board, winner, meta, ply);
             return p != null ? StepResult.puzzle(p) : StepResult.score(score);
         }
-        if (score.ge(Score.cp(200)) && score.winChances() > prevScore.winChances() + 0.6) {
+        if (score.ge(Score.cp(200)) && score.winChances() > prevScore.winChances() + SWING_THRESHOLD) {
             if (score.lt(Score.cp(400)) && ChessRules.materialDiff(board, winner) > -1) return StepResult.score(score);
             ChessPuzzles.Puzzle p = tryAdvantage(board, winner, meta, ply);
             return p != null ? StepResult.puzzle(p) : StepResult.score(score);
@@ -239,7 +243,6 @@ final class PuzzleGenerator {
             solution = solution.subList(0, solution.size() - 1);
         }
         if (solution.size() <= 1) return null;   // discard a one-mover
-        if (solution.size() == 3) return null;   // discard a two-mover (no tiering to allow it)
         List<String> uci = new ArrayList<>();
         for (NextPair p : solution) uci.add(uciOf(p.bestMove));
         Score last = solution.get(solution.size() - 1).bestScore;

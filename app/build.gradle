@@ -45,6 +45,8 @@ android {
 
 dependencies {
     testImplementation("junit:junit:4.13.2")
+    // Real org.json for JVM tests (android.jar only has stubs that return null).
+    testImplementation("org.json:json:20231013")
 }
 
 // Stockfish binary isn't tracked in git (100MB) — fetch it from the GitHub release once,

@@ -40,6 +40,16 @@ final class ChessPuzzleJobs {
          *  clearing it the instant the last game finishes, so the job card gets to show it
          *  actually completed rather than just vanishing. */
         boolean done;
+        /** Running on a paired computer rather than on this phone (see {@link ChessPcRunner}). */
+        boolean onPc;
+        String pcLabel;
+        /** For an on-PC job: whether the link to the computer is up right now. */
+        boolean connected = true;
+        int etaSeconds = -1;
+        /** Set when a job on the PC failed; the card shows it until dismissed. */
+        String error;
+        /** A cancel was requested and is waiting for the PC (e.g. the link is down). */
+        boolean stopping;
     }
 
     static volatile Snapshot snapshot;
@@ -67,7 +77,7 @@ final class ChessPuzzleJobs {
     /** Same as {@link #start(Context)}, but scoped to a single PGN source label (as it appears
      *  on {@link ChessLibrary.Entry#src}) instead of the whole library. */
     static void start(Context context, String scopeSourceLabel) {
-        if (JobQueue.anyOfType(context, TYPE_PUZZLEGEN)) return;
+        if (JobQueue.anyOfType(context, TYPE_PUZZLEGEN) || ChessPcRunner.hasJob(context)) return;
         cancelRequested = false;
         String scope = scopeSourceLabel == null ? Config.CHESS_PUZZLEGEN_SCOPE_ALL : scopeSourceLabel;
         String label = Config.CHESS_PUZZLEGEN_SCOPE_ALL.equals(scope)
@@ -84,6 +94,10 @@ final class ChessPuzzleJobs {
     static volatile boolean cancelRequested;
 
     static void stop(Context context) {
+        if (ChessPcRunner.hasJob(context)) { // the job runs on a computer: ask it to stop
+            ChessPcRunner.cancel(context);
+            return;
+        }
         cancelRequested = true;
         for (JobQueue.Job job : JobQueue.pendingByType(context, TYPE_PUZZLEGEN)) {
             JobQueue.clear(context, job.id);
@@ -92,12 +106,14 @@ final class ChessPuzzleJobs {
     }
 
     static boolean isRunning(Context context) {
-        return JobQueue.anyOfType(context, TYPE_PUZZLEGEN);
+        return JobQueue.anyOfType(context, TYPE_PUZZLEGEN) || ChessPcJobs.running(context);
     }
 
     /** e.g. "generating puzzles — 4,213 of 30,419 games — 37 found" for the lock-dialog line
      *  and the notification text. */
     static String activeLabel(Context context) {
+        ChessPcJobs.Record pc = ChessPcJobs.current(context);
+        if (pc != null && pc.running()) return ChessPcRunner.label(context, pc);
         Snapshot s = snapshot;
         if (s == null || s.gamesTotal <= 0) return "generating puzzles";
         String scoped = Config.CHESS_PUZZLEGEN_SCOPE_ALL.equals(s.scope) ? "" : " (" + s.scope + ")";

@@ -76,6 +76,10 @@ final class ChessPuzzlesPanel {
     /** Call whenever the Puzzles tab becomes the visible one — the job card and puzzle count
      *  can both be stale from whatever happened while another tab was showing. */
     void onShown() {
+        // Brings an on-computer job's card back after a restart and reconnects to it if allowed.
+        // Only here, never from refreshHome(): resume() publishes, publishing refreshes the home
+        // card, and that used to loop until the stack overflowed.
+        ChessPcRunner.resume(host);
         if (homeView.getVisibility() == View.VISIBLE) refreshHome();
         else applyBoardScale();
     }
@@ -170,9 +174,18 @@ final class ChessPuzzlesPanel {
         ChessPuzzleJobs.Snapshot snap = ChessPuzzleJobs.snapshot;
         jobCard.setVisibility(snap != null ? View.VISIBLE : View.GONE);
         if (snap != null) {
-            jobTitle.setText(snap.done ? "Puzzle generation complete" : "Generating puzzles");
-            jobStat.setText(snap.done ? ChessPuzzleJobs.doneLabel(host) : ChessPuzzleJobs.activeLabel(host));
-            jobStop.setVisibility(snap.done ? View.GONE : View.VISIBLE);
+            String where = snap.onPc ? " on " + (snap.pcLabel != null ? snap.pcLabel : "PC") : "";
+            if (snap.error != null) {
+                jobTitle.setText("Puzzle generation failed" + where);
+                jobStat.setText(snap.error);
+                jobStop.setText("Dismiss");
+                jobStop.setVisibility(View.VISIBLE);
+            } else {
+                jobTitle.setText(snap.done ? "Puzzle generation complete" : "Generating puzzles" + where);
+                jobStat.setText(snap.done ? ChessPuzzleJobs.doneLabel(host) : ChessPuzzleJobs.activeLabel(host));
+                jobStop.setText(snap.stopping ? "Stopping… (tap again to give up waiting)" : "Stop");
+                jobStop.setVisibility(snap.done ? View.GONE : View.VISIBLE);
+            }
         }
         new Thread(() -> {
             int total = ChessPuzzles.count(host);
@@ -311,21 +324,129 @@ final class ChessPuzzlesPanel {
         android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(
                 host, R.style.Theme_PlainPhone_RoundedDialog).setView(scrim).create();
 
+        List<DevHost> pcs = DevHost.all(host);
+        if (!pcs.isEmpty()) {
+            TextView target = (TextView) genRow("", null);
+            TextView depth = (TextView) genRow("", null);
+            TextView strict = (TextView) genRow("", null);
+            Runnable refresh = () -> {
+                DevHost h = pcHost(pcs, Config.getChessGenTarget(host));
+                target.setText("Run on: " + (h != null ? h.label : "this phone"));
+                int vis = h != null ? View.VISIBLE : View.GONE;
+                depth.setVisibility(vis);
+                strict.setVisibility(vis);
+                depth.setText("Engine depth: " + PC_DEPTH_NAMES[Config.getChessPcDepth(host)]);
+                strict.setText("Thresholds: " + (Config.getChessPcStrict(host) ? "lichess (strict)" : "relaxed"));
+            };
+            target.setOnClickListener(v -> {
+                // cycle: phone -> each paired computer -> phone
+                DevHost cur = pcHost(pcs, Config.getChessGenTarget(host));
+                int i = cur == null ? -1 : pcs.indexOf(cur);
+                Config.setChessGenTarget(host, i + 1 < pcs.size() ? pcs.get(i + 1).id : Config.CHESS_GEN_TARGET_PHONE);
+                refresh.run();
+            });
+            depth.setOnClickListener(v -> {
+                Config.setChessPcDepth(host, (Config.getChessPcDepth(host) + 1) % 3);
+                refresh.run();
+            });
+            strict.setOnClickListener(v -> {
+                Config.setChessPcStrict(host, !Config.getChessPcStrict(host));
+                refresh.run();
+            });
+            box.addView(target);
+            box.addView(depth);
+            box.addView(strict);
+            refresh.run();
+        }
+
         box.addView(genRow("All games", v -> {
             dialog.dismiss();
-            ChessPuzzleJobs.start(host);
-            refreshHome();
+            startGeneration(Config.CHESS_PUZZLEGEN_SCOPE_ALL, pcs);
         }));
         for (ChessLibrary.SourceSummary s : sources) {
             box.addView(genRow(s.label + " (" + s.gameCount + ")", v -> {
                 dialog.dismiss();
-                ChessPuzzleJobs.start(host, s.label);
-                refreshHome();
+                startGeneration(s.label, pcs);
             }));
         }
         box.addView(genRow("Cancel", v -> dialog.dismiss()));
 
         UiKit.finishCentered(dialog, scrim);
+    }
+
+    private static final String[] PC_DEPTH_NAMES = {"fast (16)", "balanced (20)", "deep (24)"};
+
+    private static DevHost pcHost(List<DevHost> pcs, String targetId) {
+        for (DevHost h : pcs) if (h.id.equals(targetId)) return h;
+        return null;
+    }
+
+    /** Generator params for a computer job, from the depth/threshold presets. */
+    private java.util.Map<String, Object> pcParams() {
+        int[][] depths = {{16, 18, 12}, {20, 22, 16}, {24, 26, 18}};
+        int[] d = depths[Config.getChessPcDepth(host)];
+        java.util.Map<String, Object> p = new java.util.LinkedHashMap<>();
+        p.put("walk_depth", (long) d[0]);
+        p.put("pair_depth", (long) d[1]);
+        p.put("defense_depth", (long) d[2]);
+        if (Config.getChessPcStrict(host)) p.put("strict", Boolean.TRUE);
+        return p;
+    }
+
+    /** Start generating on this phone or on the chosen computer, per the dialog's "Run on". */
+    private void startGeneration(String scope, List<DevHost> pcs) {
+        if (ChessPuzzleJobs.isRunning(host)) {
+            android.widget.Toast.makeText(host, "A puzzle job is already running", android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
+        DevHost pc = pcHost(pcs, Config.getChessGenTarget(host));
+        if (pc == null) {
+            if (Config.CHESS_PUZZLEGEN_SCOPE_ALL.equals(scope)) ChessPuzzleJobs.start(host);
+            else ChessPuzzleJobs.start(host, scope);
+            refreshHome();
+            return;
+        }
+        android.app.AlertDialog[] wait = {null};
+        TextView status = new TextView(host);
+        status.setTextColor(Color.WHITE);
+        status.setTypeface(Fonts.current(host));
+        status.setTextSize(16);
+        status.setPadding(UiKit.dp(host, 24), UiKit.dp(host, 20), UiKit.dp(host, 24), UiKit.dp(host, 20));
+        status.setText("Connecting to " + pc.label + "\u2026");
+        wait[0] = new android.app.AlertDialog.Builder(host, R.style.Theme_PlainPhone_RoundedDialog)
+                .setView(status).setCancelable(false).create();
+        wait[0].show();
+        Runnable close = () -> { if (wait[0] != null && wait[0].isShowing()) wait[0].dismiss(); };
+        ChessPcRunner.start(host, pc.id, scope, pcParams(), 0, 0, new ChessPcRunner.StartListener() {
+            @Override public void onProgress(String text) { host.runOnUiThread(() -> status.setText(text)); }
+
+            @Override public void onNeedInstall(String pcLabel, Runnable go) {
+                host.runOnUiThread(() -> {
+                    close.run();
+                    new android.app.AlertDialog.Builder(host, R.style.Theme_PlainPhone_RoundedDialog)
+                            .setTitle("Install Stockfish?")
+                            .setMessage(pcLabel + " doesn't have a chess engine yet. plaind can download Stockfish "
+                                    + "(about 80 MB) into its own folder on that computer.")
+                            .setPositiveButton("Install", (d, w) -> {
+                                wait[0].show();
+                                go.run();
+                            })
+                            .setNegativeButton("Cancel", null)
+                            .show();
+                });
+            }
+
+            @Override public void onFailed(String reason) {
+                host.runOnUiThread(() -> {
+                    close.run();
+                    android.widget.Toast.makeText(host, reason, android.widget.Toast.LENGTH_LONG).show();
+                });
+            }
+
+            @Override public void onStarted() {
+                host.runOnUiThread(() -> { close.run(); refreshHome(); });
+            }
+        });
     }
 
     private View genRow(String label, View.OnClickListener onClick) {

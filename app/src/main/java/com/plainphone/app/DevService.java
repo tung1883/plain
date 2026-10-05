@@ -250,6 +250,7 @@ public class DevService extends Service {
                         lastError = null;
                         link.state = State.CONNECTED;
                         link.caps = caps;
+                        ChessPcRunner.onLinkUp(DevService.this, link.host.id, link.conn, caps);
                         if (DevHost.CLIP_AUTO.equals(link.host.clipMode)
                                 && caps != null && caps.contains(DevProtocol.CAP_CLIP)) {
                             startClipWatch(link);
@@ -259,6 +260,7 @@ public class DevService extends Service {
 
                     @Override
                     public void onDisconnected(String reason) {
+                        ChessPcRunner.onLinkDown(DevService.this, link.host.id);
                         lastError = reason;
                         if (link.stopped || !links.containsKey(link.host.id)) {
                             publish();

@@ -96,6 +96,25 @@ final class DevProtocol {
     static final String T_SYNC_GET_END = "sync.get.end";
     static final String T_SYNC_DELETE = "sync.delete";
     static final String T_SYNC_DELETE_DONE = "sync.delete.done";
+    static final String T_CHESS_STATUS = "chess.status";
+    static final String T_CHESS_INSTALL = "chess.install";
+    static final String T_CHESS_INSTALL_PROGRESS = "chess.install.progress";
+    static final String T_CHESS_INSTALL_DONE = "chess.install.done";
+    static final String T_CHESS_JOB_START = "chess.job.start";
+    static final String T_CHESS_JOB_STARTED = "chess.job.started";
+    static final String T_CHESS_GAMES = "chess.games";
+    static final String T_CHESS_GAMES_ACK = "chess.games.ack";
+    static final String T_CHESS_GAMES_END = "chess.games.end";
+    static final String T_CHESS_ATTACH = "chess.attach";
+    static final String T_CHESS_DETACH = "chess.detach";
+    static final String T_CHESS_RESULTS = "chess.results";
+    static final String T_CHESS_PROGRESS = "chess.progress";
+    static final String T_CHESS_ACK = "chess.ack";
+    static final String T_CHESS_JOB_LIST = "chess.job.list";
+    static final String T_CHESS_CANCEL = "chess.cancel";
+    static final String T_CHESS_JOB_REMOVE = "chess.job.remove";
+    static final String T_CHESS_JOB_REMOVED = "chess.job.removed";
+    static final String T_CHESS_ERROR = "chess.error";
 
     static final String CAP_PTY = "pty";
     static final String CAP_SCREEN = "screen";
@@ -104,6 +123,8 @@ final class DevProtocol {
     static final String CAP_METRICS = "metrics";
     static final String CAP_CLIP = "clip";
     static final String CAP_SYNC = "sync";
+    /** Daemon can run chess puzzle-generation jobs ({@code chess.*}). */
+    static final String CAP_CHESS = "chess";
     /** Daemon can hash a chosen set of files ({@code sync.hash}). */
     static final String CAP_SYNC_HASH = "sync_hash";
 
@@ -467,6 +488,95 @@ final class DevProtocol {
         Map<String, Object> m = msg(T_SYNC_DELETE);
         m.put("ch", ch);
         m.put("path", path);
+        return m;
+    }
+
+    // ---- chess puzzle generation (see PROTOCOL.md "chess puzzles") --------
+
+    static Map<String, Object> chessStatus(long ch) {
+        Map<String, Object> m = msg(T_CHESS_STATUS);
+        m.put("ch", ch);
+        return m;
+    }
+
+    static Map<String, Object> chessInstall(long ch) {
+        Map<String, Object> m = msg(T_CHESS_INSTALL);
+        m.put("ch", ch);
+        return m;
+    }
+
+    /** {@code params} may be null (daemon defaults); {@code workers}/{@code hashMb} 0 = daemon default. */
+    static Map<String, Object> chessJobStart(long ch, String job, int total, int workers,
+                                             int hashMb, Map<String, Object> params) {
+        Map<String, Object> m = msg(T_CHESS_JOB_START);
+        m.put("ch", ch);
+        m.put("job", job);
+        m.put("total", (long) total);
+        if (workers > 0) m.put("workers", (long) workers);
+        if (hashMb > 0) m.put("hash_mb", (long) hashMb);
+        if (params != null && !params.isEmpty()) m.put("params", params);
+        return m;
+    }
+
+    /** {@code games}: list of {id,src,white,black,event,date,sans:[…]} maps — keep each frame
+     *  under {@link #MAX_FRAME} (see {@link #CHESS_GAMES_CHUNK_BYTES}). */
+    static Map<String, Object> chessGames(long ch, String job, List<Object> games) {
+        Map<String, Object> m = msg(T_CHESS_GAMES);
+        m.put("ch", ch);
+        m.put("job", job);
+        m.put("games", games);
+        return m;
+    }
+
+    /** Soft cap on the encoded size of one {@code chess.games} frame. */
+    static final int CHESS_GAMES_CHUNK_BYTES = 512 * 1024;
+
+    static Map<String, Object> chessGamesEnd(long ch, String job) {
+        Map<String, Object> m = msg(T_CHESS_GAMES_END);
+        m.put("ch", ch);
+        m.put("job", job);
+        return m;
+    }
+
+    static Map<String, Object> chessAttach(long ch, String job, long afterSeq) {
+        Map<String, Object> m = msg(T_CHESS_ATTACH);
+        m.put("ch", ch);
+        m.put("job", job);
+        m.put("after", afterSeq);
+        return m;
+    }
+
+    static Map<String, Object> chessDetach(long ch) {
+        Map<String, Object> m = msg(T_CHESS_DETACH);
+        m.put("ch", ch);
+        return m;
+    }
+
+    static Map<String, Object> chessAck(long ch, String job, long upto) {
+        Map<String, Object> m = msg(T_CHESS_ACK);
+        m.put("ch", ch);
+        m.put("job", job);
+        m.put("upto", upto);
+        return m;
+    }
+
+    static Map<String, Object> chessJobList(long ch) {
+        Map<String, Object> m = msg(T_CHESS_JOB_LIST);
+        m.put("ch", ch);
+        return m;
+    }
+
+    static Map<String, Object> chessCancel(long ch, String job) {
+        Map<String, Object> m = msg(T_CHESS_CANCEL);
+        m.put("ch", ch);
+        m.put("job", job);
+        return m;
+    }
+
+    static Map<String, Object> chessJobRemove(long ch, String job) {
+        Map<String, Object> m = msg(T_CHESS_JOB_REMOVE);
+        m.put("ch", ch);
+        m.put("job", job);
         return m;
     }
 
