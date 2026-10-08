@@ -167,6 +167,11 @@ class UiKit {
     /** A "← Title" bar: left arrow (calls {@code onBackPressed()}) + screen title.
      *  The arrow's tip sits at {@link #BODY_INSET_PX}, flush with row text. */
     static android.widget.LinearLayout header(android.app.Activity a, String title) {
+        return header(a, title, null);
+    }
+
+    /** Same as {@link #header(android.app.Activity, String)}, with an optional {@code trailing} view on the right. */
+    static android.widget.LinearLayout header(android.app.Activity a, String title, View trailing) {
         android.widget.LinearLayout bar = new android.widget.LinearLayout(a);
         bar.setOrientation(android.widget.LinearLayout.HORIZONTAL);
         bar.setGravity(android.view.Gravity.CENTER_VERTICAL);
@@ -186,15 +191,27 @@ class UiKit {
         t.setPadding(dp(a, 4), 0, dp(a, 16), 0);
         bar.addView(t, new android.widget.LinearLayout.LayoutParams(
                 0, android.view.ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        if (trailing != null) {
+            android.widget.LinearLayout.LayoutParams tp = new android.widget.LinearLayout.LayoutParams(
+                    android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
+                    android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
+            tp.rightMargin = dp(a, 12);
+            bar.addView(trailing, tp);
+        }
         return bar;
     }
 
     /** Wrap {@code content} under a "← Title" bar + hairline and set it as the content view. */
     static void screen(android.app.Activity a, String title, View content) {
+        screen(a, title, content, null);
+    }
+
+    /** As {@link #screen(android.app.Activity, String, View)}, with a {@code trailing} view on the header's right. */
+    static void screen(android.app.Activity a, String title, View content, View trailing) {
         android.widget.LinearLayout col = new android.widget.LinearLayout(a);
         col.setOrientation(android.widget.LinearLayout.VERTICAL);
         col.setBackgroundColor(Color.BLACK);
-        col.addView(header(a, title), new android.widget.LinearLayout.LayoutParams(
+        col.addView(header(a, title, trailing), new android.widget.LinearLayout.LayoutParams(
                 android.view.ViewGroup.LayoutParams.MATCH_PARENT,
                 android.view.ViewGroup.LayoutParams.WRAP_CONTENT));
         View hair = new View(a);

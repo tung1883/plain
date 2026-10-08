@@ -21,3 +21,7 @@ PLAN.md
 
 # fetched by app/build.gradle:fetchStockfish, not tracked (100MB binary)
 app/src/main/jniLibs/arm64-v8a/libstockfish.so
+
+# sandbox packs: zips are published as GitHub releases; the 22MB headers are not tracked
+sandbox-packs/dist/
+sandbox-packs/c/tcc/sysinc/

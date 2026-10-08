@@ -1,5 +1,18 @@
 plugins {
     id("com.android.application")
+    id("com.chaquo.python")
+}
+
+// Python for the Dev → Sandbox runner. Runs in its own process (see :sandbox_py in the manifest)
+// so the app can kill a runaway script.
+chaquopy {
+    defaultConfig {
+        version "3.12"
+        buildPython "C:/Users/Tung/AppData/Local/Programs/Python/Python312/python.exe"
+        pip {
+            install "pyflakes==3.2.0"
+        }
+    }
 }
 
 android {

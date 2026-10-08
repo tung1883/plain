@@ -3006,6 +3006,8 @@ public class MainActivity extends Activity implements SelectionHost {
 
         rows.add(new SearchResult(SearchResult.Kind.DEV, "Dev settings", null, -1,
                 () -> startActivity(new Intent(this, DevSettingsActivity.class))));
+        rows.add(new SearchResult(SearchResult.Kind.DEV, "Sandbox", "Write and run C on this phone", -1,
+                () -> startActivity(new Intent(this, SandboxActivity.class))));
 
         rows.add(new SearchResultsAdapter.Header("Devices"));
         java.util.List<DevHost> devHosts = DevHost.all(this);

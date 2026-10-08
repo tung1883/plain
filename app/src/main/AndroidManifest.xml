@@ -502,6 +502,22 @@
             android:exported="false"
             android:theme="@style/Theme.PlainPhone" />
 
+        <activity
+            android:name=".SandboxActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
+            android:name=".TerminalActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <!-- Python for the Sandbox runs here, not in the app process, so a runaway script can be killed. -->
+        <service
+            android:name=".SandboxPyService"
+            android:process=":sandbox_py"
+            android:exported="false" />
+
         <service
             android:name=".DevService"
             android:exported="false"
