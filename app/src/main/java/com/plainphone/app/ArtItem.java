@@ -16,6 +16,7 @@ final class ArtItem {
     String name;        // display name for the settings row
     float fx = 0.5f, fy = 0.5f, zoom = 1f;
     boolean gray = true;
+    int turns;          // clockwise quarter turns, 0..3
 
     boolean isGif() {
         return "gif".equals(kind);
@@ -36,6 +37,7 @@ final class ArtItem {
             o.put("fy", fy);
             o.put("zoom", zoom);
             o.put("gray", gray);
+            o.put("turns", turns);
         } catch (JSONException ignored) {
         }
         return o;
@@ -51,6 +53,7 @@ final class ArtItem {
         it.fy = (float) o.optDouble("fy", 0.5);
         it.zoom = (float) o.optDouble("zoom", 1.0);
         it.gray = o.optBoolean("gray", true);
+        it.turns = Math.floorMod(o.optInt("turns", 0), 4);
         return it;
     }
 }

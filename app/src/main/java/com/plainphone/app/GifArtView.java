@@ -39,6 +39,7 @@ class GifArtView extends View implements CropArt {
     private Movie movie;
     private boolean grayscale;
     private boolean staticFrame;
+    private int turns;
     private float focusX = 0.5f, focusY = 0.5f, zoom = 1f;
     private long startTime = 0;
 
@@ -82,6 +83,19 @@ class GifArtView extends View implements CropArt {
     public float getFocusY() { return focusY; }
     public float getZoom() { return zoom; }
     public void setZoom(float z) { zoom = z; }
+    public int getQuarterTurns() { return turns; }
+
+    public void setQuarterTurns(int t) {
+        t = Math.floorMod(t, 4);
+        if (t == turns) return;
+        turns = t;
+        invalidate();
+    }
+
+    /** Movie size as shown, after the quarter turns. */
+    private float shownW() { return (turns & 1) == 0 ? movie.width() : movie.height(); }
+
+    private float shownH() { return (turns & 1) == 0 ? movie.height() : movie.width(); }
 
     void setGrayscale(boolean g) {
         if (grayscale != g) { grayscale = g; invalidate(); }
@@ -90,12 +104,12 @@ class GifArtView extends View implements CropArt {
     public void panBy(float dx, float dy) {
         if (movie == null || getWidth() <= 0 || getHeight() <= 0) return;
         float scale = coverScale() * zoom;
-        focusX = clamp01(focusX - dx / scale / movie.width());
-        focusY = clamp01(focusY - dy / scale / movie.height());
+        focusX = clamp01(focusX - dx / scale / shownW());
+        focusY = clamp01(focusY - dy / scale / shownH());
     }
 
     private float coverScale() {
-        return Math.max(getWidth() / (float) movie.width(), getHeight() / (float) movie.height());
+        return Math.max(getWidth() / shownW(), getHeight() / shownH());
     }
 
     private static float clamp01(float v) {
@@ -164,8 +178,8 @@ class GifArtView extends View implements CropArt {
         }
 
         float scale = coverScale() * zoom;
-        float drawnW = movie.width() * scale;
-        float drawnH = movie.height() * scale;
+        float drawnW = shownW() * scale;
+        float drawnH = shownH() * scale;
         float left = clampSpan(getWidth() / 2f - focusX * drawnW, getWidth() - drawnW);
         float top = clampSpan(getHeight() / 2f - focusY * drawnH, getHeight() - drawnH);
 
@@ -176,6 +190,9 @@ class GifArtView extends View implements CropArt {
         canvas.clipRect(0, 0, getWidth(), getHeight());
         canvas.translate(left, top);
         canvas.scale(scale, scale);
+        if (turns == 1) { canvas.translate(movie.height(), 0); canvas.rotate(90); }
+        else if (turns == 2) { canvas.translate(movie.width(), movie.height()); canvas.rotate(180); }
+        else if (turns == 3) { canvas.translate(0, movie.width()); canvas.rotate(270); }
         movie.draw(canvas, 0, 0);
         canvas.restoreToCount(layer);
 

@@ -74,6 +74,13 @@ final class ArtGallery {
         replace(context, it);
     }
 
+    static void setTurns(Context context, String id, int turns) {
+        ArtItem it = get(context, id);
+        if (it == null) return;
+        it.turns = Math.floorMod(turns, 4);
+        replace(context, it);
+    }
+
     static void setGray(Context context, String id, boolean gray) {
         ArtItem it = get(context, id);
         if (it == null) return;
@@ -187,6 +194,18 @@ final class ArtGallery {
         if (sel.isEmpty()) return null;
         int idx = Math.floorMod(Config.getArtSlideIndex(context), sel.size());
         return sel.get(idx);
+    }
+
+    /** Manual step (-1 / +1) to a neighbour in the slideshow; restarts the auto-rotate timer. */
+    static void step(Context context, int delta) {
+        Config.setArtSlideIndex(context, Config.getArtSlideIndex(context) + delta);
+        Config.setArtSlideLastAdvance(context, System.currentTimeMillis());
+    }
+
+    /** Position of the shown item among the selected ones, 0-based, or -1 when none. */
+    static int currentPosition(Context context) {
+        int n = selectedIds(context).size();
+        return n == 0 ? -1 : Math.floorMod(Config.getArtSlideIndex(context), n);
     }
 
     static void advance(Context context) {

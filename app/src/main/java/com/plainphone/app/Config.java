@@ -633,28 +633,41 @@ class Config {
 
     // --- home art: per-scene crop + colour ("fx,fy,zoom,gray") --
 
+    /** {@code {fx, fy, zoom, gray, quarterTurns}} (stored as "fx,fy,zoom,gray,turns"). */
     static float[] getSceneCrop(Context context, GifScene scene) {
-        String v = prefs(context).getString("art_scene_crop_" + scene.name(), "0.5,0.5,1,1");
+        String v = prefs(context).getString("art_scene_crop_" + scene.name(), "0.5,0.5,1,1,0");
         String[] p = v.split(",");
         try {
             return new float[]{
                     Float.parseFloat(p[0]), Float.parseFloat(p[1]), Float.parseFloat(p[2]),
-                    p.length > 3 ? Float.parseFloat(p[3]) : 1f};
+                    p.length > 3 ? Float.parseFloat(p[3]) : 1f,
+                    p.length > 4 ? Float.parseFloat(p[4]) : 0f};
         } catch (Exception e) {
-            return new float[]{0.5f, 0.5f, 1f, 1f};
+            return new float[]{0.5f, 0.5f, 1f, 1f, 0f};
         }
     }
 
-    static void setSceneCrop(Context context, GifScene scene, float fx, float fy, float zoom) {
-        float gray = getSceneCrop(context, scene)[3];
+    private static void putSceneCrop(Context context, GifScene scene, float[] c) {
         prefs(context).edit().putString("art_scene_crop_" + scene.name(),
-                fx + "," + fy + "," + zoom + "," + gray).apply();
+                c[0] + "," + c[1] + "," + c[2] + "," + c[3] + "," + c[4]).apply();
+    }
+
+    static void setSceneCrop(Context context, GifScene scene, float fx, float fy, float zoom) {
+        float[] c = getSceneCrop(context, scene);
+        c[0] = fx; c[1] = fy; c[2] = zoom;
+        putSceneCrop(context, scene, c);
     }
 
     static void setSceneGray(Context context, GifScene scene, boolean gray) {
         float[] c = getSceneCrop(context, scene);
-        prefs(context).edit().putString("art_scene_crop_" + scene.name(),
-                c[0] + "," + c[1] + "," + c[2] + "," + (gray ? 1 : 0)).apply();
+        c[3] = gray ? 1 : 0;
+        putSceneCrop(context, scene, c);
+    }
+
+    static void setSceneTurns(Context context, GifScene scene, int turns) {
+        float[] c = getSceneCrop(context, scene);
+        c[4] = Math.floorMod(turns, 4);
+        putSceneCrop(context, scene, c);
     }
 
     // --- home art: gallery -------------------------------------

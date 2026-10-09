@@ -91,9 +91,11 @@ public class PixelSceneActivity extends Activity {
         list.addView(sectionHeader("My gallery"));
         for (ArtItem it : ArtGallery.all(this)) {
             final String key = it.id;
-            View preview = it.isGif()
+            CropArt art = it.isGif()
                     ? new GifArtView(this, it.file(this), it.fx, it.fy, it.zoom, it.gray)
                     : new PhotoArtView(this, Uri.fromFile(it.file(this)), it.fx, it.fy, it.zoom, it.gray);
+            art.setQuarterTurns(it.turns);
+            View preview = (View) art;
             checkableRow(key, it.name != null ? it.name : "Image", preview,
                     v -> openCrop("item:" + key),
                     () -> showItemOptions(key));
@@ -105,6 +107,7 @@ public class PixelSceneActivity extends Activity {
             final String key = "scene:" + s.name();
             float[] c = Config.getSceneCrop(this, s);
             GifArtView preview = new GifArtView(this, s, c[0], c[1], c[2], c[3] != 0f);
+            preview.setQuarterTurns((int) c[4]);
             checkableRow(key, s.label, preview,
                     v -> openCrop(key),
                     () -> showSceneOptions(s));

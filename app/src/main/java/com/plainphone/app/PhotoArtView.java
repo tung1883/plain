@@ -29,6 +29,7 @@ class PhotoArtView extends View implements CropArt {
     private float focusY;
     private float zoom;
     private boolean gray;
+    private int turns;
 
     PhotoArtView(Context context, Uri uri, float focusX, float focusY, float zoom) {
         this(context, uri, focusX, focusY, zoom, true);
@@ -59,6 +60,26 @@ class PhotoArtView extends View implements CropArt {
         this.zoom = zoom;
     }
 
+    public int getQuarterTurns() {
+        return turns;
+    }
+
+    public void setQuarterTurns(int t) {
+        t = Math.floorMod(t, 4);
+        if (t == turns) return;
+        turns = t;
+        invalidate();
+    }
+
+    /** Image size as shown, after the quarter turns. */
+    private float shownW() {
+        return (turns & 1) == 0 ? bitmap.getWidth() : bitmap.getHeight();
+    }
+
+    private float shownH() {
+        return (turns & 1) == 0 ? bitmap.getHeight() : bitmap.getWidth();
+    }
+
     void setGrayscale(boolean g) {
         if (gray != g) { gray = g; invalidate(); }
     }
@@ -66,12 +87,12 @@ class PhotoArtView extends View implements CropArt {
     public void panBy(float dx, float dy) {
         if (bitmap == null || getWidth() <= 0 || getHeight() <= 0) return;
         float scale = coverScale() * zoom;
-        focusX = clamp01(focusX - dx / scale / bitmap.getWidth());
-        focusY = clamp01(focusY - dy / scale / bitmap.getHeight());
+        focusX = clamp01(focusX - dx / scale / shownW());
+        focusY = clamp01(focusY - dy / scale / shownH());
     }
 
     private float coverScale() {
-        return Math.max(getWidth() / (float) bitmap.getWidth(), getHeight() / (float) bitmap.getHeight());
+        return Math.max(getWidth() / shownW(), getHeight() / shownH());
     }
 
     private static float clamp01(float v) {
@@ -117,8 +138,8 @@ class PhotoArtView extends View implements CropArt {
         if (bitmap == null || getWidth() <= 0 || getHeight() <= 0) return;
 
         float scale = coverScale() * zoom;
-        float drawnW = bitmap.getWidth() * scale;
-        float drawnH = bitmap.getHeight() * scale;
+        float drawnW = shownW() * scale;
+        float drawnH = shownH() * scale;
 
         float left = clampSpan(getWidth() / 2f - focusX * drawnW, getWidth() - drawnW);
         float top = clampSpan(getHeight() / 2f - focusY * drawnH, getHeight() - drawnH);
@@ -127,6 +148,9 @@ class PhotoArtView extends View implements CropArt {
         canvas.clipRect(0, 0, getWidth(), getHeight());
         canvas.translate(left, top);
         canvas.scale(scale, scale);
+        if (turns == 1) { canvas.translate(bitmap.getHeight(), 0); canvas.rotate(90); }
+        else if (turns == 2) { canvas.translate(bitmap.getWidth(), bitmap.getHeight()); canvas.rotate(180); }
+        else if (turns == 3) { canvas.translate(0, bitmap.getWidth()); canvas.rotate(270); }
         canvas.drawBitmap(bitmap, 0, 0, gray ? GRAYSCALE_PAINT : null);
         canvas.restore();
     }

@@ -22,16 +22,20 @@ final class ArtKit {
             try {
                 GifScene s = GifScene.valueOf(id.substring(6));
                 float[] c = Config.getSceneCrop(context, s);
-                return new GifArtView(context, s, c[0], c[1], c[2], c[3] != 0f);
+                GifArtView v = new GifArtView(context, s, c[0], c[1], c[2], c[3] != 0f);
+                v.setQuarterTurns((int) c[4]);
+                return v;
             } catch (Exception e) {
                 return null;
             }
         }
         ArtItem it = ArtGallery.get(context, id);
         if (it == null) return null;
-        return it.isGif()
+        CropArt v = it.isGif()
                 ? new GifArtView(context, it.file(context), it.fx, it.fy, it.zoom, it.gray)
                 : new PhotoArtView(context, Uri.fromFile(it.file(context)),
                         it.fx, it.fy, it.zoom, it.gray);
+        v.setQuarterTurns(it.turns);
+        return (View) v;
     }
 }

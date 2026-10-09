@@ -7,4 +7,7 @@ interface CropArt {
     float getZoom();
     void setZoom(float zoom);
     void panBy(float dx, float dy);
+    /** Clockwise quarter turns, 0..3. */
+    int getQuarterTurns();
+    void setQuarterTurns(int turns);
 }

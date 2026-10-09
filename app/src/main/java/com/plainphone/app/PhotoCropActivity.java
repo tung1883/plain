@@ -32,6 +32,7 @@ public class PhotoCropActivity extends Activity {
     private GifScene scene;      // set for a scene target
     private String itemId;       // set for a gallery target
     private boolean gray = true;
+    private int turns;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -47,12 +48,12 @@ public class PhotoCropActivity extends Activity {
                 scene = GifScene.valueOf(target.substring(6));
             } catch (Exception e) { finish(); return; }
             float[] c = Config.getSceneCrop(this, scene);
-            fx = c[0]; fy = c[1]; z = c[2]; gray = c[3] != 0f;
+            fx = c[0]; fy = c[1]; z = c[2]; gray = c[3] != 0f; turns = (int) c[4];
         } else if (target.startsWith("item:")) {
             itemId = target.substring(5);
             ArtItem it = ArtGallery.get(this, itemId);
             if (it == null) { finish(); return; }
-            fx = it.fx; fy = it.fy; z = it.zoom; gray = it.gray;
+            fx = it.fx; fy = it.fy; z = it.zoom; gray = it.gray; turns = it.turns;
         } else {
             finish();
             return;
@@ -80,6 +81,7 @@ public class PhotoCropActivity extends Activity {
                 previewView = p;
             }
         }
+        preview.setQuarterTurns(turns);
         frame.addView(previewView, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
@@ -161,21 +163,48 @@ public class PhotoCropActivity extends Activity {
                 Config.setSceneCrop(this, scene,
                         preview.getFocusX(), preview.getFocusY(), preview.getZoom());
                 Config.setSceneGray(this, scene, gray);
+                Config.setSceneTurns(this, scene, turns);
             } else {
                 ArtGallery.updateCrop(this, itemId,
                         preview.getFocusX(), preview.getFocusY(), preview.getZoom());
                 ArtGallery.setGray(this, itemId, gray);
+                ArtGallery.setTurns(this, itemId, turns);
             }
             setResult(RESULT_OK);
             finish();
         });
-        FrameLayout.LayoutParams setParams = new FrameLayout.LayoutParams(
+        Button rotL = new Button(this);
+        rotL.setText("\u21BA");
+        UiKit.style(this, rotL);
+        rotL.setOnClickListener(v -> rotate(-1));
+        Button rotR = new Button(this);
+        rotR.setText("\u21BB");
+        UiKit.style(this, rotR);
+        rotR.setOnClickListener(v -> rotate(1));
+
+        LinearLayout bar = new LinearLayout(this);
+        bar.setOrientation(LinearLayout.HORIZONTAL);
+        bar.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams gap = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        gap.leftMargin = 24;
+        gap.rightMargin = 24;
+        bar.addView(rotL);
+        bar.addView(set, gap);
+        bar.addView(rotR);
+        FrameLayout.LayoutParams barParams = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT);
-        setParams.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
-        setParams.bottomMargin = 64;
-        root.addView(set, setParams);
+        barParams.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
+        barParams.bottomMargin = 64;
+        root.addView(bar, barParams);
 
         setContentView(root);
+    }
+
+    private void rotate(int delta) {
+        turns = Math.floorMod(turns + delta, 4);
+        preview.setQuarterTurns(turns);
+        previewView.invalidate();
     }
 
     private float clampZoom(float zoom) {
