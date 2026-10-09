@@ -81,6 +81,10 @@ final class TerminalEmulator {
     // parser
     private int parseState = GROUND;
     private final StringBuilder csi = new StringBuilder();
+    /** Receives the payload of private OSC 7770 strings (a program talking to the app embedding it). */
+    java.util.function.Consumer<String> onHostCommand;
+    private final StringBuilder oscBuf = new StringBuilder();
+    private boolean oscCollect;
     private static final int GROUND = 0, ESC = 1, CSI = 2, OSC = 3, CHARSET = 4, OSC_ESC = 5;
 
     private final StringBuilder utf8 = new StringBuilder();
@@ -314,7 +318,7 @@ final class TerminalEmulator {
             case CSI: csiByte(b); break;
             case OSC: osc(b); break;
             case OSC_ESC: // ESC \ ends the string; any other ESC aborts it and starts a new escape
-                if (b == '\\') parseState = GROUND; else { parseState = ESC; esc(b); }
+                if (b == '\\') finishOsc(); else { parseState = ESC; esc(b); }
                 break;
             case CHARSET: parseState = GROUND; break; // consume the set designator
         }
@@ -352,7 +356,10 @@ final class TerminalEmulator {
             // OSC, and DCS / SOS / PM / APC: swallow the payload up to BEL / ST
             // instead of printing it (tmux, zellij and ConPTY emit DCS / APC).
             case ']': case 'P': case 'X': case '^': case '_':
-                parseState = OSC; csi.setLength(0); return;
+                parseState = OSC; csi.setLength(0);
+                oscCollect = b == ']' && onHostCommand != null;
+                oscBuf.setLength(0);
+                return;
             case '(': case ')': case '*': case '+': parseState = CHARSET; return;
             case 'M': reverseLineFeed(); parseState = GROUND; return;
             case '7': savedX = cursorX; savedY = cursorY; parseState = GROUND; return;
@@ -364,9 +371,19 @@ final class TerminalEmulator {
     }
 
     private void osc(int b) {
-        if (b == 0x07) { parseState = GROUND; return; }        // BEL terminator
+        if (b == 0x07) { finishOsc(); return; }                // BEL terminator
         if (b == 0x1b) { parseState = OSC_ESC; return; }       // ST = ESC \
-        // ignore the payload (window title etc.)
+        if (oscCollect && oscBuf.length() < (1 << 20)) oscBuf.append((char) b); // other payloads (titles) are ignored
+    }
+
+    private void finishOsc() {
+        parseState = GROUND;
+        if (oscCollect && onHostCommand != null && oscBuf.indexOf("7770;") == 0) {
+            String cmd = oscBuf.substring(5);
+            oscCollect = false;
+            onHostCommand.accept(cmd);
+        }
+        oscBuf.setLength(0);
     }
 
     private void csiByte(int b) {

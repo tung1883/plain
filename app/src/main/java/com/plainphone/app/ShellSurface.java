@@ -28,6 +28,8 @@ final class ShellSurface extends LinearLayout {
         default void onReconnecting(boolean on) {}
         default void onTitle(String name) {}
         default void onExit(int code) {}
+        /** A local program asked the app for something (see {@link #startLocal}). */
+        default void onHostCommand(String cmd) {}
     }
 
     private final TerminalView term;
@@ -36,6 +38,8 @@ final class ShellSurface extends LinearLayout {
     private long keyBarShownAt;
 
     private DevConnection connection;
+    /** A program on a local pty instead of a daemon session (see {@link #startLocal}). */
+    private PtyProcess local;
     private long channel = -1;
     private long sessionId = -1;
     private boolean opening;
@@ -55,6 +59,10 @@ final class ShellSurface extends LinearLayout {
         term = new TerminalView(ctx);
         term.setPadding(dp(10), 0, 0, 0); // breathing room on the left edge
         term.onInput = (bytes, seq) -> {
+            if (local != null) {
+                local.write(bytes);
+                return;
+            }
             if (channel >= 0 && connection != null) {
                 if (echoPendingSince == 0) echoPendingSince = SystemClock.uptimeMillis();
                 connection.send(connection.hasCap("echo_ack")
@@ -62,8 +70,13 @@ final class ShellSurface extends LinearLayout {
                         : DevProtocol.ptyData(channel, bytes));
             }
         };
+        term.onHostCommand = c -> cb.onHostCommand(c);
         term.rtt = () -> connection != null ? connection.srttMs() : -1;
         term.onResize = (cols, rows) -> {
+            if (local != null) {
+                local.resize(cols, rows);
+                return;
+            }
             if (channel >= 0 && connection != null) connection.send(DevProtocol.ptyResize(channel, cols, rows));
         };
         addView(term, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
@@ -157,6 +170,39 @@ final class ShellSurface extends LinearLayout {
     }
 
     // --- connection --------------------------------------------------
+
+    /** Runs {@code libpman.so} with {@code args} on a local pty and shows it here. */
+    void startLocal(String[] args) {
+        closeLocal();
+        term.reset();
+        term.setEchoAck(false); // a local pty echoes at once; nothing to predict
+        try {
+            local = new PtyProcess(getContext(), Math.max(term.cols(), 20), Math.max(term.rows(), 6), args,
+                    new PtyProcess.Listener() {
+                        @Override public void onOutput(byte[] data) {
+                            post(() -> term.feed(data, data.length));
+                        }
+
+                        @Override public void onExit(int code) {
+                            post(() -> cb.onExit(code));
+                        }
+                    });
+        } catch (java.io.IOException e) {
+            cb.onExit(127);
+        }
+    }
+
+    /** Types a reply line to the local program (it reads it without echo). */
+    void replyLocal(String line) {
+        if (local != null) local.write((line + "\r").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    void closeLocal() {
+        if (local != null) {
+            local.close();
+            local = null;
+        }
+    }
 
     /** Link is up ({@code conn != null}) or gone ({@code null}). */
     void attach(DevConnection conn) {

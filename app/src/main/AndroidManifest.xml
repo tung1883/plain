@@ -512,6 +512,12 @@
             android:exported="false"
             android:theme="@style/Theme.PlainPhone" />
 
+        <activity
+            android:name=".DocsShellActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.PlainPhone" />
+
         <!-- Python for the Sandbox runs here, not in the app process, so a runaway script can be killed. -->
         <service
             android:name=".SandboxPyService"

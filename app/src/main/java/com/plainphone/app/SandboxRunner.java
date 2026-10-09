@@ -72,9 +72,18 @@ final class SandboxRunner {
      * Static checks only; nothing runs. C: tcc -Wall (compile to a scratch object). Python: pyflakes.
      * JS/TS: syntax check. Blocking; call off the main thread.
      */
+    private static final Object LINT_LOCK = new Object();
+
+    /** Static checks only. Has its own work folder and lock, so it can run beside a program and beside itself. */
     static Result lint(Context ctx, Lang lang, String source) {
+        synchronized (LINT_LOCK) {
+            return lintLocked(ctx, lang, source);
+        }
+    }
+
+    private static Result lintLocked(Context ctx, Lang lang, String source) {
         try {
-            File work = new File(ctx.getFilesDir(), "sandbox/work");
+            File work = new File(ctx.getFilesDir(), "sandbox/work-lint");
             deleteRecursively(work);
             if (!work.mkdirs()) return new Result(false, "cannot create " + work);
             File src = new File(work, lang.fileName);

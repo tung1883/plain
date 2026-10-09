@@ -50,6 +50,8 @@ final class TerminalView extends View {
     private int rows = 24;
 
     OnInput onInput;
+    /** A program on this terminal sent a private OSC 7770 command (see pman's host.rs). */
+    java.util.function.Consumer<String> onHostCommand;
     OnResize onResize;
     Rtt rtt;
     private long nextSeq = 1;
@@ -83,6 +85,9 @@ final class TerminalView extends View {
         applyFont();
 
         term = new TerminalEmulator(cols, rows, this::emit);
+        term.onHostCommand = cmd -> {
+            if (onHostCommand != null) onHostCommand.accept(cmd);
+        };
 
         scaleDetector = new ScaleGestureDetector(context,
                 new ScaleGestureDetector.SimpleOnScaleGestureListener() {
@@ -400,14 +405,20 @@ final class TerminalView extends View {
                 float dy = e.getY() - lastY;
                 lastY = e.getY();
                 if (Math.abs(e.getY() - downY) > touchSlop) touchMoved = true;
-                if (touchMoved && !term.onAlt()) {
+                if (touchMoved) {
                     scrollAccum += dy;
                     int steps = (int) (scrollAccum / charH);
                     if (steps != 0) {
                         scrollAccum -= steps * charH;
-                        scrollLines = Math.max(0,
-                                Math.min(term.scrollbackSize(), scrollLines + steps));
-                        invalidate();
+                        if (term.onAlt()) {
+                            // full-screen program (pager): finger drag becomes arrow keys
+                            byte[] key = (steps > 0 ? "\u001b[A" : "\u001b[B").getBytes(StandardCharsets.US_ASCII);
+                            for (int i = Math.min(Math.abs(steps), 20); i > 0; i--) send(key, false);
+                        } else {
+                            scrollLines = Math.max(0,
+                                    Math.min(term.scrollbackSize(), scrollLines + steps));
+                            invalidate();
+                        }
                     }
                 }
                 return true;
