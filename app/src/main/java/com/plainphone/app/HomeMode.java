@@ -9,7 +9,8 @@ enum HomeMode {
     VAULT("Vault"),
     DEV("Dev"),
     CHESS("Chess"),
-    WORKSPACE("Workspace");
+    WORKSPACE("Workspace"),
+    NAV("Nav");
 
     final String label;
 

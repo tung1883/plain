@@ -39,6 +39,13 @@ android {
         jniLibs { useLegacyPackaging true }
     }
 
+    // PMTiles does random byte-range reads into the archive (directory lookups, tile
+    // fetches) — needs the asset stored uncompressed so AssetManager can seek it directly,
+    // same reasoning as the jniLibs setting above for the Stockfish binary.
+    androidResources {
+        noCompress "pmtiles"
+    }
+
     buildTypes {
         release {
             minifyEnabled false
@@ -57,6 +64,9 @@ android {
 }
 
 dependencies {
+    // Offline map (nav plugin): renders local PMTiles archives, no network needed.
+    implementation("org.maplibre.gl:android-sdk:13.6.1")
+
     testImplementation("junit:junit:4.13.2")
     // Real org.json for JVM tests (android.jar only has stubs that return null).
     testImplementation("org.json:json:20231013")
