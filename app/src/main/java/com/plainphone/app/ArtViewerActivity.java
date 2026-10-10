@@ -86,7 +86,10 @@ public class ArtViewerActivity extends Activity {
             scaleDetector.onTouchEvent(event);
             gestureDetector.onTouchEvent(event);
 
-            if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+            int action = event.getActionMasked();
+            if (action == MotionEvent.ACTION_DOWN
+                    || action == MotionEvent.ACTION_POINTER_DOWN
+                    || action == MotionEvent.ACTION_POINTER_UP) {
                 lastTouch[0] = event.getRawX();
                 lastTouch[1] = event.getRawY();
             } else if (event.getActionMasked() == MotionEvent.ACTION_MOVE
