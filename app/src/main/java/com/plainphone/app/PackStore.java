@@ -343,6 +343,11 @@ final class PackStore {
         return !docPacks(ctx).isEmpty();
     }
 
+    /** True when the saved list is under a day old; an older one is refetched (and kept if offline). */
+    static boolean registryFresh(Context ctx) {
+        return hasRegistry(ctx) && System.currentTimeMillis() - registryFile(ctx).lastModified() < 24L * 3600 * 1000;
+    }
+
     /** Downloads the registry (blocking; call off the main thread) and keeps a copy for offline use. */
     static void refreshRegistry(Context ctx) throws IOException {
         HttpURLConnection c = (HttpURLConnection) new URL(REGISTRY_URL).openConnection();

@@ -57,11 +57,11 @@ public class DocsShellActivity extends Activity {
         }
         // The pack for the topic is the app's job: fetch the list if needed, ask, download.
         new Thread(() -> {
-            if (!PackStore.hasRegistry(this)) {
+            if (!PackStore.registryFresh(this)) {
                 try {
                     PackStore.refreshRegistry(this);
                 } catch (IOException ignored) {
-                    // offline: pman just reports that the topic is missing
+                    // offline: the saved list (if any) is used, else pman reports the topic as missing
                 }
             }
             runOnUiThread(() -> {

@@ -372,7 +372,7 @@ public class TerminalActivity extends Activity {
 
     /** Runs {@code r} on the UI thread once the pack list is known (downloaded the first time). */
     private void withRegistry(Runnable r) {
-        if (PackStore.hasRegistry(this)) {
+        if (PackStore.registryFresh(this)) {
             r.run();
             return;
         }
@@ -386,7 +386,7 @@ public class TerminalActivity extends Activity {
             }
             final String msg = err;
             runOnUiThread(() -> {
-                if (msg != null) println(msg, 0xFFE57373);
+                if (msg != null && !PackStore.hasRegistry(this)) println(msg, 0xFFE57373);
                 r.run();
             });
         }, "pack-registry").start();
