@@ -12,6 +12,8 @@ import android.hardware.SensorManager;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 
 /**
@@ -37,11 +39,27 @@ final class CompassPanel implements SensorEventListener {
         root = new FrameLayout(context);
         root.setBackgroundColor(Color.BLACK);
 
+        // Dial + reading + strength grouped as one vertically-stacked block (not three
+        // independently bottom/center-anchored overlays) — anchoring reading/strength to the
+        // root's own bottom edge let them drift up near the dial's lower rim on tall screens
+        // and cross its rotating 30°-interval degree labels (120, 150, ...) as the dial spun.
+        // Wrapped in a ScrollView (fillViewport so it still centers when content is short) —
+        // the dial + full accuracy message together can be taller than some screens, which was
+        // clipping the accuracy text instead of letting it scroll into view.
+        ScrollView scroll = new ScrollView(context);
+        scroll.setFillViewport(true);
+        root.addView(scroll, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+
+        LinearLayout column = new LinearLayout(context);
+        column.setOrientation(LinearLayout.VERTICAL);
+        column.setGravity(Gravity.CENTER);
+        scroll.addView(column, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+
         dial = new Dial(context);
-        FrameLayout.LayoutParams dialLp = new FrameLayout.LayoutParams(
-                UiKit.dp(context, 260), UiKit.dp(context, 260));
-        dialLp.gravity = Gravity.CENTER;
-        root.addView(dial, dialLp);
+        column.addView(dial, new LinearLayout.LayoutParams(
+                UiKit.dp(context, 260), UiKit.dp(context, 260)));
 
         reading = new TextView(context);
         reading.setTextColor(Color.WHITE);
@@ -49,11 +67,10 @@ final class CompassPanel implements SensorEventListener {
         reading.setTypeface(Fonts.current(context));
         reading.setGravity(Gravity.CENTER);
         reading.setText("—");
-        FrameLayout.LayoutParams readingLp = new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT);
-        readingLp.gravity = Gravity.CENTER_HORIZONTAL | Gravity.BOTTOM;
-        readingLp.bottomMargin = UiKit.dp(context, 72);
-        root.addView(reading, readingLp);
+        LinearLayout.LayoutParams readingLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        readingLp.topMargin = UiKit.dp(context, 12);
+        column.addView(reading, readingLp);
 
         // Raw magnetic field magnitude, like most phone compass apps show — a direct read on
         // interference: Earth's field is ~25-65 µT, so a reading well outside that range means
@@ -64,25 +81,26 @@ final class CompassPanel implements SensorEventListener {
         strengthLabel.setTextSize(12);
         strengthLabel.setTypeface(Fonts.current(context));
         strengthLabel.setGravity(Gravity.CENTER);
-        FrameLayout.LayoutParams strengthLp = new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT);
-        strengthLp.gravity = Gravity.CENTER_HORIZONTAL | Gravity.BOTTOM;
-        strengthLp.bottomMargin = UiKit.dp(context, 48);
-        root.addView(strengthLabel, strengthLp);
+        LinearLayout.LayoutParams strengthLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        strengthLp.topMargin = UiKit.dp(context, 4);
+        column.addView(strengthLabel, strengthLp);
 
         // Raw magnetometer accuracy — indoors, near metal/electronics, this sensor is
         // genuinely unreliable (every phone compass has this problem, not just this one).
         // Surfacing it directly instead of leaving a silently-wrong reading on screen.
+        // Last in the same centered column, below the µT reading — not a separate top/bottom
+        // overlay, so it never crosses the dial or the strength label.
         accuracyLabel = new TextView(context);
         accuracyLabel.setTextColor(0xFFAAAAAA);
         accuracyLabel.setTextSize(12);
         accuracyLabel.setTypeface(Fonts.current(context));
         accuracyLabel.setGravity(Gravity.CENTER);
-        FrameLayout.LayoutParams accuracyLp = new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT);
-        accuracyLp.gravity = Gravity.CENTER_HORIZONTAL | Gravity.BOTTOM;
-        accuracyLp.bottomMargin = UiKit.dp(context, 28);
-        root.addView(accuracyLabel, accuracyLp);
+        accuracyLabel.setPadding(UiKit.dp(context, 24), 0, UiKit.dp(context, 24), 0);
+        LinearLayout.LayoutParams accuracyLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        accuracyLp.topMargin = UiKit.dp(context, 8);
+        column.addView(accuracyLabel, accuracyLp);
 
         sensorManager = (SensorManager) context.getSystemService(Context.SENSOR_SERVICE);
         rotationSensor = sensorManager == null
@@ -258,13 +276,16 @@ final class CompassPanel implements SensorEventListener {
             }
             canvas.restore();
 
-            // Fixed pointer, not rotated — marks the phone's own forward direction.
+            // Fixed pointer, not rotated — marks the phone's own forward direction. Tip sits
+            // right on the ring, pointing inward, but shallow — it stops well short of the
+            // rotating degree-label band (drawn at r - 20dp), so it never touches a number.
             float pw = UiKit.dp(getContext(), 7);
-            float ptipY = cy - r - UiKit.dp(getContext(), 2);
+            float ptipY = cy - r + UiKit.dp(getContext(), 40);
+            float pbaseY = cy - r + UiKit.dp(getContext(), 52);
             android.graphics.Path p = new android.graphics.Path();
             p.moveTo(cx, ptipY);
-            p.lineTo(cx - pw, ptipY + UiKit.dp(getContext(), 16));
-            p.lineTo(cx + pw, ptipY + UiKit.dp(getContext(), 16));
+            p.lineTo(cx - pw, pbaseY);
+            p.lineTo(cx + pw, pbaseY);
             p.close();
             canvas.drawPath(p, pointer);
         }
