@@ -1,0 +1,10 @@
+{
+  "areas": [
+    {
+      "id": "vietnam",
+      "displayName": "Vietnam",
+      "sizeMb": 49,
+      "zipUrl": "https://github.com/tung1883/plain/releases/download/nav-areas-v1/vietnam-area.zip"
+    }
+  ]
+}
