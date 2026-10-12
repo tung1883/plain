@@ -248,9 +248,8 @@ final class CompassPanel implements SensorEventListener {
                 float y2 = cy - (float) Math.cos(a) * (r - UiKit.dp(getContext(), 10));
                 canvas.drawLine(x1, y1, x2, y2, tick);
                 float lx = cx + (float) Math.sin(a) * (r - UiKit.dp(getContext(), 26));
-                float ly = cy - (float) Math.cos(a) * (r - UiKit.dp(getContext(), 26))
-                        + label.getTextSize() / 3f;
-                canvas.drawText(dirs[i], lx, ly, i == 0 ? northLabel : label);
+                float ly = cy - (float) Math.cos(a) * (r - UiKit.dp(getContext(), 26));
+                drawUprightText(canvas, dirs[i], lx, ly, i == 0 ? northLabel : label);
             }
             for (int deg = 0; deg < 360; deg += 30) {
                 if (deg % 90 == 0) continue;
@@ -261,9 +260,8 @@ final class CompassPanel implements SensorEventListener {
                 float y2 = cy - (float) Math.cos(a) * (r - UiKit.dp(getContext(), 6));
                 canvas.drawLine(x1, y1, x2, y2, tick);
                 float lx = cx + (float) Math.sin(a) * (r - UiKit.dp(getContext(), 20));
-                float ly = cy - (float) Math.cos(a) * (r - UiKit.dp(getContext(), 20))
-                        + degreeLabel.getTextSize() / 3f;
-                canvas.drawText(String.valueOf(deg), lx, ly, degreeLabel);
+                float ly = cy - (float) Math.cos(a) * (r - UiKit.dp(getContext(), 20));
+                drawUprightText(canvas, String.valueOf(deg), lx, ly, degreeLabel);
             }
             for (int deg = 0; deg < 360; deg += 10) {
                 if (deg % 30 == 0) continue;
@@ -288,6 +286,16 @@ final class CompassPanel implements SensorEventListener {
             p.lineTo(cx + pw, pbaseY);
             p.close();
             canvas.drawPath(p, pointer);
+        }
+
+        /** Draws text at a point that orbits with the (already-rotated) dial, but counter-
+         *  rotates the glyphs themselves back to upright — so N/E/S/W and the degree numbers
+         *  stay readable right-side-up instead of tilting as the ring spins underneath. */
+        private void drawUprightText(Canvas canvas, String text, float x, float y, Paint paint) {
+            canvas.save();
+            canvas.rotate(azimuth, x, y);
+            canvas.drawText(text, x, y + paint.getTextSize() / 3f, paint);
+            canvas.restore();
         }
     }
 }
