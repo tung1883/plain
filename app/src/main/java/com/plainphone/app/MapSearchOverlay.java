@@ -257,7 +257,7 @@ final class MapSearchOverlay {
             return;
         }
         if (!PlaceIndex.isLoaded()) {
-            PlaceIndex.ensureLoaded(activity, () -> {
+            PlaceIndex.ensureLoaded(activity, MapAreas.ALL, () -> {
                 if (field.getText().toString().equals(query)) onQueryChanged(field, query);
             });
             return;
@@ -326,7 +326,7 @@ final class MapSearchOverlay {
         routeInfo.setText("Finding route...");
         routeInfo.setVisibility(View.VISIBLE);
 
-        RoadGraph.ensureLoaded(activity, ok -> {
+        RoadGraph.ensureLoaded(activity, MapAreas.ALL, ok -> {
             if (!ok) {
                 routeInfo.setText("Road data unavailable");
                 return;

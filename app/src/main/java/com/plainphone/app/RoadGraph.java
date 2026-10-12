@@ -10,11 +10,18 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 
-/** Lazy, process-wide driving-network graph for routing — loaded from
- *  {@code assets/map/roads.json} (built at dev time by {@code tools/nav/build_roads.py} from a
- *  raw OSM extract; the bundled vector tiles aren't used here since they clip/simplify road
- *  geometry at tile boundaries, which breaks clean topology).
+/** Lazy, process-wide driving-network graph for routing — the merge of every {@link MapArea} in
+ *  {@link MapAreas#ALL}'s {@code roads.json} (each built at dev time by
+ *  {@code tools/nav/build_roads.py} from a raw OSM extract; the bundled vector tiles aren't used
+ *  here since they clip/simplify road geometry at tile boundaries, which breaks clean topology).
+ *  Merging is just concatenating each area's node/edge arrays with that area's node ids offset
+ *  by the running node count — areas whose roads don't actually touch end up as separate
+ *  connected components in the same arrays, which is correct: A* genuinely can't route between
+ *  them without connecting road data, so a "no route found" there is the honest answer, not a
+ *  bug to work around.
  *
  * <p>Stored as primitive parallel arrays rather than a {@code List} of boxed node/edge objects —
  * a tens-of-thousands-of-nodes graph as boxed objects would be a real memory cost on a phone.
@@ -71,7 +78,7 @@ final class RoadGraph {
         return instance != null;
     }
 
-    static void ensureLoaded(Context context, OnLoaded callback) {
+    static void ensureLoaded(Context context, List<MapArea> areas, OnLoaded callback) {
         if (instance != null) {
             if (callback != null) callback.onLoaded(true);
             return;
@@ -82,7 +89,7 @@ final class RoadGraph {
         }
         Context appContext = context.getApplicationContext();
         new Thread(() -> {
-            RoadGraph loaded = load(appContext);
+            RoadGraph loaded = loadMerged(appContext, areas);
             instance = loaded;
             loading = false;
             if (callback != null) callback.onLoaded(loaded != null);
@@ -117,8 +124,73 @@ final class RoadGraph {
         return best;
     }
 
-    private static RoadGraph load(Context context) {
-        try (InputStream in = context.getAssets().open("map/roads.json")) {
+    private static RoadGraph loadMerged(Context context, List<MapArea> areas) {
+        List<double[]> latChunks = new ArrayList<>();
+        List<double[]> lonChunks = new ArrayList<>();
+        List<int[]> fromChunks = new ArrayList<>();
+        List<int[]> toChunks = new ArrayList<>();
+        List<float[]> lenChunks = new ArrayList<>();
+        int totalNodes = 0, totalEdges = 0;
+
+        for (MapArea area : areas) {
+            Loaded one = loadOne(context, area);
+            if (one == null) continue; // missing/corrupt roads.json for this area — skip it,
+                                        // don't fail the whole merge over one area.
+            // Offset this area's edges by the node count accumulated so far, so every area's
+            // node ids land in disjoint ranges of the merged arrays.
+            for (int i = 0; i < one.edgeFrom.length; i++) {
+                one.edgeFrom[i] += totalNodes;
+                one.edgeTo[i] += totalNodes;
+            }
+            latChunks.add(one.nodeLat);
+            lonChunks.add(one.nodeLon);
+            fromChunks.add(one.edgeFrom);
+            toChunks.add(one.edgeTo);
+            lenChunks.add(one.edgeLength);
+            totalNodes += one.nodeLat.length;
+            totalEdges += one.edgeFrom.length;
+        }
+
+        if (totalNodes == 0) return null;
+
+        double[] nodeLat = new double[totalNodes];
+        double[] nodeLon = new double[totalNodes];
+        int[] edgeFrom = new int[totalEdges];
+        int[] edgeTo = new int[totalEdges];
+        float[] edgeLength = new float[totalEdges];
+        int nodeOffset = 0, edgeOffset = 0;
+        for (int i = 0; i < latChunks.size(); i++) {
+            double[] lat = latChunks.get(i);
+            System.arraycopy(lat, 0, nodeLat, nodeOffset, lat.length);
+            System.arraycopy(lonChunks.get(i), 0, nodeLon, nodeOffset, lat.length);
+            nodeOffset += lat.length;
+
+            int[] from = fromChunks.get(i);
+            System.arraycopy(from, 0, edgeFrom, edgeOffset, from.length);
+            System.arraycopy(toChunks.get(i), 0, edgeTo, edgeOffset, from.length);
+            System.arraycopy(lenChunks.get(i), 0, edgeLength, edgeOffset, from.length);
+            edgeOffset += from.length;
+        }
+
+        return new RoadGraph(nodeLat, nodeLon, edgeFrom, edgeTo, edgeLength);
+    }
+
+    private static final class Loaded {
+        final double[] nodeLat, nodeLon;
+        final int[] edgeFrom, edgeTo;
+        final float[] edgeLength;
+
+        Loaded(double[] nodeLat, double[] nodeLon, int[] edgeFrom, int[] edgeTo, float[] edgeLength) {
+            this.nodeLat = nodeLat;
+            this.nodeLon = nodeLon;
+            this.edgeFrom = edgeFrom;
+            this.edgeTo = edgeTo;
+            this.edgeLength = edgeLength;
+        }
+    }
+
+    private static Loaded loadOne(Context context, MapArea area) {
+        try (InputStream in = context.getAssets().open(area.roadsAsset())) {
             String json = readAll(in);
             JSONObject root = new JSONObject(json);
             JSONObject nodes = root.getJSONObject("nodes");
@@ -146,7 +218,7 @@ final class RoadGraph {
                 edgeLength[i] = (float) lenArr.getDouble(i);
             }
 
-            return new RoadGraph(nodeLat, nodeLon, edgeFrom, edgeTo, edgeLength);
+            return new Loaded(nodeLat, nodeLon, edgeFrom, edgeTo, edgeLength);
         } catch (Exception e) {
             return null;
         }

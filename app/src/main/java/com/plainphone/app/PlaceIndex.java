@@ -17,12 +17,13 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 
-/** Lazy, process-wide index of {@code assets/map/places.json} (place names + coordinates,
- *  decoded at build time from the bundled Hanoi basemap's vector tiles — see
- *  {@code tools/nav/build_places.js}). Loaded once on a background thread since the asset is
- *  too large (thousands of rows) to parse on the UI thread without jank; a plain {@link Thread}
- *  is enough here — this is a bounded, fast, non-retryable one-shot parse, not the kind of
- *  resumable/retryable work {@link FileIndex} uses {@link JobQueue} for. */
+/** Lazy, process-wide index merging every {@link MapArea} in {@link MapAreas#ALL}'s
+ *  {@code places.json} (place names + coordinates, decoded at build time from that area's
+ *  basemap vector tiles — see {@code tools/nav/build_places.js}) into one searchable list.
+ *  Loaded once on a background thread since the combined asset is too large (thousands of
+ *  rows) to parse on the UI thread without jank; a plain {@link Thread} is enough here — this
+ *  is a bounded, fast, non-retryable one-shot parse, not the kind of resumable/retryable work
+ *  {@link FileIndex} uses {@link JobQueue} for. */
 final class PlaceIndex {
 
     private PlaceIndex() {}
@@ -41,7 +42,7 @@ final class PlaceIndex {
     }
 
     /** No-op if already loaded or a load is already in flight. */
-    static void ensureLoaded(Context context, OnLoaded callback) {
+    static void ensureLoaded(Context context, List<MapArea> areas, OnLoaded callback) {
         if (places != null) {
             if (callback != null) callback.onLoaded();
             return;
@@ -52,7 +53,8 @@ final class PlaceIndex {
         }
         Context appContext = context.getApplicationContext();
         new Thread(() -> {
-            List<Place> loaded = load(appContext);
+            List<Place> loaded = new ArrayList<>();
+            for (MapArea area : areas) loaded.addAll(load(appContext, area));
             places = loaded;
             loading = false;
             if (callback != null) MAIN.post(callback::onLoaded);
@@ -92,9 +94,9 @@ final class PlaceIndex {
         }
     }
 
-    private static List<Place> load(Context context) {
+    private static List<Place> load(Context context, MapArea area) {
         List<Place> result = new ArrayList<>();
-        try (InputStream in = context.getAssets().open("map/places.json")) {
+        try (InputStream in = context.getAssets().open(area.placesAsset())) {
             String json = readAll(in);
             JSONArray array = new JSONObject(json).getJSONArray("places");
             for (int i = 0; i < array.length(); i++) {

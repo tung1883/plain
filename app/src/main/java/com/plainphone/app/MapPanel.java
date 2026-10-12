@@ -13,6 +13,8 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import org.maplibre.android.camera.CameraPosition;
@@ -35,6 +37,9 @@ import org.maplibre.geojson.FeatureCollection;
 import org.maplibre.geojson.LineString;
 import org.maplibre.geojson.Point;
 
+import org.json.JSONArray;
+import org.json.JSONObject;
+
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -45,16 +50,18 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Nav home section, v1: a bundled Hanoi basemap (vector PMTiles, extracted from a Protomaps
- * daily build) rendered fully offline — the pmtiles archive and its MapLibre style both ship
- * as app assets, no network tile fetch at render time. Map geometry (roads, water, buildings,
+ * Nav home section, v1: bundled basemaps (vector PMTiles, extracted from a Protomaps daily
+ * build) rendered fully offline — the pmtiles archives and their MapLibre styles all ship as
+ * app assets, no network tile fetch at render time. Map geometry (roads, water, buildings,
  * landuse) renders offline; text labels and icon sprites still point at Protomaps' CDN
  * (glyphs/sprite in style.json), so they only show up with a connection — bundling those too
  * is follow-up work, not done here.
  *
- * <p>No radio yet; that's a separate piece of the broader nav-plugin scope. No region picker
- * either — one bundled city for now. The location dot uses GPS/network fixes same as everywhere
- * else on the phone — fully offline-capable via GPS, no connection needed.
+ * <p>Every area in {@link MapAreas#ALL} is shown together as one merged map (see
+ * {@link #buildMergedStyleJson}) — there's no "pick one area" switcher. No radio yet either;
+ * that's a separate piece of the broader nav-plugin scope. The location dot uses GPS/network
+ * fixes same as everywhere else on the phone — fully offline-capable via GPS, no connection
+ * needed.
  *
  * <p>Search + routing ({@link MapSearchOverlay}) is a child of this panel, not a separate
  * {@code NavPanel} tab — it talks to the map only through the narrow {@link Host} methods below,
@@ -73,6 +80,7 @@ final class MapPanel implements MapSearchOverlay.Host {
     private static final String PIN_FROM = "from";
 
     private final Activity activity;
+    private final LinearLayout outer;
     private final FrameLayout root;
     private final FrameLayout locateButton;
     private MapView mapView;
@@ -82,9 +90,26 @@ final class MapPanel implements MapSearchOverlay.Host {
 
     MapPanel(Activity activity) {
         this.activity = activity;
+        outer = new LinearLayout(activity);
+        outer.setOrientation(LinearLayout.VERTICAL);
+        outer.setBackgroundColor(Color.BLACK);
+
+        TextView settingsRow = new TextView(activity);
+        settingsRow.setText("Map areas >");
+        settingsRow.setTextColor(0xFFAAAAAA);
+        settingsRow.setTextSize(13);
+        settingsRow.setTypeface(Fonts.current(activity));
+        settingsRow.setPadding(0, 0, 0, UiKit.dp(activity, 12));
+        settingsRow.setOnClickListener(v -> activity.startActivity(
+                new Intent(activity, MapAreasActivity.class)));
+        outer.addView(settingsRow, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
         root = new FrameLayout(activity);
         root.setBackgroundColor(Color.BLACK);
         root.setPadding(0, 0, 0, UiKit.dp(activity, 16));
+        outer.addView(root, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
         mapView = new MapView(activity);
         float mapRadiusPx = UiKit.dp(activity, 16);
@@ -146,16 +171,17 @@ final class MapPanel implements MapSearchOverlay.Host {
         // check") even though the archive itself verifies clean with the pmtiles CLI — looks
         // like a bug in that still-new code path. Copy the bundled archive out to real app
         // storage once and read it through plain file:// instead, which is the long-proven path.
-        File pmtiles = copiedPmtiles(activity);
-        String styleJson = loadStyleJson(activity, pmtiles.getAbsolutePath());
+        List<MapArea> areas = MapAreas.ALL;
+        MapArea primaryArea = areas.get(0);
+        String styleJson = buildMergedStyleJson(activity, areas);
         mapView.getMapAsync(m -> {
             map = m;
             // Default camera sits at (0,0) zoom 0 — the open ocean off West Africa — which
             // renders as nothing but the style's grey background layer. Point it at the
-            // bundled extract's city instead of leaving the map looking blank.
+            // primary area's own center instead of leaving the map looking blank.
             map.setCameraPosition(new CameraPosition.Builder()
-                    .target(new LatLng(21.0285, 105.8542))
-                    .zoom(12)
+                    .target(new LatLng(primaryArea.centerLat, primaryArea.centerLon))
+                    .zoom(primaryArea.defaultZoom)
                     .build());
             map.setStyle(new Style.Builder().fromJson(styleJson), loadedStyle -> {
                 style = loadedStyle;
@@ -316,12 +342,12 @@ final class MapPanel implements MapSearchOverlay.Host {
         return activity;
     }
 
-    private static File copiedPmtiles(Activity activity) {
-        File dest = new File(activity.getFilesDir(), "map/hanoi.pmtiles");
+    private static File copiedPmtiles(Activity activity, MapArea area) {
+        File dest = new File(activity.getFilesDir(), area.pmtilesAsset());
         if (!dest.isFile()) {
             try {
                 dest.getParentFile().mkdirs();
-                try (InputStream in = activity.getAssets().open("map/hanoi.pmtiles");
+                try (InputStream in = activity.getAssets().open(area.pmtilesAsset());
                         FileOutputStream out = new FileOutputStream(dest)) {
                     byte[] buf = new byte[64 * 1024];
                     int n;
@@ -334,20 +360,72 @@ final class MapPanel implements MapSearchOverlay.Host {
         return dest;
     }
 
-    private static String loadStyleJson(Activity activity, String pmtilesPath) {
-        try (InputStream in = activity.getAssets().open("map/style.json")) {
-            ByteArrayOutputStream bos = new ByteArrayOutputStream();
-            byte[] buf = new byte[8 * 1024];
-            int n;
-            while ((n = in.read(buf)) >= 0) bos.write(buf, 0, n);
-            String json = new String(bos.toByteArray(), StandardCharsets.UTF_8);
-            return json.replace("pmtiles://asset://map/hanoi.pmtiles", "pmtiles://file://" + pmtilesPath);
-        } catch (IOException e) {
+    /** Merges every area's style.json into one: each area gets its own named vector source
+     *  (its pmtiles, copied to real storage, pointed at by {@code pmtiles://file://...}), and
+     *  the first area's layers become the base of the combined layer stack with every later
+     *  area's own layers (minus the one shared "background" layer, which only needs drawing
+     *  once) appended on top. Later areas painting over earlier ones inside their own bbox is
+     *  the point — e.g. Hanoi's full-detail tiles end up drawn over Vietnam's backbone-only
+     *  ones exactly where they overlap, while outside Hanoi's bbox Hanoi's tiles are simply
+     *  empty and Vietnam's layers show through untouched. All area style.json files share the
+     *  same Protomaps basemap schema (same source-layer names, same paint rules), so this is a
+     *  straightforward per-area source/layer rename, not a schema reconciliation. */
+    private static String buildMergedStyleJson(Activity activity, List<MapArea> areas) {
+        try {
+            JSONObject combined = null;
+            JSONObject combinedSources = null;
+            JSONArray combinedLayers = null;
+
+            for (MapArea area : areas) {
+                File pmtiles = copiedPmtiles(activity, area);
+                JSONObject styleObj = new JSONObject(readAssetText(activity, area.styleAsset()));
+                String sourceKey = "protomaps-" + area.id;
+
+                JSONObject sources = styleObj.getJSONObject("sources");
+                JSONObject srcDef = sources.getJSONObject("protomaps");
+                srcDef.put("url", srcDef.getString("url").replace(
+                        "pmtiles://asset://" + area.pmtilesAsset(),
+                        "pmtiles://file://" + pmtiles.getAbsolutePath()));
+
+                JSONArray layers = styleObj.getJSONArray("layers");
+                for (int i = 0; i < layers.length(); i++) {
+                    JSONObject layer = layers.getJSONObject(i);
+                    layer.put("id", area.id + "-" + layer.getString("id"));
+                    if (layer.has("source")) layer.put("source", sourceKey);
+                }
+
+                if (combined == null) {
+                    combined = styleObj;
+                    combinedSources = sources;
+                    combinedSources.remove("protomaps");
+                    combinedSources.put(sourceKey, srcDef);
+                    combinedLayers = layers;
+                } else {
+                    combinedSources.put(sourceKey, srcDef);
+                    for (int i = 0; i < layers.length(); i++) {
+                        JSONObject layer = layers.getJSONObject(i);
+                        if (layer.has("source")) combinedLayers.put(layer); // skip "background"
+                    }
+                }
+            }
+
+            return combined.toString();
+        } catch (Exception e) {
             throw new RuntimeException(e);
         }
     }
 
-    View view() { return root; }
+    private static String readAssetText(Activity activity, String assetPath) throws IOException {
+        try (InputStream in = activity.getAssets().open(assetPath)) {
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            byte[] buf = new byte[8 * 1024];
+            int n;
+            while ((n = in.read(buf)) >= 0) bos.write(buf, 0, n);
+            return new String(bos.toByteArray(), StandardCharsets.UTF_8);
+        }
+    }
+
+    View view() { return outer; }
 
     void onStart() { if (mapView != null) mapView.onStart(); }
     void onResume() { if (mapView != null) mapView.onResume(); }

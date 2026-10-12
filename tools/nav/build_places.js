@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 "use strict";
 
-// Build app/src/main/assets/map/places.json — a flat, city-wide-searchable place/POI index,
-// decoded straight from the already-bundled hanoi.pmtiles vector tiles (the "pois" and "places"
-// source-layers, per style.json). Read on-device by PlaceIndex.java.
+// Build <area>/places.json — a flat, searchable place/POI index, decoded straight from that
+// area's already-bundled .pmtiles vector tiles (the "pois" and "places" source-layers, per
+// style.json). Read on-device by PlaceIndex.java.
 //
-// Usage: node build_places.js
+// Usage: node build_places.js --pmtiles=<path> --bbox=west,south,east,north --zoom=<n> --out=<path>
+// (zoom should be the deepest zoom that pmtiles archive was extracted to, for the fullest
+// feature set — e.g. 14 for hanoi.pmtiles, 11 for vietnam.pmtiles.)
 
 const fs = require("fs");
 const path = require("path");
@@ -13,10 +15,18 @@ const { PMTiles } = require("pmtiles");
 const { VectorTile } = require("@mapbox/vector-tile");
 const Pbf = require("pbf");
 
-const ZOOM = 14; // the deepest zoom hanoi.pmtiles was extracted to — fullest feature set.
-const BBOX = [105.6, 20.85, 106.05, 21.25]; // west, south, east, north — matches extraction.
-const PMTILES_PATH = path.resolve(__dirname, "../../app/src/main/assets/map/hanoi.pmtiles");
-const OUT_PATH = path.resolve(__dirname, "../../app/src/main/assets/map/places.json");
+function arg(name, fallback) {
+  const prefix = `--${name}=`;
+  const found = process.argv.find((a) => a.startsWith(prefix));
+  return found ? found.slice(prefix.length) : fallback;
+}
+
+const ZOOM = parseInt(arg("zoom", "14"), 10);
+const BBOX = arg("bbox", "105.6,20.85,106.05,21.25").split(",").map(Number);
+const PMTILES_PATH = path.resolve(arg("pmtiles",
+    path.resolve(__dirname, "../../app/src/main/assets/map/hanoi.pmtiles")));
+const OUT_PATH = path.resolve(arg("out",
+    path.resolve(__dirname, "../../app/src/main/assets/map/places.json")));
 const SOURCE_LAYERS = ["pois", "places"];
 
 // pmtiles' FileSource is browser-only (uses the File API) — a small Node fs-based Source.
@@ -56,7 +66,7 @@ async function main() {
   const source = new NodeFileSource(PMTILES_PATH);
   const pm = new PMTiles(source);
   const header = await pm.getHeader();
-  console.error(`hanoi.pmtiles: minZoom=${header.minZoom} maxZoom=${header.maxZoom}`);
+  console.error(`${PMTILES_PATH}: minZoom=${header.minZoom} maxZoom=${header.maxZoom}`);
 
   const [west, south, east, north] = BBOX;
   const xMin = lonToTileX(west, ZOOM);
