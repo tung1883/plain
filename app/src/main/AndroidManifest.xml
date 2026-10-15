@@ -273,11 +273,6 @@
             android:theme="@style/Theme.PlainPhone" />
 
         <activity
-            android:name=".MapAreasActivity"
-            android:exported="false"
-            android:theme="@style/Theme.PlainPhone" />
-
-        <activity
             android:name=".RecordActivity"
             android:exported="false"
             android:launchMode="singleTop"

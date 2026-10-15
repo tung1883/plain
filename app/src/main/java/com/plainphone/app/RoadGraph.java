@@ -14,7 +14,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /** Lazy, process-wide driving-network graph for routing — the merge of every {@link MapArea} in
- *  {@link MapAreas#ALL}'s {@code roads.json} (each built at dev time by
+ *  what {@link MapAreas#all} returns' {@code roads.json} (each built at dev time by
  *  {@code tools/nav/build_roads.py} from a raw OSM extract; the bundled vector tiles aren't used
  *  here since they clip/simplify road geometry at tile boundaries, which breaks clean topology).
  *  Merging is just concatenating each area's node/edge arrays with that area's node ids offset
@@ -76,6 +76,11 @@ final class RoadGraph {
 
     static boolean isLoaded() {
         return instance != null;
+    }
+
+    /** Forget the loaded graph so the next {@link #ensureLoaded} rebuilds it from the current areas. */
+    static void invalidate() {
+        instance = null;
     }
 
     static void ensureLoaded(Context context, List<MapArea> areas, OnLoaded callback) {
@@ -190,7 +195,7 @@ final class RoadGraph {
     }
 
     private static Loaded loadOne(Context context, MapArea area) {
-        try (InputStream in = context.getAssets().open(area.roadsAsset())) {
+        try (InputStream in = area.open(context, area.roadsAsset())) {
             String json = readAll(in);
             JSONObject root = new JSONObject(json);
             JSONObject nodes = root.getJSONObject("nodes");

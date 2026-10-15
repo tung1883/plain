@@ -17,7 +17,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 
-/** Lazy, process-wide index merging every {@link MapArea} in {@link MapAreas#ALL}'s
+/** Lazy, process-wide index merging every {@link MapArea} {@link MapAreas#all} returns —
  *  {@code places.json} (place names + coordinates, decoded at build time from that area's
  *  basemap vector tiles — see {@code tools/nav/build_places.js}) into one searchable list.
  *  Loaded once on a background thread since the combined asset is too large (thousands of
@@ -39,6 +39,11 @@ final class PlaceIndex {
 
     static boolean isLoaded() {
         return places != null;
+    }
+
+    /** Forget the loaded index so the next {@link #ensureLoaded} rebuilds it from the current areas. */
+    static void invalidate() {
+        places = null;
     }
 
     /** No-op if already loaded or a load is already in flight. */
@@ -96,7 +101,7 @@ final class PlaceIndex {
 
     private static List<Place> load(Context context, MapArea area) {
         List<Place> result = new ArrayList<>();
-        try (InputStream in = context.getAssets().open(area.placesAsset())) {
+        try (InputStream in = area.open(context, area.placesAsset())) {
             String json = readAll(in);
             JSONArray array = new JSONObject(json).getJSONArray("places");
             for (int i = 0; i < array.length(); i++) {

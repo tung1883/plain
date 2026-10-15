@@ -57,7 +57,7 @@ import java.util.List;
  * (glyphs/sprite in style.json), so they only show up with a connection — bundling those too
  * is follow-up work, not done here.
  *
- * <p>Every area in {@link MapAreas#ALL} is shown together as one merged map (see
+ * <p>Every area {@link MapAreas#all} returns is shown together as one merged map (see
  * {@link #buildMergedStyleJson}) — there's no "pick one area" switcher. No radio yet either;
  * that's a separate piece of the broader nav-plugin scope. The location dot uses GPS/network
  * fixes same as everywhere else on the phone — fully offline-capable via GPS, no connection
@@ -87,23 +87,13 @@ final class MapPanel implements MapSearchOverlay.Host {
     private MapLibreMap map;
     private Style style;
     private boolean locationEnabled;
+    private TextView emptyHint;
 
     MapPanel(Activity activity) {
         this.activity = activity;
         outer = new LinearLayout(activity);
         outer.setOrientation(LinearLayout.VERTICAL);
         outer.setBackgroundColor(Color.BLACK);
-
-        TextView settingsRow = new TextView(activity);
-        settingsRow.setText("Map areas >");
-        settingsRow.setTextColor(0xFFAAAAAA);
-        settingsRow.setTextSize(13);
-        settingsRow.setTypeface(Fonts.current(activity));
-        settingsRow.setPadding(0, 0, 0, UiKit.dp(activity, 12));
-        settingsRow.setOnClickListener(v -> activity.startActivity(
-                new Intent(activity, MapAreasActivity.class)));
-        outer.addView(settingsRow, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         root = new FrameLayout(activity);
         root.setBackgroundColor(Color.BLACK);
@@ -171,18 +161,42 @@ final class MapPanel implements MapSearchOverlay.Host {
         // check") even though the archive itself verifies clean with the pmtiles CLI — looks
         // like a bug in that still-new code path. Copy the bundled archive out to real app
         // storage once and read it through plain file:// instead, which is the long-proven path.
-        List<MapArea> areas = MapAreas.ALL;
+        emptyHint = new TextView(activity);
+        emptyHint.setText("No map yet.\nOpen the Areas tab and download one.");
+        emptyHint.setTextColor(0xFFAAAAAA);
+        emptyHint.setTextSize(14);
+        emptyHint.setGravity(Gravity.CENTER);
+        emptyHint.setTypeface(Fonts.current(activity));
+        emptyHint.setVisibility(View.GONE);
+        root.addView(emptyHint, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER));
+
+        reloadAreas();
+    }
+
+    /** (Re)build the map from every area now on the phone. Called once at start, and again
+     *  whenever an area is downloaded or deleted, so the change shows without recreating the
+     *  home screen. With no areas the map is hidden and a hint says how to get one. */
+    void reloadAreas() {
+        List<MapArea> areas = MapAreas.all(activity);
+        emptyHint.setVisibility(areas.isEmpty() ? View.VISIBLE : View.GONE);
+        mapView.setVisibility(areas.isEmpty() ? View.INVISIBLE : View.VISIBLE);
+        if (areas.isEmpty()) return;
         MapArea primaryArea = areas.get(0);
         String styleJson = buildMergedStyleJson(activity, areas);
         mapView.getMapAsync(m -> {
+            boolean first = map == null;
             map = m;
             // Default camera sits at (0,0) zoom 0 — the open ocean off West Africa — which
             // renders as nothing but the style's grey background layer. Point it at the
-            // primary area's own center instead of leaving the map looking blank.
-            map.setCameraPosition(new CameraPosition.Builder()
-                    .target(new LatLng(primaryArea.centerLat, primaryArea.centerLon))
-                    .zoom(primaryArea.defaultZoom)
-                    .build());
+            // primary area's own center instead of leaving the map looking blank. Only the
+            // first time: later reloads keep wherever the user has panned to.
+            if (first) {
+                map.setCameraPosition(new CameraPosition.Builder()
+                        .target(new LatLng(primaryArea.centerLat, primaryArea.centerLon))
+                        .zoom(primaryArea.defaultZoom)
+                        .build());
+            }
             map.setStyle(new Style.Builder().fromJson(styleJson), loadedStyle -> {
                 style = loadedStyle;
                 // Attribution/logo off, built-in rotation-reset compass on in their place
@@ -342,22 +356,11 @@ final class MapPanel implements MapSearchOverlay.Host {
         return activity;
     }
 
+    /** For a downloaded area, the pmtiles file already lives at this exact path under
+     *  {@code filesDir} (that's where {@link AreaDownloader} unzipped it) — nothing to copy.
+     */
     private static File copiedPmtiles(Activity activity, MapArea area) {
-        File dest = new File(activity.getFilesDir(), area.pmtilesAsset());
-        if (!dest.isFile()) {
-            try {
-                dest.getParentFile().mkdirs();
-                try (InputStream in = activity.getAssets().open(area.pmtilesAsset());
-                        FileOutputStream out = new FileOutputStream(dest)) {
-                    byte[] buf = new byte[64 * 1024];
-                    int n;
-                    while ((n = in.read(buf)) >= 0) out.write(buf, 0, n);
-                }
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
-        }
-        return dest;
+        return new File(activity.getFilesDir(), area.pmtilesAsset());
     }
 
     /** Merges every area's style.json into one: each area gets its own named vector source
@@ -378,7 +381,7 @@ final class MapPanel implements MapSearchOverlay.Host {
 
             for (MapArea area : areas) {
                 File pmtiles = copiedPmtiles(activity, area);
-                JSONObject styleObj = new JSONObject(readAssetText(activity, area.styleAsset()));
+                JSONObject styleObj = new JSONObject(readAreaText(activity, area, area.styleAsset()));
                 String sourceKey = "protomaps-" + area.id;
 
                 JSONObject sources = styleObj.getJSONObject("sources");
@@ -415,8 +418,8 @@ final class MapPanel implements MapSearchOverlay.Host {
         }
     }
 
-    private static String readAssetText(Activity activity, String assetPath) throws IOException {
-        try (InputStream in = activity.getAssets().open(assetPath)) {
+    private static String readAreaText(Activity activity, MapArea area, String relativePath) throws IOException {
+        try (InputStream in = area.open(activity, relativePath)) {
             ByteArrayOutputStream bos = new ByteArrayOutputStream();
             byte[] buf = new byte[8 * 1024];
             int n;

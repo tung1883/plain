@@ -106,7 +106,7 @@ final class MapSearchOverlay {
         p.addView(new PinIconView(activity, TO_COLOR), new LinearLayout.LayoutParams(
                 UiKit.dp(activity, 16), UiKit.dp(activity, 16)));
         TextView label = new TextView(activity);
-        label.setText("Search or get directions");
+        label.setText("Search");
         label.setTextColor(0xFF555555);
         label.setTypeface(Fonts.current(activity));
         label.setTextSize(13.5f);
@@ -212,6 +212,11 @@ final class MapSearchOverlay {
         field.setTypeface(Fonts.current(activity));
         field.setTextSize(14);
         field.setBackground(null);
+        // Equal top and bottom space and no extra font padding, so the text sits on the row's
+        // centre line, level with the pin icon and the "My Location" button beside it.
+        field.setIncludeFontPadding(false);
+        field.setGravity(Gravity.CENTER_VERTICAL);
+        field.setPadding(0, UiKit.dp(activity, 10), 0, UiKit.dp(activity, 10));
         field.setSingleLine(true);
         field.setOnFocusChangeListener((v, focused) -> {
             if (focused) activeField = field;
@@ -230,7 +235,7 @@ final class MapSearchOverlay {
         row.addView(field, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
         TextView useCurrent = new TextView(activity);
-        useCurrent.setText("Current location");
+        useCurrent.setText("My Location");
         useCurrent.setTextColor(0xFF2D7FF9);
         useCurrent.setTextSize(12);
         useCurrent.setTypeface(Fonts.current(activity));
@@ -257,7 +262,7 @@ final class MapSearchOverlay {
             return;
         }
         if (!PlaceIndex.isLoaded()) {
-            PlaceIndex.ensureLoaded(activity, MapAreas.ALL, () -> {
+            PlaceIndex.ensureLoaded(activity, MapAreas.all(activity), () -> {
                 if (field.getText().toString().equals(query)) onQueryChanged(field, query);
             });
             return;
@@ -304,7 +309,7 @@ final class MapSearchOverlay {
                     android.widget.Toast.LENGTH_SHORT).show();
             return;
         }
-        setEndpoint(field, new Endpoint("Current location", here));
+        setEndpoint(field, new Endpoint("My Location", here));
     }
 
     private void setEndpoint(EditText field, Endpoint endpoint) {
@@ -326,7 +331,7 @@ final class MapSearchOverlay {
         routeInfo.setText("Finding route...");
         routeInfo.setVisibility(View.VISIBLE);
 
-        RoadGraph.ensureLoaded(activity, MapAreas.ALL, ok -> {
+        RoadGraph.ensureLoaded(activity, MapAreas.all(activity), ok -> {
             if (!ok) {
                 routeInfo.setText("Road data unavailable");
                 return;

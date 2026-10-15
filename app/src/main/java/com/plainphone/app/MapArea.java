@@ -1,10 +1,15 @@
 package com.plainphone.app;
 
-/** One bundled offline map region — a pmtiles basemap + MapLibre style + the two
- *  {@code tools/nav} build outputs (place search index, driving-routing graph) for the same
- *  bbox. {@link #assetDir} points at wherever those four files live under {@code assets/}; Hanoi
- *  keeps its original flat {@code assets/map/} location (not moved into its own subfolder) since
- *  that's already in active use, but any area added after it lives at {@code map/<id>/}. */
+import android.content.Context;
+
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+
+/** One offline map region — a pmtiles basemap + MapLibre style + the two {@code tools/nav}
+ *  build outputs (place search index, driving-routing graph) for the same bbox. Areas are
+ *  downloaded on demand by {@link AreaDownloader} into {@code filesDir/<assetDir>/...}. */
 final class MapArea {
 
     final String id;
@@ -28,4 +33,10 @@ final class MapArea {
     String styleAsset() { return assetDir + "/style.json"; }
     String placesAsset() { return assetDir + "/places.json"; }
     String roadsAsset() { return assetDir + "/roads.json"; }
+
+    /** Opens one of this area's files, from wherever {@link AreaDownloader} unzipped it under
+     *  {@code filesDir}. */
+    InputStream open(Context context, String relativePath) throws IOException {
+        return new FileInputStream(new File(context.getFilesDir(), relativePath));
+    }
 }

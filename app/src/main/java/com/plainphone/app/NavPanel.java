@@ -10,7 +10,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 /**
- * Nav home section: "Map" and "Compass" as two tabs under one HomeMode.NAV, same tab-strip
+ * Nav home section: "Map", "Compass" and "Areas" as tabs under one HomeMode.NAV, same tab-strip
  * pattern as Chess's Board/Puzzles/Library. Radio (the third original nav-plugin piece) isn't
  * built yet.
  */
@@ -21,6 +21,7 @@ final class NavPanel {
     private final TextView[] tabButtons;
     private final MapPanel mapPanel;
     private final CompassPanel compassPanel;
+    private final AreasPanel areasPanel;
     private int activeTab;
     private boolean sectionActive;
 
@@ -34,7 +35,7 @@ final class NavPanel {
         LinearLayout tabs = new LinearLayout(activity);
         tabs.setOrientation(LinearLayout.HORIZONTAL);
         tabs.setPadding(UiKit.dp(activity, 18), UiKit.dp(activity, 14), UiKit.dp(activity, 18), 0);
-        String[] labels = {"Map", "Compass"};
+        String[] labels = {"Map", "Compass", "Areas"};
         tabButtons = new TextView[labels.length];
         for (int i = 0; i < labels.length; i++) {
             final int idx = i;
@@ -57,9 +58,12 @@ final class NavPanel {
         tabContainer.setPadding(UiKit.dp(activity, 18), UiKit.dp(activity, 14), UiKit.dp(activity, 18), 0);
         mapPanel = new MapPanel(activity);
         compassPanel = new CompassPanel(activity);
+        areasPanel = new AreasPanel(activity, mapPanel::reloadAreas);
         tabContainer.addView(mapPanel.view(), new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         tabContainer.addView(compassPanel.view(), new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        tabContainer.addView(areasPanel.view(), new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         root2.addView(tabContainer, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
@@ -69,6 +73,7 @@ final class NavPanel {
         activeTab = 0;
         restyleTabs();
         compassPanel.view().setVisibility(View.GONE);
+        areasPanel.view().setVisibility(View.GONE);
     }
 
     View view() { return root; }
@@ -80,6 +85,8 @@ final class NavPanel {
         activeTab = index;
         mapPanel.view().setVisibility(index == 0 ? View.VISIBLE : View.GONE);
         compassPanel.view().setVisibility(index == 1 ? View.VISIBLE : View.GONE);
+        areasPanel.view().setVisibility(index == 2 ? View.VISIBLE : View.GONE);
+        if (index == 2) areasPanel.refresh();
         compassPanel.setActive(sectionActive && index == 1);
         restyleTabs();
     }
