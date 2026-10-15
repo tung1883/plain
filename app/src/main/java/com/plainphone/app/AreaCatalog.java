@@ -25,10 +25,9 @@ final class AreaCatalog {
 
     private AreaCatalog() {}
 
-    // nav-plugin branch for now, while this feature is still being built there — move to the
-    // main-branch URL once merged, so the catalog tracks whatever's actually shipping.
+    // The main branch, so the catalog tracks whatever is actually shipping.
     private static final String CATALOG_URL =
-            "https://raw.githubusercontent.com/tung1883/plain/nav-plugin/map-areas-catalog.json";
+            "https://raw.githubusercontent.com/tung1883/plain/main/map-areas-catalog.json";
 
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
 
