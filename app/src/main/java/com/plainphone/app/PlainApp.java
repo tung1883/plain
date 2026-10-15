@@ -21,6 +21,7 @@ public class PlainApp extends Application {
     @Override
     public void onCreate() {
         super.onCreate();
+        org.maplibre.android.MapLibre.getInstance(this);
         // Turning developer options off resets the shared colour-correction setting; whole-screen
         // monochrome puts itself back.
         getContentResolver().registerContentObserver(

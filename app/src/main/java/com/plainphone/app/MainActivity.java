@@ -119,6 +119,7 @@ public class MainActivity extends Activity implements SelectionHost {
     private StatsPanel statsPanel;
     private boolean statsPanelShown;
     private View chessPanel;
+    private NavPanel navPanel;
     private ChessBoardView chessBoard;
     // Everything above the moves grid (status, engine lines, transport) — its own measured
     // height is what resizeChessBoardIfNeeded subtracts to size the board; the moves grid
@@ -337,6 +338,7 @@ public class MainActivity extends Activity implements SelectionHost {
         Notes.showFolderOptions(this, REQUEST_PICK_NOTES_FOLDER, this::refresh);
     }
 
+
     @Override public void unlockVault() { unlockVaultThen(this::refresh); }
 
     /** Open a multi-select document picker for the given MIME type. */
@@ -394,8 +396,30 @@ public class MainActivity extends Activity implements SelectionHost {
     }
 
     @Override
+    protected void onStart() {
+        super.onStart();
+        if (navPanel != null) navPanel.onStart();
+    }
+
+    @Override
+    public void onLowMemory() {
+        super.onLowMemory();
+        if (navPanel != null) navPanel.onLowMemory();
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        if (navPanel != null) navPanel.onStop();
+    }
+
+    @Override
     protected void onResume() {
         super.onResume();
+        if (navPanel != null) {
+            navPanel.onResume();
+            navPanel.setActive(homeMode == HomeMode.NAV);
+        }
         if (screenOffRowView != null) {
             boolean available = ScreenLock.available(this);
             screenOffRowView.setVisibility(available ? View.VISIBLE : View.GONE);
@@ -441,6 +465,10 @@ public class MainActivity extends Activity implements SelectionHost {
     @Override
     protected void onPause() {
         super.onPause();
+        if (navPanel != null) {
+            navPanel.onPause();
+            navPanel.setActive(false);
+        }
         searchImeVisible = false;
         tipHandler.removeCallbacks(tipRotate);
         artHandler.removeCallbacks(artRotate);
@@ -494,6 +522,7 @@ public class MainActivity extends Activity implements SelectionHost {
     protected void onDestroy() {
         super.onDestroy();
 
+        if (navPanel != null) navPanel.onDestroy();
         searchHandler.removeCallbacksAndMessages(null);
         tipHandler.removeCallbacks(tipRotate);
         artHandler.removeCallbacks(artRotate);
@@ -878,6 +907,8 @@ public class MainActivity extends Activity implements SelectionHost {
         statsPanel.view().setVisibility(View.GONE);
         chessPanel = buildChessPanel();
         chessPanel.setVisibility(View.GONE);
+        navPanel = new NavPanel(this);
+        navPanel.view().setVisibility(View.GONE);
 
         FrameLayout swipeContent = new FrameLayout(this);
         swipeContent.addView(listView, new FrameLayout.LayoutParams(
@@ -885,6 +916,8 @@ public class MainActivity extends Activity implements SelectionHost {
         swipeContent.addView(statsPanel.view(), new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         swipeContent.addView(chessPanel, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        swipeContent.addView(navPanel.view(), new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
         swipeSwitcher = new SwipeSwitcher(this);
@@ -1062,8 +1095,9 @@ public class MainActivity extends Activity implements SelectionHost {
 
     private boolean collapseEligible() {
         boolean chessShown = chessPanel != null && chessPanel.getVisibility() == View.VISIBLE;
+        boolean navShown = navPanel != null && navPanel.view().getVisibility() == View.VISIBLE;
         return homeUiBuilt && currentQuery.isEmpty() && selectMode == null
-                && (listView.getVisibility() == View.VISIBLE || statsPanelShown || chessShown);
+                && (listView.getVisibility() == View.VISIBLE || statsPanelShown || chessShown || navShown);
     }
 
     /** Re-measure the header's natural full height and the search band height. */
@@ -2656,10 +2690,16 @@ public class MainActivity extends Activity implements SelectionHost {
         boolean statsLocked = homeMode == HomeMode.STATS && Lock.APPS.gateActive(this);
         boolean showStats = homeMode == HomeMode.STATS && needle.isEmpty() && !statsLocked;
         boolean showChess = homeMode == HomeMode.CHESS && needle.isEmpty() && !selecting;
+        boolean showNav = homeMode == HomeMode.NAV && needle.isEmpty() && !selecting;
         if (statsPanel != null) {
             statsPanel.view().setVisibility(showStats ? View.VISIBLE : View.GONE);
             if (chessPanel != null) chessPanel.setVisibility(showChess ? View.VISIBLE : View.GONE);
-            listView.setVisibility(showStats || showChess ? View.GONE : View.VISIBLE);
+            if (navPanel != null) {
+                navPanel.view().setVisibility(showNav ? View.VISIBLE : View.GONE);
+                navPanel.setActive(showNav);
+            }
+            listView.setVisibility(showStats || showChess || showNav
+                    ? View.GONE : View.VISIBLE);
             if (showStats && !statsPanelShown) {
                 statsPanelShown = true;
                 statsPanel.render();
@@ -2675,6 +2715,11 @@ public class MainActivity extends Activity implements SelectionHost {
         }
         if (showChess) {
             updateChessHomeUi();
+            syncHeaderCollapse();
+            adapter.notifyDataSetChanged();
+            return;
+        }
+        if (showNav) {
             syncHeaderCollapse();
             adapter.notifyDataSetChanged();
             return;
@@ -3399,6 +3444,11 @@ public class MainActivity extends Activity implements SelectionHost {
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == MapPanel.REQUEST_LOCATION) {
+            boolean granted = grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED;
+            if (navPanel != null) navPanel.onPermissionResult(requestCode, granted);
+            return;
+        }
         if (requestCode != DeviceSearch.REQUEST_FILES && requestCode != DeviceSearch.REQUEST_CONTACTS) {
             return;
         }
