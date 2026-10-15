@@ -92,6 +92,9 @@ public class SettingsActivity extends Activity {
 entries.add(new Entry("Appearance", "Home screen art", row("Home screen art",
                 v -> startActivity(new Intent(this, PixelSceneActivity.class)))));
 
+        entries.add(new Entry("Appearance", "Keyboard", row("Keyboard",
+                v -> startActivity(new Intent(this, KeyboardSetupActivity.class)))));
+
         entries.add(new Entry("Appearance", "Tips, quotes and warnings", row("Tips, quotes and warnings",
                 v -> startActivity(new Intent(this, TipsSettingsActivity.class)))));
 

@@ -229,8 +229,9 @@ final class KeyBar extends LinearLayout {
             spacer.setLayoutParams(lp);
             return spacer;
         }
-        TextView k = new TextView(getContext());
-        k.setText(label(id));
+        int icon = KeyIcons.forId(id);
+        TextView k = icon == 0 ? new TextView(getContext()) : new IconKey(getContext(), icon);
+        k.setText(icon == 0 ? id : "");
         k.setTextSize(14);
         k.setTypeface(Fonts.cascadiaMono(getContext()));
         k.setGravity(Gravity.CENTER);
@@ -267,14 +268,19 @@ final class KeyBar extends LinearLayout {
         return k;
     }
 
-    /** What a key says; the arrow keys use arrows, everything else its own name. */
-    private static String label(String id) {
-        switch (id) {
-            case "Left": return "←";
-            case "Down": return "↓";
-            case "Up": return "↑";
-            case "Right": return "→";
-            default: return id;
+    /** A key drawn as a path icon in its current text colour. */
+    private final class IconKey extends TextView {
+        private final int icon;
+
+        IconKey(Context ctx, int icon) {
+            super(ctx);
+            this.icon = icon;
+        }
+
+        @Override
+        protected void onDraw(android.graphics.Canvas canvas) {
+            super.onDraw(canvas);
+            KeyIcons.draw(canvas, icon, getWidth() / 2f, getHeight() / 2f, dp(7), getCurrentTextColor(), false);
         }
     }
 

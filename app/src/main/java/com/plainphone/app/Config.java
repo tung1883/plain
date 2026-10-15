@@ -885,6 +885,33 @@ class Config {
         prefs(context).edit().putBoolean("keybar_labels", on).apply();
     }
 
+    // --- developer keyboard (system IME) ----------------------------
+
+    /** "small" | "medium" | "large". */
+    static String getKbSize(Context context) {
+        return prefs(context).getString("kb_size", "medium");
+    }
+
+    static void setKbSize(Context context, String size) {
+        prefs(context).edit().putString("kb_size", size).apply();
+    }
+
+    static boolean isKbDevRow(Context context) {
+        return prefs(context).getBoolean("kb_dev_row", true);
+    }
+
+    static void setKbDevRow(Context context, boolean on) {
+        prefs(context).edit().putBoolean("kb_dev_row", on).apply();
+    }
+
+    static boolean isKbAutoPair(Context context) {
+        return prefs(context).getBoolean("kb_auto_pair", false);
+    }
+
+    static void setKbAutoPair(Context context, boolean on) {
+        prefs(context).edit().putBoolean("kb_auto_pair", on).apply();
+    }
+
     static int getDevScreenFps(Context context) {
         return prefs(context).getInt("dev_screen_fps", 12);
     }

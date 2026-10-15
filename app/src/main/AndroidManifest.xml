@@ -525,6 +525,35 @@
             android:exported="false" />
 
         <service
+            android:name=".PlainKeyboardService"
+            android:label="PlainPhone keyboard"
+            android:exported="true"
+            android:permission="android.permission.BIND_INPUT_METHOD">
+            <intent-filter>
+                <action android:name="android.view.InputMethod" />
+            </intent-filter>
+            <meta-data
+                android:name="android.view.im"
+                android:resource="@xml/method" />
+        </service>
+
+        <activity
+            android:name=".KeyboardSetupActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".AddStickerActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <activity
+            android:name=".ScanTextActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <service
             android:name=".DevService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />

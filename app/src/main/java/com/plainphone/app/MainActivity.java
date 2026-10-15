@@ -709,6 +709,7 @@ public class MainActivity extends Activity implements SelectionHost {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(Color.BLACK);
         root.setFocusableInTouchMode(true);
+        root.setDefaultFocusHighlightEnabled(false);   // it is only a focus sink; no outline when focused
         homeFocusSink = root;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             root.setOnApplyWindowInsetsListener((v, insets) -> {
