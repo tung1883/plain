@@ -300,14 +300,26 @@ final class EmojiPanel extends LinearLayout {
             chips.addView(chip, lp);
         }
         strip.addView(chips);
-        GridLayout.LayoutParams stripLp = cell(4, 0);
-        stripLp.setMargins(0, 0, 0, PanelKit.dp(ctx, 4));
-        grid.addView(strip, stripLp);
 
-        TextView add = PanelKit.chip(ctx, "+ Add images to " + collection, true, v -> host.addSticker(collection));
-        GridLayout.LayoutParams addLp = cell(4, 0);
-        addLp.setMargins(0, 0, 0, PanelKit.dp(ctx, 4));
-        grid.addView(add, addLp);
+        // one row: the collections scroll on the left, a + button stays on the right
+        LinearLayout top = new LinearLayout(ctx);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+        top.addView(strip, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        TextView add = new TextView(ctx);   // plain white text, no button background
+        add.setText("+ Add");
+        add.setTextSize(12);
+        add.setTextColor(0xFFFFFFFF);
+        add.setTypeface(Fonts.cascadiaMono(ctx));
+        add.setGravity(Gravity.CENTER);
+        add.setSingleLine(true);
+        add.setPadding(PanelKit.dp(ctx, 12), 0, PanelKit.dp(ctx, 8), 0);
+        add.setOnClickListener(v -> host.addSticker(collection));
+        LinearLayout.LayoutParams addLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, PanelKit.dp(ctx, 32));
+        top.addView(add, addLp);
+        GridLayout.LayoutParams topLp = cell(4, 0);
+        topLp.setMargins(0, 0, 0, PanelKit.dp(ctx, 4));
+        grid.addView(top, topLp);
 
         List<File> files = StickerStore.list(ctx, collection);
         if (files.isEmpty()) {
