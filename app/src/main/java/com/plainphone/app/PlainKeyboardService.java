@@ -67,7 +67,8 @@ public class PlainKeyboardService extends InputMethodService
         return false;
     }
 
-    /** Add the current clipboard text to the history, except what the source marked sensitive. */
+    /** Add the current clipboard's text or image to the history, except what the source marked
+     * sensitive. */
     private void recordClip() {
         if (clipboard == null) return;
         try {
@@ -76,11 +77,22 @@ public class PlainKeyboardService extends InputMethodService
             ClipDescription d = clip.getDescription();
             if (d != null && d.getExtras() != null && Build.VERSION.SDK_INT >= 33
                     && d.getExtras().getBoolean(ClipDescription.EXTRA_IS_SENSITIVE)) return;
+            android.net.Uri uri = clip.getItemAt(0).getUri();
+            if (uri != null && d != null && d.hasMimeType("image/*")) {
+                if (uri.equals(lastImageUri)) return;
+                lastImageUri = uri;
+                ClipboardHistory.addImage(this, uri);
+                return;
+            }
             ClipboardHistory.add(this, clip.getItemAt(0).coerceToText(this));
         } catch (SecurityException ignored) {
             // not allowed to read the clipboard right now
         }
     }
+
+    /** The last image clip already recorded, so a redundant OnPrimaryClipChanged doesn't copy it
+     * in twice. */
+    private android.net.Uri lastImageUri;
 
     // ----------------------------------------------------------- DevKeyboardView.Listener
 

@@ -3,15 +3,22 @@ package com.plainphone.app;
 import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.provider.CalendarContract;
 import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.FrameLayout;
+import android.widget.GridLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+
+import java.io.File;
 
 import com.google.mlkit.nl.entityextraction.Entity;
 import com.google.mlkit.nl.entityextraction.EntityAnnotation;
@@ -26,8 +33,10 @@ import java.util.Map;
 /** Last copies: tap one to paste it, tap its pin to keep it at the top. */
 final class ClipboardPanel extends LinearLayout {
 
+    private static final int COLUMNS = 2;
+
     private final KeyboardRoot.Host host;
-    private final LinearLayout list;
+    private final GridLayout list;
     private final TextView title;
 
     /** What a clip offers to do: a short label and the intent that does it. */
@@ -55,16 +64,23 @@ final class ClipboardPanel extends LinearLayout {
         head.setPadding(PanelKit.dp(ctx, 4), 0, PanelKit.dp(ctx, 4), PanelKit.dp(ctx, 4));
         title = PanelKit.caption(ctx, "");
         head.addView(title, new LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        head.addView(PanelKit.chip(ctx, "Clear", false, v -> {
+        TextView clearBtn = new TextView(ctx);
+        clearBtn.setText("Clear");
+        clearBtn.setTextSize(12);
+        clearBtn.setTextColor(PanelKit.DIM);
+        clearBtn.setTypeface(Fonts.cascadiaMono(ctx));
+        clearBtn.setPadding(PanelKit.dp(ctx, 10), PanelKit.dp(ctx, 6), PanelKit.dp(ctx, 10), PanelKit.dp(ctx, 6));
+        clearBtn.setOnClickListener(v -> {
             ClipboardHistory.clearUnpinned(ctx);
             refresh();
-        }));
+        });
+        head.addView(clearBtn);
         addView(head, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         ScrollView scroll = new ScrollView(ctx);
         scroll.setVerticalScrollBarEnabled(false);
-        list = new LinearLayout(ctx);
-        list.setOrientation(VERTICAL);
+        list = new GridLayout(ctx);
+        list.setColumnCount(COLUMNS);
         scroll.addView(list, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         addView(scroll, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
@@ -105,43 +121,91 @@ final class ClipboardPanel extends LinearLayout {
             empty.setTextColor(PanelKit.DIM);
             empty.setTypeface(Fonts.cascadiaMono(ctx));
             empty.setPadding(0, PanelKit.dp(ctx, 40), 0, 0);
-            list.addView(empty);
+            list.addView(empty, cell(ctx, COLUMNS));
             return;
         }
-        for (ClipboardHistory.Item item : items) list.addView(row(ctx, item));
+        for (ClipboardHistory.Item item : items) list.addView(row(ctx, item), cell(ctx, 1));
     }
 
+    /** A cell {@code span} columns wide, sharing the row's width equally with its siblings. */
+    private static GridLayout.LayoutParams cell(Context ctx, int span) {
+        GridLayout.LayoutParams lp = new GridLayout.LayoutParams(
+                GridLayout.spec(GridLayout.UNDEFINED), GridLayout.spec(GridLayout.UNDEFINED, span, 1f));
+        lp.width = 0;
+        lp.setMargins(0, 0, PanelKit.dp(ctx, 4), PanelKit.dp(ctx, 4));
+        return lp;
+    }
+
+    /** One clip as a card: top-left text (or a full-width image), a small pin dot in the corner
+     * when pinned — the Samsung-keyboard-clipboard look, rather than a whole-card colour swap. */
     private View row(Context ctx, ClipboardHistory.Item item) {
-        LinearLayout row = new LinearLayout(ctx);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(PanelKit.dp(ctx, 10), PanelKit.dp(ctx, 8), PanelKit.dp(ctx, 10), PanelKit.dp(ctx, 8));
-        row.setBackground(UiKit.pressable(ctx, PanelKit.KEY, PanelKit.DOWN,
-                item.pinned ? 0xFFB5B5B5 : PanelKit.LINE, 1f, 8));
-        row.setOnClickListener(v -> {
-            host.insertText(item.text);
-            host.closePanel();
-        });
+        LinearLayout card = new LinearLayout(ctx);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(PanelKit.dp(ctx, 10), PanelKit.dp(ctx, 8), PanelKit.dp(ctx, 10), PanelKit.dp(ctx, 8));
+        card.setMinimumHeight(PanelKit.dp(ctx, 64));
+        card.setBackground(UiKit.pressable(ctx, PanelKit.KEY, PanelKit.DOWN, PanelKit.LINE, 1f, 10));
 
-        TextView t = new TextView(ctx);
-        t.setText(item.text);
-        t.setTextSize(12);
-        t.setTextColor(PanelKit.FG);
-        t.setTypeface(Fonts.cascadiaMono(ctx));
-        t.setMaxLines(2);
-        t.setEllipsize(TextUtils.TruncateAt.END);
-        row.addView(t, new LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        attachAction(ctx, row, item.text);
+        if (item.isImage()) {
+            card.setOnClickListener(v -> {
+                host.sendSticker(new File(item.image));
+                host.closePanel();
+            });
+            int h = PanelKit.dp(ctx, 72);
+            ImageView iv = new ImageView(ctx);
+            iv.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            iv.setImageBitmap(thumb(item.image, h * 2));
+            card.addView(iv, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, h));
+        } else {
+            card.setOnClickListener(v -> {
+                host.insertText(item.text);
+                host.closePanel();
+            });
+            TextView t = new TextView(ctx);
+            t.setText(item.text);
+            t.setTextSize(12);
+            t.setTextColor(PanelKit.FG);
+            t.setTypeface(Fonts.cascadiaMono(ctx));
+            t.setGravity(Gravity.START | Gravity.TOP);
+            t.setMaxLines(4);
+            t.setEllipsize(TextUtils.TruncateAt.END);
+            card.addView(t, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            attachAction(ctx, card, item.text);
+        }
 
-        row.setOnLongClickListener(v -> {   // hold a copy to pin it to the top, hold again to unpin
-            ClipboardHistory.togglePin(ctx, item.text);
+        card.setOnLongClickListener(v -> {   // hold a copy to pin it to the top, hold again to unpin
+            ClipboardHistory.togglePin(ctx, item);
             refresh();
             return true;
         });
 
-        LayoutParams lp = new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.bottomMargin = PanelKit.dp(ctx, 4);
-        row.setLayoutParams(lp);
-        return row;
+        if (!item.pinned) return card;
+
+        FrameLayout wrap = new FrameLayout(ctx);
+        wrap.addView(card, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        TextView pin = new TextView(ctx);
+        pin.setText("●");   // a small filled dot marks a pinned clip
+        pin.setTextSize(10);
+        pin.setTextColor(0xFFE0B000);
+        FrameLayout.LayoutParams pinLp = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        pinLp.gravity = Gravity.TOP | Gravity.END;
+        pinLp.topMargin = PanelKit.dp(ctx, 4);
+        pinLp.rightMargin = PanelKit.dp(ctx, 6);
+        wrap.addView(pin, pinLp);
+        return wrap;
+    }
+
+    private static Bitmap thumb(String path, int size) {
+        BitmapFactory.Options o = new BitmapFactory.Options();
+        o.inJustDecodeBounds = true;
+        BitmapFactory.decodeFile(path, o);
+        int sample = 1;
+        while (Math.max(o.outWidth, o.outHeight) / (sample * 2) >= size) sample *= 2;
+        BitmapFactory.Options d = new BitmapFactory.Options();
+        d.inSampleSize = sample;
+        return BitmapFactory.decodeFile(path, d);
     }
 
     // --------------------------------------------------------------- actions
@@ -171,8 +235,8 @@ final class ClipboardPanel extends LinearLayout {
         });
         chip.setTextSize(11);
         LayoutParams lp = new LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, PanelKit.dp(ctx, 28));
-        lp.leftMargin = PanelKit.dp(ctx, 6);
-        row.addView(chip, 1 + 0, lp);   // after the text, before the pin
+        lp.topMargin = PanelKit.dp(ctx, 6);
+        row.addView(chip, 1, lp);   // right under the text
     }
 
     private static Action actionFor(List<EntityAnnotation> found) {

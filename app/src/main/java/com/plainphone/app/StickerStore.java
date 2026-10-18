@@ -39,8 +39,8 @@ final class StickerStore {
         return out;
     }
 
-    /** Copy the picked image in, scaled down to at most 512 px, as a PNG. */
-    static boolean add(Context c, Uri source) {
+    /** Decode a picked image, scaled down to at most 512 px on its long side. Null if unreadable. */
+    static Bitmap scaledBitmap(Context c, Uri source) {
         try {
             BitmapFactory.Options bounds = new BitmapFactory.Options();
             bounds.inJustDecodeBounds = true;
@@ -55,19 +55,34 @@ final class StickerStore {
             try (InputStream in = c.getContentResolver().openInputStream(source)) {
                 bmp = BitmapFactory.decodeStream(in, null, opts);
             }
-            if (bmp == null) return false;
+            if (bmp == null) return null;
             float scale = Math.min(1f, (float) MAX_SIDE / Math.max(bmp.getWidth(), bmp.getHeight()));
             if (scale < 1f) {
                 bmp = Bitmap.createScaledBitmap(bmp, Math.max(1, Math.round(bmp.getWidth() * scale)),
                         Math.max(1, Math.round(bmp.getHeight() * scale)), true);
             }
+            return bmp;
+        } catch (IOException | RuntimeException e) {
+            return null;
+        }
+    }
+
+    /** Copy the picked image in, scaled down to at most 512 px, as a PNG. */
+    static boolean add(Context c, Uri source) {
+        Bitmap bmp = scaledBitmap(c, source);
+        return bmp != null && save(c, bmp);
+    }
+
+    /** Save a bitmap (already the size you want) as one of the keyboard's own PNG images. */
+    static boolean save(Context c, Bitmap bmp) {
+        try {
             File out = new File(dir(c), System.currentTimeMillis() + ".png");
             try (FileOutputStream os = new FileOutputStream(out)) {
                 bmp.compress(Bitmap.CompressFormat.PNG, 100, os);
             }
             justAdded = true;
             return true;
-        } catch (IOException | RuntimeException e) {
+        } catch (IOException e) {
             return false;
         }
     }
