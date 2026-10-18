@@ -200,8 +200,9 @@ public class PlainKeyboardService extends InputMethodService
     }
 
     @Override
-    public void addSticker() {
+    public void addSticker(String collection) {
         startActivity(new android.content.Intent(this, AddStickerActivity.class)
+                .putExtra(AddStickerActivity.EXTRA_COLLECTION, collection)
                 .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK));
     }
 

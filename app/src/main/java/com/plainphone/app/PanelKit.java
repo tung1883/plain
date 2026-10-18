@@ -33,10 +33,22 @@ final class PanelKit {
         t.setTypeface(Fonts.cascadiaMono(c));
         t.setGravity(Gravity.CENTER);
         t.setSingleLine(true);
-        t.setPadding(dp(c, 10), dp(c, 6), dp(c, 10), dp(c, 6));
+        centerText(t);
+        t.setPadding(dp(c, 10), dp(c, 6), dp(c, 10), dp(c, 7));
         styleChip(c, t, on);
         t.setOnClickListener(click);
         return t;
+    }
+
+    /**
+     * Centre a label in its box. Cascadia Mono's line box is much taller above the baseline than
+     * below (win metrics), so with the default font padding text sits low; without it the line is
+     * centred on the capitals, and the extra bottom padding set by the callers lifts lowercase to
+     * the visual middle.
+     */
+    static void centerText(TextView t) {
+        t.setIncludeFontPadding(false);
+        t.setGravity(Gravity.CENTER);
     }
 
     /** Switch a chip between the white (primary) and dark look. */
@@ -54,7 +66,7 @@ final class PanelKit {
     static TextView chipSmall(Context c, String text, boolean on, View.OnClickListener click) {
         TextView t = chip(c, text, on, click);
         t.setTextSize(11);
-        t.setPadding(dp(c, 10), dp(c, 4), dp(c, 10), dp(c, 4));
+        t.setPadding(dp(c, 10), dp(c, 4), dp(c, 10), dp(c, 5));
         return t;
     }
 

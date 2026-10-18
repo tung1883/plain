@@ -545,6 +545,7 @@
 
         <activity
             android:name=".AddStickerActivity"
+            android:windowSoftInputMode="adjustResize"
             android:exported="false"
             android:excludeFromRecents="true"
             android:theme="@style/Theme.PlainPhone" />

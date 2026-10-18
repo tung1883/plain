@@ -22,16 +22,57 @@ final class StickerStore {
     /** Set when an image was just added, so the keyboard can reopen the image tab. */
     static volatile boolean justAdded;
 
+    /** The collection the last add went to, so the tab opens on it; null = leave as is. */
+    static volatile String pendingCollection;
+
+    /** The name of the collection that holds images added before collections existed. */
+    static final String DEFAULT = "Default";
+
     private StickerStore() {}
 
-    private static File dir(Context c) {
+    private static File root(Context c) {
         File d = new File(c.getFilesDir(), "stickers");
         if (!d.isDirectory()) d.mkdirs();
         return d;
     }
 
-    static List<File> list(Context c) {
-        File[] files = dir(c).listFiles((d, name) -> name.endsWith(".png"));
+    /** A folder-safe collection name; blank or "Default" means the default collection. */
+    static String clean(String name) {
+        String n = name == null ? "" : name.replaceAll("[\\/:*?\"<>|.]", "_").trim();
+        if (n.length() > 30) n = n.substring(0, 30).trim();
+        return n.equalsIgnoreCase(DEFAULT) ? "" : n;
+    }
+
+    /** The folder of a collection; the default one is the stickers folder itself. */
+    private static File dir(Context c, String collection) {
+        String n = clean(collection);
+        if (n.isEmpty()) return root(c);
+        File d = new File(root(c), n);
+        if (!d.isDirectory()) d.mkdirs();
+        return d;
+    }
+
+    /** Collection names, Default first, then the rest A to Z. Default is always listed. */
+    static List<String> collections(Context c) {
+        List<String> out = new ArrayList<>();
+        out.add(DEFAULT);
+        File[] dirs = root(c).listFiles(File::isDirectory);
+        if (dirs == null) return out;
+        Arrays.sort(dirs, Comparator.comparing(f -> f.getName().toLowerCase()));
+        for (File d : dirs) out.add(d.getName());
+        return out;
+    }
+
+    /** Delete a collection and every image in it. The default collection is only emptied. */
+    static void deleteCollection(Context c, String collection) {
+        File d = dir(c, collection);
+        File[] files = d.listFiles((x, name) -> name.endsWith(".png"));
+        if (files != null) for (File f : files) delete(f);
+        if (!d.equals(root(c))) delete(d);
+    }
+
+    static List<File> list(Context c, String collection) {
+        File[] files = dir(c, collection).listFiles((d, name) -> name.endsWith(".png"));
         List<File> out = new ArrayList<>();
         if (files == null) return out;
         Arrays.sort(files, Comparator.comparingLong(File::lastModified).reversed());
@@ -68,19 +109,20 @@ final class StickerStore {
     }
 
     /** Copy the picked image in, scaled down to at most 512 px, as a PNG. */
-    static boolean add(Context c, Uri source) {
+    static boolean add(Context c, Uri source, String collection) {
         Bitmap bmp = scaledBitmap(c, source);
-        return bmp != null && save(c, bmp);
+        return bmp != null && save(c, bmp, collection);
     }
 
     /** Save a bitmap (already the size you want) as one of the keyboard's own PNG images. */
-    static boolean save(Context c, Bitmap bmp) {
+    static boolean save(Context c, Bitmap bmp, String collection) {
         try {
-            File out = new File(dir(c), System.currentTimeMillis() + ".png");
+            File out = new File(dir(c, collection), System.nanoTime() + ".png");   // unique even in a batch
             try (FileOutputStream os = new FileOutputStream(out)) {
                 bmp.compress(Bitmap.CompressFormat.PNG, 100, os);
             }
             justAdded = true;
+            pendingCollection = clean(collection).isEmpty() ? DEFAULT : clean(collection);
             return true;
         } catch (IOException e) {
             return false;

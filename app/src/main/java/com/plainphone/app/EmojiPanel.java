@@ -250,19 +250,68 @@ final class EmojiPanel extends LinearLayout {
 
     // ----------------------------------------------------------------- images
 
+    private String collection = StickerStore.DEFAULT;   // the image collection on show
+    private String confirmDelete;                       // a collection chip waiting for its second tap
+
     private void drawImages() {
         Context ctx = getContext();
         grid.setColumnCount(4);
         int size = PanelKit.dp(ctx, 78);
 
-        TextView add = PanelKit.chip(ctx, "+ Add image", true, v -> host.addSticker());
+        if (StickerStore.pendingCollection != null) {   // just added: open on that collection
+            collection = StickerStore.pendingCollection;
+            StickerStore.pendingCollection = null;
+        }
+        List<String> names = StickerStore.collections(ctx);
+        if (!names.contains(collection)) collection = StickerStore.DEFAULT;
+
+        // one chip per collection; hold one to delete it (tap the "Delete?" chip to confirm)
+        android.widget.HorizontalScrollView strip = new android.widget.HorizontalScrollView(ctx);
+        strip.setHorizontalScrollBarEnabled(false);
+        LinearLayout chips = new LinearLayout(ctx);
+        for (String name : names) {
+            boolean deleting = name.equals(confirmDelete);
+            TextView chip = PanelKit.chipSmall(ctx, deleting ? "Delete " + name + "?" : name,
+                    !deleting && name.equals(collection), v -> {
+                        if (deleting) {
+                            StickerStore.deleteCollection(ctx, name);
+                            confirmDelete = null;
+                            collection = StickerStore.DEFAULT;
+                        } else {
+                            collection = name;
+                            confirmDelete = null;
+                        }
+                        refresh();
+                    });
+            chip.setOnLongClickListener(v -> {
+                confirmDelete = name;
+                refresh();
+                postDelayed(() -> {
+                    if (name.equals(confirmDelete)) {
+                        confirmDelete = null;
+                        if ("Img".equals(cat)) refresh();
+                    }
+                }, 3000);
+                return true;
+            });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.rightMargin = PanelKit.dp(ctx, 4);
+            chips.addView(chip, lp);
+        }
+        strip.addView(chips);
+        GridLayout.LayoutParams stripLp = cell(4, 0);
+        stripLp.setMargins(0, 0, 0, PanelKit.dp(ctx, 4));
+        grid.addView(strip, stripLp);
+
+        TextView add = PanelKit.chip(ctx, "+ Add images to " + collection, true, v -> host.addSticker(collection));
         GridLayout.LayoutParams addLp = cell(4, 0);
         addLp.setMargins(0, 0, 0, PanelKit.dp(ctx, 4));
         grid.addView(add, addLp);
 
-        List<File> files = StickerStore.list(ctx);
+        List<File> files = StickerStore.list(ctx, collection);
         if (files.isEmpty()) {
-            TextView hint = PanelKit.caption(ctx, "NO IMAGES YET");
+            TextView hint = PanelKit.caption(ctx, "NO IMAGES IN " + collection.toUpperCase());
             GridLayout.LayoutParams hLp = cell(4, 0);
             hLp.setMargins(PanelKit.dp(ctx, 4), PanelKit.dp(ctx, 8), 0, 0);
             grid.addView(hint, hLp);

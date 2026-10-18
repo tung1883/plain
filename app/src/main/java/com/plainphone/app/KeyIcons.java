@@ -14,7 +14,7 @@ final class KeyIcons {
             /** Drawn as Cascadia Mono text by {@link PanelKit.IconView}, not as a path. */
             KEYS = 17,
             RESIZE = 18, SLIDERS = 19, IMAGE = 20, CLOCK = 21, PEOPLE = 22, LEAF = 23, CUP = 24, BOX = 25,
-            HASH = 26, FACE = 27;
+            HASH = 26, FACE = 27, SCISSORS = 28;
 
     private static final Paint PAINT = new Paint(Paint.ANTI_ALIAS_FLAG);
     private static final Path PATH = new Path();
@@ -291,6 +291,12 @@ final class KeyIcons {
                 c.drawLine(cx + s * 0.55f, cy - s * 0.9f, cx + s * 0.25f, cy + s * 0.9f, p);
                 c.drawLine(cx - s * 0.9f, cy - s * 0.35f, cx + s * 0.9f, cy - s * 0.35f, p);
                 c.drawLine(cx - s * 0.9f, cy + s * 0.35f, cx + s * 0.9f, cy + s * 0.35f, p);
+                return;
+            case SCISSORS:
+                c.drawCircle(cx - s * 0.55f, cy - s * 0.6f, s * 0.3f, p);
+                c.drawCircle(cx - s * 0.55f, cy + s * 0.6f, s * 0.3f, p);
+                c.drawLine(cx - s * 0.3f, cy - s * 0.4f, cx + s * 0.95f, cy + s * 0.7f, p);
+                c.drawLine(cx - s * 0.3f, cy + s * 0.4f, cx + s * 0.95f, cy - s * 0.7f, p);
                 return;
             case FACE:
                 p.setStyle(Paint.Style.FILL);

@@ -41,7 +41,7 @@ final class KeyboardRoot extends LinearLayout {
         void settingsChanged();
 
         /** Pick an image to add to the keyboard's own images. */
-        void addSticker();
+        void addSticker(String collection);
 
         /** Send one of the keyboard's own images into the field (or to the clipboard if it cannot). */
         void sendSticker(java.io.File image);
