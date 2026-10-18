@@ -96,6 +96,15 @@ final class ScanPanel extends LinearLayout {
         camBox.setVisibility(GONE);
         addView(camBox, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
         newPreview();
+        flip = new PanelKit.IconView(ctx, KeyIcons.SWAP);   // front / back camera, top right of the view
+        flip.setIconScale(0.3f);
+        flip.setBackground(UiKit.rounded(ctx, 0xCC161616, 0xFF2B2B2B, 1f, 10));
+        flip.setOnClickListener(v -> flipCamera());
+        FrameLayout.LayoutParams flipLp = new FrameLayout.LayoutParams(PanelKit.dp(ctx, 34), PanelKit.dp(ctx, 28),
+                Gravity.TOP | Gravity.END);
+        flipLp.topMargin = PanelKit.dp(ctx, 6);
+        flipLp.rightMargin = PanelKit.dp(ctx, 6);
+        camBox.addView(flip, flipLp);
 
         acts = new LinearLayout(ctx);
         choose = button(ctx, "Photo", true, v -> host.scanText());
@@ -115,13 +124,6 @@ final class ScanPanel extends LinearLayout {
 
         camActs = new LinearLayout(ctx);
         camActs.addView(button(ctx, "Cancel", false, v -> stopCamera()));
-        flip = new PanelKit.IconView(ctx, KeyIcons.SWAP);   // front / back camera
-        flip.setIconScale(0.28f);
-        flip.setBackground(UiKit.pressable(ctx, PanelKit.KEY, PanelKit.DOWN, PanelKit.LINE, 1f, 9));
-        flip.setOnClickListener(v -> flipCamera());
-        LayoutParams flipLp = new LayoutParams(PanelKit.dp(ctx, 52), PanelKit.dp(ctx, 40));
-        flipLp.rightMargin = PanelKit.dp(ctx, 4);
-        camActs.addView(flip, flipLp);
         camActs.addView(button(ctx, "Capture", true, v -> capture()));
         camActs.setVisibility(GONE);
         addView(camActs, actsLp);
@@ -205,7 +207,7 @@ final class ScanPanel extends LinearLayout {
             public void onSurfaceTextureUpdated(SurfaceTexture st) {
             }
         });
-        camBox.addView(v, new FrameLayout.LayoutParams(
+        camBox.addView(v, 0, new FrameLayout.LayoutParams(   // under the flip button
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER));
         preview = v;
     }
