@@ -214,10 +214,27 @@ public class PlainKeyboardService extends InputMethodService
         if (sent) return;
         // this field does not take images: put it on the clipboard so it can be pasted where it can go
         if (clipboard != null) {
+            lastImageUri = uri;
             clipboard.setPrimaryClip(ClipData.newUri(getContentResolver(), "image", uri));
             android.widget.Toast.makeText(this, "This field cannot take images. Copied, paste it elsewhere.",
                     android.widget.Toast.LENGTH_SHORT).show();
         }
+    }
+
+    @Override
+    public void copyText(String text) {
+        if (clipboard == null) return;
+        clipboard.setPrimaryClip(ClipData.newPlainText("text", text));
+        android.widget.Toast.makeText(this, "Copied", android.widget.Toast.LENGTH_SHORT).show();
+    }
+
+    @Override
+    public void copyImage(java.io.File image) {
+        if (clipboard == null) return;
+        android.net.Uri uri = PlainFileProvider.uriFor("com.plainphone.app.files", image);
+        lastImageUri = uri;   // already in the history; do not record it again as a new image
+        clipboard.setPrimaryClip(ClipData.newUri(getContentResolver(), "image", uri));
+        android.widget.Toast.makeText(this, "Copied", android.widget.Toast.LENGTH_SHORT).show();
     }
 
     @Override

@@ -156,6 +156,42 @@ final class ClipboardHistory {
         save(c, items);
     }
 
+    /** Move a clip to the front of the history (keeping its pin), as if it were just copied. */
+    static void bump(Context c, Item item) {
+        List<Item> items = load(c);
+        for (int i = 0; i < items.size(); i++) {
+            if (items.get(i).sameAs(item)) {
+                Item moved = items.remove(i);
+                items.add(0, moved);
+                save(c, items);
+                return;
+            }
+        }
+    }
+
+    /** Delete these clips (and any image files they own). */
+    static void remove(Context c, java.util.Collection<Item> targets) {
+        List<Item> items = load(c);
+        for (int i = items.size() - 1; i >= 0; i--) {
+            for (Item t : targets) {
+                if (items.get(i).sameAs(t)) {
+                    deleteFile(items.remove(i));
+                    break;
+                }
+            }
+        }
+        save(c, items);
+    }
+
+    /** Pin or unpin all of these clips. */
+    static void setPinned(Context c, java.util.Collection<Item> targets, boolean pinned) {
+        List<Item> items = load(c);
+        for (Item i : items) {
+            for (Item t : targets) if (i.sameAs(t)) i.pinned = pinned;
+        }
+        save(c, items);
+    }
+
     static void clearUnpinned(Context c) {
         List<Item> items = load(c);
         for (int i = items.size() - 1; i >= 0; i--) {

@@ -42,6 +42,12 @@ final class KeyboardRoot extends LinearLayout {
 
         /** Send one of the keyboard's own images into the field (or to the clipboard if it cannot). */
         void sendSticker(java.io.File image);
+
+        /** Put text on the system clipboard, so the next paste gives it. */
+        void copyText(String text);
+
+        /** Put one of the keyboard's own images on the system clipboard. */
+        void copyImage(java.io.File image);
     }
 
     private final DevKeyboardView keys;
