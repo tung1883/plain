@@ -61,16 +61,10 @@ final class ClipboardPanel extends LinearLayout {
 
         LinearLayout head = new LinearLayout(ctx);
         head.setGravity(Gravity.CENTER_VERTICAL);
-        head.setPadding(PanelKit.dp(ctx, 4), 0, PanelKit.dp(ctx, 4), PanelKit.dp(ctx, 4));
+        head.setPadding(PanelKit.dp(ctx, 4), 0, 0, PanelKit.dp(ctx, 2));
         title = PanelKit.caption(ctx, "");
         head.addView(title, new LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView clearBtn = new TextView(ctx);
-        clearBtn.setText("Clear");
-        clearBtn.setTextSize(12);
-        clearBtn.setTextColor(PanelKit.DIM);
-        clearBtn.setTypeface(Fonts.cascadiaMono(ctx));
-        clearBtn.setPadding(PanelKit.dp(ctx, 10), PanelKit.dp(ctx, 6), PanelKit.dp(ctx, 10), PanelKit.dp(ctx, 6));
-        clearBtn.setOnClickListener(v -> {
+        TextView clearBtn = PanelKit.link(ctx, "Clear", v -> {
             ClipboardHistory.clearUnpinned(ctx);
             refresh();
         });
@@ -111,7 +105,7 @@ final class ClipboardPanel extends LinearLayout {
         ensureExtractor();
         Context ctx = getContext();
         List<ClipboardHistory.Item> items = ClipboardHistory.load(ctx);
-        title.setText("LAST " + items.size() + " COPIES - HOLD TO PIN");
+        title.setText("LAST " + items.size() + " COPIES · HOLD TO PIN");
         list.removeAllViews();
         if (items.isEmpty()) {
             TextView empty = new TextView(ctx);
@@ -141,9 +135,9 @@ final class ClipboardPanel extends LinearLayout {
     private View row(Context ctx, ClipboardHistory.Item item) {
         LinearLayout card = new LinearLayout(ctx);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(PanelKit.dp(ctx, 10), PanelKit.dp(ctx, 8), PanelKit.dp(ctx, 10), PanelKit.dp(ctx, 8));
-        card.setMinimumHeight(PanelKit.dp(ctx, 64));
-        card.setBackground(UiKit.pressable(ctx, PanelKit.KEY, PanelKit.DOWN, PanelKit.LINE, 1f, 10));
+        card.setPadding(PanelKit.dp(ctx, 10), PanelKit.dp(ctx, 9), PanelKit.dp(ctx, 10), PanelKit.dp(ctx, 9));
+        card.setMinimumHeight(PanelKit.dp(ctx, 76));
+        card.setBackground(UiKit.pressable(ctx, PanelKit.KEY, PanelKit.DOWN, PanelKit.LINE, 1f, 12));
 
         if (item.isImage()) {
             card.setOnClickListener(v -> {
@@ -166,7 +160,8 @@ final class ClipboardPanel extends LinearLayout {
             t.setTextColor(PanelKit.FG);
             t.setTypeface(Fonts.cascadiaMono(ctx));
             t.setGravity(Gravity.START | Gravity.TOP);
-            t.setMaxLines(4);
+            t.setMaxLines(3);
+            t.setPadding(0, 0, PanelKit.dp(ctx, 12), 0);
             t.setEllipsize(TextUtils.TruncateAt.END);
             card.addView(t, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -179,20 +174,19 @@ final class ClipboardPanel extends LinearLayout {
             return true;
         });
 
-        if (!item.pinned) return card;
-
         FrameLayout wrap = new FrameLayout(ctx);
         wrap.addView(card, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        TextView pin = new TextView(ctx);
-        pin.setText("●");   // a small filled dot marks a pinned clip
-        pin.setTextSize(10);
-        pin.setTextColor(0xFFE0B000);
-        FrameLayout.LayoutParams pinLp = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        View pin = new View(ctx);   // a small dot in the corner: filled when the clip is pinned
+        android.graphics.drawable.GradientDrawable dot = new android.graphics.drawable.GradientDrawable();
+        dot.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+        dot.setColor(item.pinned ? 0xFFFFFFFF : 0x00000000);
+        dot.setStroke(1, item.pinned ? 0xFFFFFFFF : 0xFF444444);
+        pin.setBackground(dot);
+        FrameLayout.LayoutParams pinLp = new FrameLayout.LayoutParams(PanelKit.dp(ctx, 8), PanelKit.dp(ctx, 8));
         pinLp.gravity = Gravity.TOP | Gravity.END;
-        pinLp.topMargin = PanelKit.dp(ctx, 4);
-        pinLp.rightMargin = PanelKit.dp(ctx, 6);
+        pinLp.topMargin = PanelKit.dp(ctx, 8);
+        pinLp.rightMargin = PanelKit.dp(ctx, 8);
         wrap.addView(pin, pinLp);
         return wrap;
     }
@@ -227,16 +221,22 @@ final class ClipboardPanel extends LinearLayout {
 
     private void addChip(Context ctx, LinearLayout row, Action a) {
         if (a == null) return;
-        TextView chip = PanelKit.chip(ctx, a.label, true, v -> {
+        TextView tag = new TextView(ctx);   // a small light tag under the text
+        tag.setText(a.label);
+        tag.setTextSize(10);
+        tag.setTextColor(0xFF000000);
+        tag.setTypeface(Fonts.cascadiaMono(ctx));
+        tag.setPadding(PanelKit.dp(ctx, 7), PanelKit.dp(ctx, 3), PanelKit.dp(ctx, 7), PanelKit.dp(ctx, 3));
+        tag.setBackground(UiKit.rounded(ctx, 0xFFCFCFCF, 0xFFCFCFCF, 0f, 6));
+        tag.setOnClickListener(v -> {
             try {
                 ctx.startActivity(a.intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
             } catch (ActivityNotFoundException | SecurityException ignored) {
             }
         });
-        chip.setTextSize(11);
-        LayoutParams lp = new LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, PanelKit.dp(ctx, 28));
+        LayoutParams lp = new LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         lp.topMargin = PanelKit.dp(ctx, 6);
-        row.addView(chip, 1, lp);   // right under the text
+        row.addView(tag, lp);
     }
 
     private static Action actionFor(List<EntityAnnotation> found) {
@@ -246,17 +246,17 @@ final class ClipboardPanel extends LinearLayout {
                 switch (e.getType()) {
                     case Entity.TYPE_URL: {
                         String u = span.contains("://") ? span : "http://" + span;
-                        return new Action("Open", new Intent(Intent.ACTION_VIEW, Uri.parse(u)));
+                        return new Action("Open link", new Intent(Intent.ACTION_VIEW, Uri.parse(u)));
                     }
                     case Entity.TYPE_PHONE:
                         return new Action("Call", new Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + Uri.encode(span))));
                     case Entity.TYPE_EMAIL:
-                        return new Action("Mail", new Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:" + span)));
+                        return new Action("Email", new Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:" + span)));
                     case Entity.TYPE_ADDRESS:
                         return new Action("Map", new Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=" + Uri.encode(span))));
                     case Entity.TYPE_DATE_TIME: {
                         long when = e.asDateTimeEntity().getTimestampMillis();
-                        return new Action("Cal", new Intent(Intent.ACTION_INSERT)
+                        return new Action("Calendar", new Intent(Intent.ACTION_INSERT)
                                 .setData(CalendarContract.Events.CONTENT_URI)
                                 .putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, when));
                     }

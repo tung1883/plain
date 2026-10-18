@@ -75,17 +75,36 @@ final class TranslatePanel extends FrameLayout {
         main.addView(langs, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
+        // one card: the source on top, the translation below a hairline, the status last
+        LinearLayout card = new LinearLayout(ctx);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setBackground(PanelKit.card(ctx));
         sourceCaption = PanelKit.caption(ctx, "");
-        main.addView(sourceCaption, captionLp(ctx));
+        sourceCaption.setTextSize(9);
+        sourceCaption.setPadding(PanelKit.dp(ctx, 12), PanelKit.dp(ctx, 6), PanelKit.dp(ctx, 12), 0);
+        card.addView(sourceCaption);
         source = box(ctx, false);
         source.setOnClickListener(v -> composer.accept(override != null ? override : host.fieldText()));
-        main.addView(source, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-        main.addView(PanelKit.caption(ctx, "TRANSLATION"), captionLp(ctx));
+        card.addView(source, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        LinearLayout divider = new LinearLayout(ctx);
+        divider.setGravity(Gravity.CENTER_VERTICAL);
+        View hair = new View(ctx);
+        hair.setBackgroundColor(PanelKit.LINE);
+        divider.addView(hair, new LinearLayout.LayoutParams(0, 1, 1f));
+        TextView tcap = PanelKit.caption(ctx, "TRANSLATION");
+        tcap.setTextSize(9);
+        tcap.setPadding(PanelKit.dp(ctx, 8), 0, PanelKit.dp(ctx, 12), 0);
+        divider.addView(tcap);
+        card.addView(divider, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         result = box(ctx, true);
-        main.addView(result, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.3f));
-
+        card.addView(result, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.3f));
         status = PanelKit.caption(ctx, "");
-        main.addView(status, captionLp(ctx));
+        status.setTextSize(9.5f);
+        status.setPadding(PanelKit.dp(ctx, 12), 0, PanelKit.dp(ctx, 12), PanelKit.dp(ctx, 6));
+        card.addView(status);
+        LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
+        cardLp.topMargin = PanelKit.dp(ctx, 4);
+        main.addView(card, cardLp);
 
         LinearLayout acts = new LinearLayout(ctx);
         acts.addView(chipWide(ctx, "Insert", false, v -> apply(false)));
@@ -95,8 +114,10 @@ final class TranslatePanel extends FrameLayout {
             run();
         });
         acts.addView(fieldChip);
-        main.addView(acts, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        LinearLayout.LayoutParams actsLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        actsLp.topMargin = PanelKit.dp(ctx, 4);
+        main.addView(acts, actsLp);
         addView(main, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
         picker = new ScrollView(ctx);
@@ -128,11 +149,10 @@ final class TranslatePanel extends FrameLayout {
 
     private TextView box(Context ctx, boolean strong) {
         TextView t = new TextView(ctx);
-        t.setTextSize(13);
+        t.setTextSize(strong ? 14 : 13);
         t.setTypeface(Fonts.cascadiaMono(ctx));
-        t.setTextColor(strong ? 0xFFFFFFFF : PanelKit.FG);
-        t.setPadding(PanelKit.dp(ctx, 10), PanelKit.dp(ctx, 6), PanelKit.dp(ctx, 10), PanelKit.dp(ctx, 6));
-        t.setBackground(UiKit.rounded(ctx, PanelKit.KEY, strong ? 0xFF555555 : PanelKit.LINE, 1f, 8));
+        t.setTextColor(strong ? 0xFFFFFFFF : 0xFF9A9A9A);
+        t.setPadding(PanelKit.dp(ctx, 12), PanelKit.dp(ctx, 6), PanelKit.dp(ctx, 12), PanelKit.dp(ctx, 6));
         t.setMovementMethod(new android.text.method.ScrollingMovementMethod());
         return t;
     }
@@ -182,7 +202,7 @@ final class TranslatePanel extends FrameLayout {
         detected = null;
         String text = override != null ? override : host.fieldText();
         source.setText(text);
-        sourceCaption.setText(override != null ? "YOUR TEXT - TAP TO EDIT" : "FIELD TEXT - TAP TO WRITE YOUR OWN");
+        sourceCaption.setText(override != null ? "YOUR TEXT · TAP TO EDIT" : "FIELD TEXT · TAP TO WRITE YOUR OWN");
         fieldChip.setVisibility(override != null ? VISIBLE : GONE);
         translated = null;
         result.setText("");

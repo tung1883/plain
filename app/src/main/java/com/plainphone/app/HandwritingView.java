@@ -24,6 +24,7 @@ final class HandwritingView extends View {
 
     private final Paint line = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint hint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint base = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final List<Path> done = new ArrayList<>();
     private Path current;
     private Ink.Builder ink = Ink.builder();
@@ -33,13 +34,19 @@ final class HandwritingView extends View {
 
     HandwritingView(Context ctx) {
         super(ctx);
-        setBackground(UiKit.rounded(ctx, PanelKit.KEY, PanelKit.LINE, 1f, 8));
+        setBackground(UiKit.rounded(ctx, PanelKit.KEY, PanelKit.LINE, 1f, 12));
         line.setColor(0xFFFFFFFF);
         line.setStyle(Paint.Style.STROKE);
         line.setStrokeWidth(PanelKit.dp(ctx, 3));
         line.setStrokeCap(Paint.Cap.ROUND);
         line.setStrokeJoin(Paint.Join.ROUND);
-        hint.setColor(PanelKit.DIM);
+        hint.setColor(0xFF3C3C3C);
+        hint.setLetterSpacing(0.1f);
+        base.setColor(0xFF2F2F2F);
+        base.setStyle(Paint.Style.STROKE);
+        base.setStrokeWidth(PanelKit.dp(ctx, 1));
+        base.setPathEffect(new android.graphics.DashPathEffect(
+                new float[]{PanelKit.dp(ctx, 4), PanelKit.dp(ctx, 4)}, 0));
         hint.setTextAlign(Paint.Align.CENTER);
         hint.setTextSize(PanelKit.dp(ctx, 12));
         hint.setTypeface(Fonts.cascadiaMono(ctx));
@@ -112,8 +119,10 @@ final class HandwritingView extends View {
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
+        float pad = PanelKit.dp(getContext(), 12), baseY = getHeight() * 0.62f;
+        canvas.drawLine(pad, baseY, getWidth() - pad, baseY, base);   // a dashed writing line
         if (strokes == 0 && current == null) {
-            canvas.drawText("write here", getWidth() / 2f, getHeight() / 2f, hint);
+            canvas.drawText("WRITE HERE", getWidth() / 2f, getHeight() / 2f, hint);
         }
         for (Path p : done) canvas.drawPath(p, line);
         if (current != null) canvas.drawPath(current, line);

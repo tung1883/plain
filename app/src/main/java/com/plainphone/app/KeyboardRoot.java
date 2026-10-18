@@ -53,7 +53,11 @@ final class KeyboardRoot extends LinearLayout {
     private final ScanPanel scan;
     private final KeyboardSettingsPanel settings;
     private final PanelKit.IconView[] icons = new PanelKit.IconView[6];
-    private final PanelKit.IconView abc;
+    private final PanelKit.IconView abc, resize;
+    private final TextView readout;
+    private final Runnable hideReadout = this::clearReadout;
+    private float dragY0;
+    private int dragPct0, dragPct;
     private final LinearLayout composeBar;
     private final TextView composeText;
     private final StringBuilder compose = new StringBuilder();
@@ -113,7 +117,7 @@ final class KeyboardRoot extends LinearLayout {
         abcLp.rightMargin = PanelKit.dp(ctx, 6);
         bar.addView(abc, abcLp);
 
-        int[] kinds = {KeyIcons.CLIPBOARD, KeyIcons.EMOJI, KeyIcons.TRANSLATE, KeyIcons.PEN, KeyIcons.SCAN, KeyIcons.GEAR};
+        int[] kinds = {KeyIcons.CLIPBOARD, KeyIcons.EMOJI, KeyIcons.TRANSLATE, KeyIcons.PEN, KeyIcons.SCAN, KeyIcons.SLIDERS};
         for (int i = 0; i < icons.length; i++) {
             final int which = i;
             icons[i] = new PanelKit.IconView(ctx, kinds[i]);
@@ -124,8 +128,16 @@ final class KeyboardRoot extends LinearLayout {
             lp.rightMargin = PanelKit.dp(ctx, 2);
             bar.addView(icons[i], lp);
         }
-        View gap = new View(ctx);
-        bar.addView(gap, new LayoutParams(0, 1, 1f));
+        readout = PanelKit.caption(ctx, "");
+        readout.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+        readout.setTextColor(Color.WHITE);
+        readout.setPadding(0, 0, PanelKit.dp(ctx, 8), 0);
+        bar.addView(readout, new LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
+        resize = new PanelKit.IconView(ctx, KeyIcons.RESIZE);
+        resize.setOnTouchListener(this::dragHeight);
+        LayoutParams rLp = new LayoutParams(PanelKit.dp(ctx, 38), PanelKit.dp(ctx, 30));
+        rLp.rightMargin = PanelKit.dp(ctx, 2);
+        bar.addView(resize, rLp);
         bar.addView(icons[5], new LayoutParams(PanelKit.dp(ctx, 38), PanelKit.dp(ctx, 30)));
         addView(bar, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
@@ -168,15 +180,56 @@ final class KeyboardRoot extends LinearLayout {
     void refresh() {
         keys.refresh();
         show(-1);
-        body.getLayoutParams().height = keys.heightPx() + body.getPaddingTop() + body.getPaddingBottom();
-        body.requestLayout();
+        applyBodyHeight();
     }
 
     /** A setting changed in the settings panel: rebuild the keys and resize, staying on the panel. */
     void applySettings() {
         keys.refresh();
+        applyBodyHeight();
+    }
+
+    private void clearReadout() {
+        readout.setText("");
+    }
+
+    private void applyBodyHeight() {
         body.getLayoutParams().height = keys.heightPx() + body.getPaddingTop() + body.getPaddingBottom();
         body.requestLayout();
+    }
+
+    /** Hold the height button and drag: up = taller, down = shorter, in 5% steps (75..130). */
+    private boolean dragHeight(View v, android.view.MotionEvent e) {
+        float density = getResources().getDisplayMetrics().density;
+        switch (e.getActionMasked()) {
+            case android.view.MotionEvent.ACTION_DOWN:
+                dragY0 = e.getRawY();
+                dragPct0 = dragPct = Config.getKbHeightPct(getContext());
+                getParent().requestDisallowInterceptTouchEvent(true);
+                resize.setActive(true);
+                removeCallbacks(hideReadout);
+                readout.setText(dragPct + "%");
+                return true;
+            case android.view.MotionEvent.ACTION_MOVE: {
+                float raw = dragPct0 + (dragY0 - e.getRawY()) / density * 0.4f;
+                int pct = Math.max(75, Math.min(130, Math.round(raw / 5f) * 5));
+                if (pct != dragPct) {
+                    dragPct = pct;
+                    keys.setHeightPct(pct);
+                    applyBodyHeight();
+                    readout.setText(pct + "%");
+                }
+                return true;
+            }
+            case android.view.MotionEvent.ACTION_UP:
+            case android.view.MotionEvent.ACTION_CANCEL:
+                Config.setKbHeightPct(getContext(), dragPct);
+                resize.setActive(false);
+                postDelayed(hideReadout, 600);
+                return true;
+            default:
+                return true;
+        }
     }
 
     // ---------------------------------------------------- typing for Translate
@@ -248,6 +301,7 @@ final class KeyboardRoot extends LinearLayout {
         settings.setVisibility(which == 5 ? VISIBLE : GONE);
         for (int i = 0; i < icons.length; i++) icons[i].setActive(i == which);
         abc.setActive(which < 0);
+        resize.setVisibility(which < 0 ? VISIBLE : INVISIBLE);
         if (which == 0) clip.refresh();
         if (which == 1) emoji.refresh();
         if (which == 2) translate.refresh();

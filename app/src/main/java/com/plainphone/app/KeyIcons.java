@@ -12,7 +12,9 @@ final class KeyIcons {
     static final int LEFT = 1, RIGHT = 2, UP = 3, DOWN = 4, SHIFT = 5, BACKSPACE = 6, ENTER = 7, KEYBOARD = 8,
             CLIPBOARD = 9, EMOJI = 10, TRANSLATE = 11, PIN = 12, SWAP = 13, PEN = 14, SCAN = 15, GEAR = 16,
             /** Drawn as Cascadia Mono text by {@link PanelKit.IconView}, not as a path. */
-            KEYS = 17;
+            KEYS = 17,
+            RESIZE = 18, SLIDERS = 19, IMAGE = 20, CLOCK = 21, PEOPLE = 22, LEAF = 23, CUP = 24, BOX = 25,
+            HASH = 26, FACE = 27;
 
     private static final Paint PAINT = new Paint(Paint.ANTI_ALIAS_FLAG);
     private static final Path PATH = new Path();
@@ -203,6 +205,100 @@ final class KeyIcons {
                 path.lineTo(cx - s * 0.9f, cy + s * 0.4f);
                 path.lineTo(cx - s * 0.4f, cy + s * 0.85f);
                 c.drawPath(path, p);
+                return;
+            case RESIZE: {
+                c.drawLine(cx, cy - s * 0.9f, cx, cy + s * 0.9f, p);
+                path.moveTo(cx - s * 0.5f, cy - s * 0.4f);
+                path.lineTo(cx, cy - s * 0.9f);
+                path.lineTo(cx + s * 0.5f, cy - s * 0.4f);
+                path.moveTo(cx - s * 0.5f, cy + s * 0.4f);
+                path.lineTo(cx, cy + s * 0.9f);
+                path.lineTo(cx + s * 0.5f, cy + s * 0.4f);
+                c.drawPath(path, p);
+                return;
+            }
+            case SLIDERS: {
+                float dotR = s * 0.28f;
+                c.drawLine(cx - s, cy - s * 0.5f, cx + s * 0.05f, cy - s * 0.5f, p);
+                c.drawCircle(cx + s * 0.35f, cy - s * 0.5f, dotR, p);
+                c.drawLine(cx + s * 0.65f, cy - s * 0.5f, cx + s, cy - s * 0.5f, p);
+                c.drawLine(cx - s, cy + s * 0.5f, cx - s * 0.65f, cy + s * 0.5f, p);
+                c.drawCircle(cx - s * 0.35f, cy + s * 0.5f, dotR, p);
+                c.drawLine(cx - s * 0.05f, cy + s * 0.5f, cx + s, cy + s * 0.5f, p);
+                return;
+            }
+            case IMAGE:
+                RECT.set(cx - s, cy - s * 0.75f, cx + s, cy + s * 0.75f);
+                c.drawRoundRect(RECT, s * 0.2f, s * 0.2f, p);
+                c.drawCircle(cx - s * 0.4f, cy - s * 0.2f, s * 0.2f, p);
+                path.moveTo(cx - s * 0.9f, cy + s * 0.6f);
+                path.lineTo(cx - s * 0.2f, cy + s * 0.05f);
+                path.lineTo(cx + s * 0.2f, cy + s * 0.4f);
+                path.lineTo(cx + s * 0.5f, cy + s * 0.15f);
+                path.lineTo(cx + s * 0.9f, cy + s * 0.55f);
+                c.drawPath(path, p);
+                return;
+            case CLOCK:
+                c.drawCircle(cx, cy, s * 0.95f, p);
+                path.moveTo(cx, cy - s * 0.5f);
+                path.lineTo(cx, cy);
+                path.lineTo(cx + s * 0.35f, cy + s * 0.25f);
+                c.drawPath(path, p);
+                return;
+            case PEOPLE:
+                c.drawCircle(cx, cy - s * 0.4f, s * 0.35f, p);
+                RECT.set(cx - s * 0.8f, cy + s * 0.15f, cx + s * 0.8f, cy + s * 1.6f);
+                c.drawArc(RECT, 180f, 180f, false, p);
+                return;
+            case LEAF:
+                path.moveTo(cx - s * 0.8f, cy + s * 0.8f);
+                path.quadTo(cx - s * 0.8f, cy - s * 0.8f, cx + s * 0.8f, cy - s * 0.8f);
+                path.quadTo(cx + s * 0.8f, cy + s * 0.8f, cx - s * 0.8f, cy + s * 0.8f);
+                path.close();
+                c.drawPath(path, p);
+                c.drawLine(cx - s * 0.8f, cy + s * 0.8f, cx + s * 0.1f, cy - s * 0.1f, p);
+                return;
+            case CUP:
+                path.moveTo(cx - s * 0.8f, cy - s * 0.4f);
+                path.lineTo(cx - s * 0.8f, cy + s * 0.2f);
+                path.quadTo(cx - s * 0.8f, cy + s * 0.85f, cx - s * 0.1f, cy + s * 0.85f);
+                path.quadTo(cx + s * 0.4f, cy + s * 0.85f, cx + s * 0.4f, cy + s * 0.2f);
+                path.lineTo(cx + s * 0.4f, cy - s * 0.4f);
+                path.close();
+                c.drawPath(path, p);
+                RECT.set(cx + s * 0.2f, cy - s * 0.2f, cx + s * 0.95f, cy + s * 0.45f);
+                c.drawArc(RECT, -90f, 180f, false, p);
+                c.drawLine(cx - s * 0.5f, cy - s * 0.9f, cx - s * 0.5f, cy - s * 0.65f, p);
+                c.drawLine(cx - s * 0.1f, cy - s * 0.9f, cx - s * 0.1f, cy - s * 0.65f, p);
+                return;
+            case BOX:
+                path.moveTo(cx, cy - s);
+                path.lineTo(cx + s * 0.85f, cy - s * 0.5f);
+                path.lineTo(cx + s * 0.85f, cy + s * 0.5f);
+                path.lineTo(cx, cy + s);
+                path.lineTo(cx - s * 0.85f, cy + s * 0.5f);
+                path.lineTo(cx - s * 0.85f, cy - s * 0.5f);
+                path.close();
+                path.moveTo(cx - s * 0.85f, cy - s * 0.5f);
+                path.lineTo(cx, cy);
+                path.lineTo(cx + s * 0.85f, cy - s * 0.5f);
+                path.moveTo(cx, cy);
+                path.lineTo(cx, cy + s);
+                c.drawPath(path, p);
+                return;
+            case HASH:
+                c.drawLine(cx - s * 0.25f, cy - s * 0.9f, cx - s * 0.55f, cy + s * 0.9f, p);
+                c.drawLine(cx + s * 0.55f, cy - s * 0.9f, cx + s * 0.25f, cy + s * 0.9f, p);
+                c.drawLine(cx - s * 0.9f, cy - s * 0.35f, cx + s * 0.9f, cy - s * 0.35f, p);
+                c.drawLine(cx - s * 0.9f, cy + s * 0.35f, cx + s * 0.9f, cy + s * 0.35f, p);
+                return;
+            case FACE:
+                p.setStyle(Paint.Style.FILL);
+                c.drawCircle(cx - s * 0.45f, cy - s * 0.35f, Math.max(1.2f, s * 0.12f), p);
+                c.drawCircle(cx + s * 0.45f, cy - s * 0.35f, Math.max(1.2f, s * 0.12f), p);
+                p.setStyle(Paint.Style.STROKE);
+                RECT.set(cx - s * 0.8f, cy - s * 0.5f, cx + s * 0.8f, cy + s * 0.7f);
+                c.drawArc(RECT, 25f, 130f, false, p);
                 return;
             default:
         }

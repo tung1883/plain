@@ -1,10 +1,12 @@
 package com.plainphone.app;
 
 import android.content.Context;
+import android.graphics.Color;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.Gravity;
 import android.view.KeyEvent;
+import android.view.View;
 import android.view.ViewGroup;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
@@ -60,7 +62,7 @@ final class InkPanel extends LinearLayout {
 
         LinearLayout head = new LinearLayout(ctx);
         head.setGravity(Gravity.CENTER_VERTICAL);
-        langChip = PanelKit.chip(ctx, "", true, v -> nextLanguage());
+        langChip = PanelKit.chipSmall(ctx, "", true, v -> nextLanguage());
         head.addView(langChip, new LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         status = PanelKit.caption(ctx, "");
         status.setPadding(PanelKit.dp(ctx, 8), 0, 0, 0);
@@ -76,6 +78,9 @@ final class InkPanel extends LinearLayout {
         LayoutParams stripLp = new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, PanelKit.dp(ctx, 38));
         stripLp.topMargin = PanelKit.dp(ctx, 4);
         addView(strip, stripLp);
+        View under = new View(ctx);
+        under.setBackgroundColor(PanelKit.LINE);
+        addView(under, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1));
 
         pad = new HandwritingView(ctx);
         pad.setListener(new HandwritingView.Listener() {
@@ -96,7 +101,7 @@ final class InkPanel extends LinearLayout {
         LinearLayout acts = new LinearLayout(ctx);
         acts.addView(action(ctx, "Space", v -> host.insertText(" ")));
         PanelKit.IconView bksp = new PanelKit.IconView(ctx, KeyIcons.BACKSPACE);
-        bksp.setBackground(UiKit.pressable(ctx, PanelKit.KEY, PanelKit.DOWN, PanelKit.LINE, 1f, 8));
+        bksp.setBackground(UiKit.pressable(ctx, PanelKit.KEY, PanelKit.DOWN, PanelKit.LINE, 1f, 9));
         bksp.setOnClickListener(v -> {
             if (!pad.isEmpty()) clearInk();
             else host.sendKey(KeyEvent.KEYCODE_DEL);
@@ -104,7 +109,12 @@ final class InkPanel extends LinearLayout {
         LayoutParams b = new LayoutParams(0, PanelKit.dp(ctx, 34), 1f);
         b.rightMargin = PanelKit.dp(ctx, 4);
         acts.addView(bksp, b);
-        acts.addView(action(ctx, "Enter", v -> host.sendKey(KeyEvent.KEYCODE_ENTER)));
+        PanelKit.IconView enter = new PanelKit.IconView(ctx, KeyIcons.ENTER);
+        enter.setBackground(UiKit.pressable(ctx, PanelKit.KEY, PanelKit.DOWN, PanelKit.LINE, 1f, 9));
+        enter.setOnClickListener(v -> host.sendKey(KeyEvent.KEYCODE_ENTER));
+        LayoutParams eLp = new LayoutParams(0, PanelKit.dp(ctx, 34), 1f);
+        eLp.rightMargin = PanelKit.dp(ctx, 4);
+        acts.addView(enter, eLp);
         acts.addView(action(ctx, "Clear", v -> clearInk()));
         LayoutParams actsLp = new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         actsLp.topMargin = PanelKit.dp(ctx, 4);
@@ -161,7 +171,7 @@ final class InkPanel extends LinearLayout {
 
     private void loadModel() {
         closeRecognizer();
-        langChip.setText(LANGS[lang][0]);
+        langChip.setText(LANGS[lang][0] + " ▾");
         int mine = ++generation;
         DigitalInkRecognitionModel model = null;
         try {
@@ -230,13 +240,20 @@ final class InkPanel extends LinearLayout {
         for (RecognitionCandidate c : list) {
             if (n++ == 5) break;
             String text = c.getText();
-            TextView chip = PanelKit.chip(ctx, text, n == 1, v -> {
+            TextView chip = new TextView(ctx);   // plain text; the best match sits on a key fill
+            chip.setText(text);
+            chip.setTextSize(20);
+            chip.setTextColor(Color.WHITE);
+            chip.setGravity(Gravity.CENTER);
+            chip.setMinWidth(PanelKit.dp(ctx, 38));
+            chip.setPadding(PanelKit.dp(ctx, 12), 0, PanelKit.dp(ctx, 12), 0);
+            if (n == 1) chip.setBackground(UiKit.rounded(ctx, PanelKit.KEY, PanelKit.KEY, 0f, 8));
+            chip.setOnClickListener(v -> {
                 host.insertText(text);
                 clearInk();
             });
-            chip.setTextSize(17);
-            LayoutParams lp = new LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, PanelKit.dp(ctx, 34));
-            lp.rightMargin = PanelKit.dp(ctx, 4);
+            LayoutParams lp = new LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, PanelKit.dp(ctx, 32));
+            lp.rightMargin = PanelKit.dp(ctx, 2);
             candidates.addView(chip, lp);
         }
     }

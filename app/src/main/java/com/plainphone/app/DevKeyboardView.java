@@ -4,6 +4,7 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
+import android.graphics.Path;
 import android.graphics.RectF;
 import android.os.Handler;
 import android.os.Looper;
@@ -40,6 +41,7 @@ final class DevKeyboardView extends View {
         final float w;
         final String alt;       // long-press output / corner hint, or null
         final String shifted;   // output while Shift is on (non-letters), or null
+        boolean block;          // part of the joined arrow block
 
         Key(String id, float w, String alt, String shifted) {
             this.id = id;
@@ -93,10 +95,17 @@ final class DevKeyboardView extends View {
     private final int[] mods = new int[3];          // 0 off, 1 armed, 2 locked
     private final long[] lastTap = new long[3];
 
+    private static final int ROW_DEV = 0, ROW_NUM = 1, ROW_KEYS = 2;
+    private static final int KEY_BG = 0xFF161616, FN_BG = 0xFF0F0F0F, DOWN_BG = 0xFF2B2B2B,
+            KEY_FG = 0xFFD2D2D2, FN_FG = 0xFF9A9A9A, HINT_FG = 0xFF585858;
+
     private List<List<Key>> rows = new ArrayList<>();
+    private List<Integer> rowKinds = new ArrayList<>();
+    private KeyRect bubbleKey;
+    private String bubbleText = "";
     private List<List<KeyRect>> rects = new ArrayList<>();
     private boolean sym, devRow = true;
-    private int keyH;                                // dp
+    private int heightPct = 100;                     // 75..130
     private int builtW = -1;
 
     DevKeyboardView(Context ctx, Listener listener) {
@@ -107,7 +116,7 @@ final class DevKeyboardView extends View {
         text.setTextAlign(Paint.Align.CENTER);
         hint.setTypeface(Fonts.cascadiaMono(ctx));
         hint.setTextAlign(Paint.Align.RIGHT);
-        hint.setColor(0xFF5A5A5A);
+        hint.setColor(HINT_FG);
         hint.setTextSize(dp(8.5f));
         refresh();
     }
@@ -115,14 +124,26 @@ final class DevKeyboardView extends View {
     /** Re-read the settings; call when the keyboard is shown. */
     void refresh() {
         devRow = Config.isKbDevRow(getContext());
-        switch (Config.getKbSize(getContext())) {
-            case "small": keyH = 36; break;
-            case "large": keyH = 48; break;
-            default: keyH = 42;
-        }
+        heightPct = Config.getKbHeightPct(getContext());
         buildRows();
         requestLayout();
         invalidate();
+    }
+
+    /** Resize live while the user drags the height button; not saved here. */
+    void setHeightPct(int pct) {
+        heightPct = Math.max(75, Math.min(130, pct));
+        builtW = -1;
+        requestLayout();
+        invalidate();
+    }
+
+    /** Height of one row in dp, before its 4dp gap: the dev row and number row are shorter. */
+    private int rowDp(int kind) {
+        float base = 42f * heightPct / 100f;
+        if (kind == ROW_DEV) return Math.round(base * 0.76f);
+        if (kind == ROW_NUM) return Math.round(base * 0.9f);
+        return Math.round(base);
     }
 
     private static Key k(String id) {
@@ -135,6 +156,7 @@ final class DevKeyboardView extends View {
 
     private void buildRows() {
         List<List<Key>> r = new ArrayList<>();
+        List<Integer> kinds = new ArrayList<>();
         if (devRow) {
             List<Key> d = new ArrayList<>();
             d.add(k("Esc"));
@@ -142,17 +164,20 @@ final class DevKeyboardView extends View {
             d.add(k("Ctrl"));
             d.add(k("Alt"));
             d.add(k("Del"));
-            d.add(k("Left", 1f, "Home"));
-            d.add(k("Down", 1f, "PgDn"));
-            d.add(k("Up", 1f, "PgUp"));
-            d.add(k("Right", 1f, "End"));
+            for (String[] a : new String[][]{{"Left", "Home"}, {"Down", "PgDn"}, {"Up", "PgUp"}, {"Right", "End"}}) {
+                Key arrow = k(a[0], 1f, a[1]);
+                arrow.block = true;
+                d.add(arrow);
+            }
             r.add(d);
+            kinds.add(ROW_DEV);
         }
         List<Key> num = new ArrayList<>();
         for (int i = 0; i < 10; i++) {
             num.add(new Key(NUM.substring(i, i + 1), 1f, "F" + (i + 1), NUM_SHIFTED.substring(i, i + 1)));
         }
         r.add(num);
+        kinds.add(ROW_NUM);
         if (!sym) {
             for (int row = 0; row < 3; row++) {
                 List<Key> l = new ArrayList<>();
@@ -165,17 +190,20 @@ final class DevKeyboardView extends View {
                 if (row == 1) l.add(k("", 0.5f, null));
                 if (row == 2) l.add(k("Bksp", 1.5f, null));
                 r.add(l);
+                kinds.add(ROW_KEYS);
             }
         } else {
             for (String[] row : SYM_ROWS) {
                 List<Key> l = new ArrayList<>();
                 for (String s : row) l.add(k(s));
                 r.add(l);
+                kinds.add(ROW_KEYS);
             }
             List<Key> l = new ArrayList<>();
             for (int i = 0; i < SYM_ROW4.length(); i++) l.add(k(SYM_ROW4.substring(i, i + 1)));
             l.add(k("Bksp", 3f, null));
             r.add(l);
+            kinds.add(ROW_KEYS);
         }
         List<Key> bottom = new ArrayList<>();
         bottom.add(k("Sym", 1.5f, null));
@@ -185,14 +213,18 @@ final class DevKeyboardView extends View {
         bottom.add(k(".", 1f, null));
         bottom.add(k("Enter", 1.8f, null));
         r.add(bottom);
+        kinds.add(ROW_KEYS);
         rows = r;
+        rowKinds = kinds;
         builtW = -1;
     }
 
     // ------------------------------------------------------------------- geometry
 
     int heightPx() {
-        return rows.size() * dp(keyH + 4) + dp(4);
+        int h = dp(4);
+        for (int kind : rowKinds) h += dp(rowDp(kind) + 4);
+        return h;
     }
 
     @Override
@@ -202,19 +234,25 @@ final class DevKeyboardView extends View {
 
     private void buildRects(int w) {
         rects = new ArrayList<>();
-        float pad = dp(3), gap = dp(2), rowH = dp(keyH + 4);
+        float pad = dp(3), gap = dp(2);
         float y = dp(2);
-        for (List<Key> row : rows) {
+        for (int ri = 0; ri < rows.size(); ri++) {
+            List<Key> row = rows.get(ri);
+            float rowH = dp(rowDp(rowKinds.get(ri)) + 4);
             float total = 0;
             for (Key key : row) total += key.w;
             float unit = (w - 2 * pad) / total;
             float x = pad;
             List<KeyRect> line = new ArrayList<>();
-            for (Key key : row) {
+            for (int i = 0; i < row.size(); i++) {
+                Key key = row.get(i);
                 float kw = key.w * unit;
                 if (!key.id.isEmpty()) {
                     KeyRect kr = new KeyRect(key);
-                    kr.r.set(x + gap, y + gap, x + kw - gap, y + rowH - gap);
+                    // keys of the arrow block touch each other; only its outer ends keep the gap
+                    float l = key.block && i > 0 && row.get(i - 1).block ? x : x + gap;
+                    float r = key.block && i < row.size() - 1 && row.get(i + 1).block ? x + kw : x + kw - gap;
+                    kr.r.set(l, y + gap, r, y + rowH - gap);
                     line.add(kr);
                 }
                 x += kw;
@@ -238,40 +276,68 @@ final class DevKeyboardView extends View {
 
     // -------------------------------------------------------------------- drawing
 
+    private static boolean isFn(String id) {
+        switch (id) {
+            case "Esc": case "Tab": case "Ctrl": case "Alt": case "Del": case "Shift": case "Bksp":
+            case "Sym": case "Ime": case "Left": case "Right": case "Up": case "Down":
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private final Path keyPath = new Path();
+
     @Override
     protected void onDraw(Canvas canvas) {
         if (builtW != getWidth()) buildRects(getWidth());
-        float radius = dp(7);
+        float radius = dp(9);
         for (List<KeyRect> line : rects) {
-            for (KeyRect kr : line) {
+            for (int i = 0; i < line.size(); i++) {
+                KeyRect kr = line.get(i);
                 String id = kr.key.id;
                 int mod = modIndex(id);
                 int state = mod >= 0 ? mods[mod] : 0;
                 boolean down = isPressed(kr);
                 boolean lit = state > 0;
-                int bg = lit ? Color.WHITE : down ? 0xFF262626 : 0xFF121212;
-                int fg = lit ? Color.BLACK : 0xFFB5B5B5;
+                boolean enter = id.equals("Enter");
+                boolean fn = isFn(id);
+                int bg = lit || enter ? (enter && down ? 0xFFBBBBBB : Color.WHITE)
+                        : down ? DOWN_BG : fn ? FN_BG : KEY_BG;
+                int fg = lit || enter ? Color.BLACK : fn ? FN_FG : KEY_FG;
                 fill.setStyle(Paint.Style.FILL);
                 fill.setColor(bg);
-                canvas.drawRoundRect(kr.r, radius, radius, fill);
-                fill.setStyle(Paint.Style.STROKE);
-                fill.setStrokeWidth(dp(1));
-                fill.setColor(lit ? Color.WHITE : 0xFF242424);
-                canvas.drawRoundRect(kr.r, radius, radius, fill);
+                if (kr.key.block) {
+                    boolean first = i == 0 || !line.get(i - 1).key.block;
+                    boolean last = i == line.size() - 1 || !line.get(i + 1).key.block;
+                    float lr = first ? radius : 0, rr = last ? radius : 0;
+                    keyPath.reset();
+                    keyPath.addRoundRect(kr.r, new float[]{lr, lr, rr, rr, rr, rr, lr, lr}, Path.Direction.CW);
+                    canvas.drawPath(keyPath, fill);
+                    if (!first) {
+                        fill.setColor(Color.BLACK);
+                        canvas.drawRect(kr.r.left - dp(0.5f), kr.r.top, kr.r.left + dp(0.5f), kr.r.bottom, fill);
+                    }
+                } else {
+                    canvas.drawRoundRect(kr.r, radius, radius, fill);
+                }
                 if (state == 2) {
-                    fill.setStyle(Paint.Style.FILL);
                     fill.setColor(Color.BLACK);
                     canvas.drawCircle(kr.r.right - dp(7), kr.r.top + dp(7), dp(2.5f), fill);
                 }
 
                 float cx = kr.r.centerX(), cy = kr.r.centerY();
                 int icon = KeyIcons.forId(id);
-                if (icon != 0) {
+                if (id.equals("Space")) {
+                    fill.setColor(0xFF3A3A3A);
+                    float hw = kr.r.width() * 0.15f;
+                    canvas.drawRoundRect(cx - hw, cy - dp(1), cx + hw, cy + dp(1), dp(1), dp(1), fill);
+                } else if (icon != 0) {
                     KeyIcons.draw(canvas, icon, cx, cy, dp(7), fg, id.equals("Shift") && mods[SHIFT] == 2);
                 } else {
                     String label = label(kr.key);
                     text.setColor(fg);
-                    text.setTextSize(dp(label.length() > 1 ? 12.5f : 17f));
+                    text.setTextSize(dp(label.length() > 1 ? 12f : 18f));
                     canvas.drawText(label, cx, cy - (text.ascent() + text.descent()) / 2f, text);
                 }
                 if (kr.key.alt != null && !lit) {
@@ -280,6 +346,21 @@ final class DevKeyboardView extends View {
                 }
             }
         }
+        if (bubbleKey != null) drawBubble(canvas);
+    }
+
+    /** A white bubble above the pressed key showing what it will type. */
+    private void drawBubble(Canvas canvas) {
+        RectF k = bubbleKey.r;
+        float w = Math.max(dp(46), k.width()), h = dp(54);
+        float left = Math.max(dp(2), Math.min(getWidth() - dp(2) - w, k.centerX() - w / 2f));
+        float top = Math.max(dp(1), k.top - h - dp(4));
+        fill.setStyle(Paint.Style.FILL);
+        fill.setColor(Color.WHITE);
+        canvas.drawRoundRect(left, top, left + w, top + h, dp(12), dp(12), fill);
+        text.setColor(Color.BLACK);
+        text.setTextSize(dp(28));
+        canvas.drawText(bubbleText, left + w / 2f, top + h / 2f - (text.ascent() + text.descent()) / 2f, text);
     }
 
     private String label(Key key) {
@@ -345,6 +426,10 @@ final class DevKeyboardView extends View {
         if (kr == null) return;
         Press p = new Press(kr, x);
         presses.put(pointer, p);
+        if (kr.key.id.length() == 1) {
+            bubbleKey = kr;
+            bubbleText = label(kr.key);
+        }
         performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP);
         if (repeats(kr.key.id)) {
             p.consumed = true;
@@ -360,6 +445,7 @@ final class DevKeyboardView extends View {
         } else if (kr.key.alt != null) {
             p.longPress = () -> {
                 p.consumed = true;
+                if (bubbleKey == kr) bubbleText = kr.key.alt;
                 dispatch(kr.key.alt);
                 invalidate();
             };
@@ -385,6 +471,7 @@ final class DevKeyboardView extends View {
         if (!p.kr.r.contains(x, y) && keyAt(x, y) != p.kr) {   // slid off: drop the press
             clearCallbacks(p);
             p.consumed = true;
+            if (bubbleKey == p.kr) bubbleKey = null;
             invalidate();
         }
     }
@@ -393,6 +480,7 @@ final class DevKeyboardView extends View {
         Press p = presses.remove(pointer);
         if (p == null) return;
         clearCallbacks(p);
+        if (bubbleKey == p.kr) bubbleKey = null;
         if (fire && !p.consumed) dispatch(p.kr.key.id);
         invalidate();
     }

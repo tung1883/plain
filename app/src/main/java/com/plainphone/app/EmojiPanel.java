@@ -89,17 +89,21 @@ final class EmojiPanel extends LinearLayout {
         refresh();
     }
 
+    private static final int[] CAT_ICONS = {KeyIcons.CLOCK, KeyIcons.EMOJI, KeyIcons.PEOPLE, KeyIcons.LEAF,
+            KeyIcons.CUP, KeyIcons.BOX, KeyIcons.HASH, KeyIcons.FACE, KeyIcons.IMAGE};
+
     private void drawTabs() {
         Context ctx = getContext();
         tabs.removeAllViews();
-        for (String c : CATS) {
-            TextView t = PanelKit.chip(ctx, c, c.equals(cat), v -> {
+        for (int i = 0; i < CATS.length; i++) {
+            final String c = CATS[i];
+            PanelKit.IconView t = new PanelKit.IconView(ctx, CAT_ICONS[i]);
+            t.setTab(c.equals(cat));
+            t.setOnClickListener(v -> {
                 cat = c;
                 refresh();
             });
-            t.setPadding(0, PanelKit.dp(ctx, 7), 0, PanelKit.dp(ctx, 7));
-            t.setTextSize(10.5f);
-            LayoutParams lp = new LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            LayoutParams lp = new LayoutParams(0, PanelKit.dp(ctx, 30), 1f);
             lp.rightMargin = PanelKit.dp(ctx, 2);
             tabs.addView(t, lp);
         }

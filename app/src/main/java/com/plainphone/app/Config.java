@@ -887,13 +887,20 @@ class Config {
 
     // --- developer keyboard (system IME) ----------------------------
 
-    /** "small" | "medium" | "large". */
-    static String getKbSize(Context context) {
-        return prefs(context).getString("kb_size", "medium");
+    /** Keyboard height as a percent of the default (75..130). Derived once from the old size setting. */
+    static int getKbHeightPct(Context context) {
+        SharedPreferences p = prefs(context);
+        if (!p.contains("kb_height_pct")) {
+            String size = p.getString("kb_size", "medium");
+            int pct = size.equals("small") ? 86 : size.equals("large") ? 114 : 100;
+            p.edit().putInt("kb_height_pct", pct).apply();
+            return pct;
+        }
+        return Math.max(75, Math.min(130, p.getInt("kb_height_pct", 100)));
     }
 
-    static void setKbSize(Context context, String size) {
-        prefs(context).edit().putString("kb_size", size).apply();
+    static void setKbHeightPct(Context context, int pct) {
+        prefs(context).edit().putInt("kb_height_pct", Math.max(75, Math.min(130, pct))).apply();
     }
 
     static boolean isKbDevRow(Context context) {

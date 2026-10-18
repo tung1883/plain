@@ -13,7 +13,7 @@ import android.widget.TextView;
 /** Small shared pieces for the keyboard's clipboard, emoji and translate panels. */
 final class PanelKit {
 
-    static final int FG = 0xFFB5B5B5, DIM = 0xFF5A5A5A, LINE = 0xFF242424, KEY = 0xFF121212, DOWN = 0xFF262626;
+    static final int FG = 0xFFD2D2D2, DIM = 0xFF666666, LINE = 0xFF242424, KEY = 0xFF161616, DOWN = 0xFF2B2B2B;
 
     private PanelKit() {}
 
@@ -34,15 +34,68 @@ final class PanelKit {
         t.setGravity(Gravity.CENTER);
         t.setSingleLine(true);
         t.setPadding(dp(c, 10), dp(c, 6), dp(c, 10), dp(c, 6));
-        if (on) {
-            t.setTextColor(Color.BLACK);
-            t.setBackground(UiKit.pressable(c, Color.WHITE, 0xFFCCCCCC, Color.WHITE, 1f, 8));
-        } else {
-            t.setTextColor(FG);
-            t.setBackground(UiKit.pressable(c, KEY, DOWN, LINE, 1f, 8));
-        }
+        styleChip(c, t, on);
         t.setOnClickListener(click);
         return t;
+    }
+
+    /** Switch a chip between the white (primary) and dark look. */
+    static void styleChip(Context c, TextView t, boolean on) {
+        if (on) {
+            t.setTextColor(Color.BLACK);
+            t.setBackground(UiKit.pressable(c, Color.WHITE, 0xFFBBBBBB, Color.WHITE, 1f, 9));
+        } else {
+            t.setTextColor(FG);
+            t.setBackground(UiKit.pressable(c, KEY, DOWN, LINE, 1f, 9));
+        }
+    }
+
+    /** A smaller chip for panel headers. */
+    static TextView chipSmall(Context c, String text, boolean on, View.OnClickListener click) {
+        TextView t = chip(c, text, on, click);
+        t.setTextSize(11);
+        t.setPadding(dp(c, 10), dp(c, 4), dp(c, 10), dp(c, 4));
+        return t;
+    }
+
+    /** A quiet text button for panel headers (Clear ...). */
+    static TextView link(Context c, String text, View.OnClickListener click) {
+        TextView t = new TextView(c);
+        t.setText(text);
+        t.setTextSize(11);
+        t.setTextColor(DIM);
+        t.setTypeface(Fonts.cascadiaMono(c));
+        t.setPadding(dp(c, 10), dp(c, 6), dp(c, 10), dp(c, 6));
+        t.setOnClickListener(click);
+        return t;
+    }
+
+    /** A rounded card background used for panel content. */
+    static android.graphics.drawable.Drawable card(Context c) {
+        return UiKit.rounded(c, KEY, LINE, 1f, 12);
+    }
+
+    /** A row of options in one rounded frame; the selected one is white. */
+    static android.widget.LinearLayout segmented(Context c, String[] labels, int selected,
+                                                 java.util.function.IntConsumer pick) {
+        android.widget.LinearLayout row = new android.widget.LinearLayout(c);
+        row.setBackground(UiKit.rounded(c, KEY, LINE, 1f, 9));
+        row.setPadding(dp(c, 2), dp(c, 2), dp(c, 2), dp(c, 2));
+        for (int i = 0; i < labels.length; i++) {
+            final int idx = i;
+            TextView t = new TextView(c);
+            t.setText(labels[i]);
+            t.setTextSize(11.5f);
+            t.setTypeface(Fonts.cascadiaMono(c));
+            t.setGravity(Gravity.CENTER);
+            t.setPadding(dp(c, 11), dp(c, 6), dp(c, 11), dp(c, 6));
+            boolean on = i == selected;
+            t.setTextColor(on ? Color.BLACK : 0xFF8A8A8A);
+            if (on) t.setBackground(UiKit.rounded(c, Color.WHITE, Color.WHITE, 0f, 7));
+            t.setOnClickListener(v -> pick.accept(idx));
+            row.addView(t);
+        }
+        return row;
     }
 
     /** A dim, letter-spaced caption. */
@@ -59,7 +112,7 @@ final class PanelKit {
     /** A view that draws one {@link KeyIcons} icon. */
     static final class IconView extends View {
         private int kind;
-        private boolean active, fill;
+        private boolean active, fill, tab, tabOn;
 
         IconView(Context c, int kind) {
             super(c);
@@ -68,7 +121,24 @@ final class PanelKit {
 
         void setActive(boolean on) {
             active = on;
-            setBackground(on ? UiKit.rounded(getContext(), Color.WHITE, Color.WHITE, 0f, 8) : null);
+            setBackground(on ? UiKit.rounded(getContext(), Color.WHITE, Color.WHITE, 0f, 9) : null);
+            invalidate();
+        }
+
+        /** Tab look: dim icon; the selected tab is white on a key fill with a white underline. */
+        void setTab(boolean on) {
+            tab = true;
+            tabOn = on;
+            if (on) {
+                android.graphics.drawable.LayerDrawable d = new android.graphics.drawable.LayerDrawable(
+                        new android.graphics.drawable.Drawable[]{
+                                UiKit.rounded(getContext(), KEY, KEY, 0f, 8),
+                                new android.graphics.drawable.ColorDrawable(Color.WHITE)});
+                d.setLayerInset(1, dp(getContext(), 10), dp(getContext(), 28), dp(getContext(), 10), 0);
+                setBackground(d);
+            } else {
+                setBackground(null);
+            }
             invalidate();
         }
 
@@ -79,7 +149,7 @@ final class PanelKit {
 
         @Override
         protected void onDraw(Canvas canvas) {
-            int color = active ? Color.BLACK : fill ? Color.WHITE : FG;
+            int color = tab ? (tabOn ? Color.WHITE : 0xFF7A7A7A) : active ? Color.BLACK : fill ? Color.WHITE : FG;
             float s = Math.min(getWidth(), getHeight()) * 0.34f;
             if (kind == KeyIcons.KEYS) {
                 drawAbc(canvas, color, s);
