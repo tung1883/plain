@@ -212,20 +212,50 @@ public class PlainKeyboardService extends InputMethodService
         if (ic == null) return;
         android.net.Uri uri = PlainFileProvider.uriFor("com.plainphone.app.files", image);
         boolean sent = false;
+        String mime = StickerStore.isGifFile(image) ? "image/gif" : "image/png";
         try {
             android.view.inputmethod.InputContentInfo info = new android.view.inputmethod.InputContentInfo(
-                    uri, new ClipDescription("image", new String[]{"image/png"}));
+                    uri, new ClipDescription("image", new String[]{mime}));
             sent = ic.commitContent(info, InputConnection.INPUT_CONTENT_GRANT_READ_URI_PERMISSION, null);
-        } catch (RuntimeException ignored) {
+        } catch (RuntimeException e) {
+            android.util.Log.w("PlainKb", "commitContent failed", e);
         }
+        java.util.List<String> accepted = fieldMimeTypes();
+        android.util.Log.i("PlainKb", "sent " + mime + " to " + (getCurrentInputEditorInfo() == null ? "?"
+                : getCurrentInputEditorInfo().packageName) + ": " + sent + "; the field lists " + accepted);
         if (sent) return;
+        boolean declared = !accepted.isEmpty() && !mimeAccepted(accepted, mime);
         // this field does not take images: put it on the clipboard so it can be pasted where it can go
         if (clipboard != null) {
             lastImageUri = uri;
             clipboard.setPrimaryClip(ClipData.newUri(getContentResolver(), "image", uri));
-            android.widget.Toast.makeText(this, "This field cannot take images. Copied, paste it elsewhere.",
+            android.widget.Toast.makeText(this, declared
+                            ? "This field does not take " + mime.substring(6).toUpperCase() + "s. Copied, paste it elsewhere."
+                            : "This field cannot take images. Copied, paste it elsewhere.",
                     android.widget.Toast.LENGTH_SHORT).show();
         }
+    }
+
+    /** The content types the focused field says it can receive from a keyboard (may be empty). */
+    private java.util.List<String> fieldMimeTypes() {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        android.view.inputmethod.EditorInfo info = getCurrentInputEditorInfo();
+        if (info == null || info.extras == null) return out;
+        for (String key : new String[]{"androidx.core.view.inputmethod.EditorInfoCompat.CONTENT_MIME_TYPES",
+                "android.support.v13.view.inputmethod.EditorInfoCompat.CONTENT_MIME_TYPES"}) {
+            String[] types = info.extras.getStringArray(key);
+            if (types != null) out.addAll(java.util.Arrays.asList(types));
+        }
+        return out;
+    }
+
+    private static boolean mimeAccepted(java.util.List<String> accepted, String mime) {
+        for (String a : accepted) {
+            if (a.equals(mime) || a.equals("*/*") || (a.endsWith("/*") && mime.startsWith(a.substring(0, a.length() - 1)))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Override

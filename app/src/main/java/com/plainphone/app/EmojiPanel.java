@@ -110,6 +110,7 @@ final class EmojiPanel extends LinearLayout {
     }
 
     private void drawGrid() {
+        release();   // the old thumbnails are about to go
         grid.removeAllViews();
         if ("Txt".equals(cat)) {
             drawFaces();
@@ -338,7 +339,7 @@ final class EmojiPanel extends LinearLayout {
             iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
             iv.setPadding(PanelKit.dp(ctx, 4), PanelKit.dp(ctx, 4), PanelKit.dp(ctx, 4), PanelKit.dp(ctx, 4));
             iv.setBackground(UiKit.pressable(ctx, 0x00000000, PanelKit.DOWN, 0, 0f, 8));
-            iv.setImageBitmap(thumb(f, size));
+            if (!animate(iv, f, size)) iv.setImageBitmap(thumb(f, size));
             iv.setOnClickListener(v -> host.sendSticker(f));
             iv.setOnLongClickListener(v -> {
                 StickerStore.delete(f);
@@ -347,6 +348,37 @@ final class EmojiPanel extends LinearLayout {
             });
             grid.addView(iv, cell(1, size));
         }
+    }
+
+    // GIF thumbnails play (Android 9+); they stop whenever the panel is left or redrawn
+    private final List<android.graphics.drawable.AnimatedImageDrawable> anims = new ArrayList<>();
+
+    /** Show a GIF as a playing thumbnail; false if it is not a GIF or cannot be played here. */
+    private boolean animate(ImageView view, File f, int size) {
+        if (!StickerStore.isGifFile(f) || android.os.Build.VERSION.SDK_INT < 28) return false;
+        try {
+            android.graphics.drawable.Drawable d = android.graphics.ImageDecoder.decodeDrawable(
+                    android.graphics.ImageDecoder.createSource(f), (decoder, info, src) -> {
+                        int side = Math.max(info.getSize().getWidth(), info.getSize().getHeight());
+                        decoder.setTargetSampleSize(Math.max(1, side / size));
+                    });
+            view.setImageDrawable(d);
+            if (d instanceof android.graphics.drawable.AnimatedImageDrawable) {
+                android.graphics.drawable.AnimatedImageDrawable a = (android.graphics.drawable.AnimatedImageDrawable) d;
+                a.setRepeatCount(android.graphics.drawable.AnimatedImageDrawable.REPEAT_INFINITE);
+                a.start();
+                anims.add(a);
+            }
+            return true;
+        } catch (java.io.IOException | RuntimeException e) {
+            return false;
+        }
+    }
+
+    /** Stop every playing thumbnail. */
+    void release() {
+        for (android.graphics.drawable.AnimatedImageDrawable a : anims) a.stop();
+        anims.clear();
     }
 
     private static Bitmap thumb(File f, int size) {

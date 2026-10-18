@@ -57,8 +57,12 @@ public class AddStickerActivity extends Activity {
         Bitmap outlineBmp;  // the cut-out with a white sticker border, once computed
         boolean outline;    // showing/saving the outlined cut-out (only while cut)
 
-        Item(Bitmap original) {
+        final Uri gif;                       // set for an animated GIF: saved as it is, never cut out
+        android.graphics.drawable.Drawable anim;   // its animation for the preview, made once
+
+        Item(Bitmap original, Uri gif) {
             this.original = original;
+            this.gif = gif;
         }
 
         Bitmap shown() {
@@ -121,18 +125,29 @@ public class AddStickerActivity extends Activity {
         Context app = getApplicationContext();
         new Thread(() -> {
             List<Item> loaded = new ArrayList<>();
+            int tooBig = 0;
             for (Uri u : uris) {
-                Bitmap b = StickerStore.scaledBitmap(app, u);
-                if (b != null) loaded.add(new Item(b));
+                boolean gif = StickerStore.isGif(app, u);
+                if (gif && StickerStore.length(app, u) > StickerStore.MAX_GIF_BYTES) {
+                    tooBig++;
+                    continue;
+                }
+                Bitmap b = StickerStore.scaledBitmap(app, u);   // for a GIF: its first frame
+                if (b != null) loaded.add(new Item(b, gif ? u : null));
             }
+            final int skipped = tooBig;
             runOnUiThread(() -> {
+                if (skipped > 0) {
+                    Toast.makeText(this, skipped + " GIF over " + (StickerStore.MAX_GIF_BYTES >> 20) + " MB skipped",
+                            Toast.LENGTH_LONG).show();
+                }
                 if (loaded.isEmpty()) {
                     Toast.makeText(this, "Could not read the image", Toast.LENGTH_SHORT).show();
                     if (items.isEmpty()) finish();
                     return;
                 }
-                if (loaded.size() < uris.size()) {
-                    Toast.makeText(this, (uris.size() - loaded.size()) + " could not be read", Toast.LENGTH_SHORT).show();
+                if (loaded.size() + skipped < uris.size()) {
+                    Toast.makeText(this, (uris.size() - loaded.size() - skipped) + " could not be read", Toast.LENGTH_SHORT).show();
                 }
                 sel = items.size();
                 items.addAll(loaded);
@@ -153,6 +168,7 @@ public class AddStickerActivity extends Activity {
     private int commonMode() {
         int first = -2;
         for (Item i : items) {
+            if (i.gif != null) continue;   // GIFs have no mode
             int m = i.cut ? (i.outline ? 2 : 1) : 0;
             if (first == -2) first = m;
             else if (m != first) return -1;
@@ -228,10 +244,21 @@ public class AddStickerActivity extends Activity {
         }
     }
 
+    private int stillCount() {
+        int k = 0;
+        for (Item i : items) if (i.gif == null) k++;
+        return k;
+    }
+
     /** True when every picture is in this mode: 1 = cut out, 2 = cut out with a white border. */
     private boolean allIn(int mode) {
-        for (Item i : items) if (!i.cut || i.outline != (mode == 2)) return false;
-        return !items.isEmpty();
+        boolean any = false;
+        for (Item i : items) {
+            if (i.gif != null) continue;
+            any = true;
+            if (!i.cut || i.outline != (mode == 2)) return false;
+        }
+        return any;
     }
 
     private void render() {
@@ -254,7 +281,7 @@ public class AddStickerActivity extends Activity {
         title.setTextColor(Color.WHITE);
         title.setTypeface(Fonts.cascadiaMono(this));
         head.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        if (n > 1) {   // with one image the preview's own control does the same
+        if (n > 1 && stillCount() > 0) {   // with one image the preview's own control does the same
             int common = commonMode();
             String state = common < 0 ? "Mixed" : MODES[common];
             TextView all = PanelKit.chipSmall(this, "", common > 0, v -> showAllMenu(v));
@@ -281,11 +308,18 @@ public class AddStickerActivity extends Activity {
         bar.setPadding(dp(10), dp(8), dp(10), 0);
         // how the picture is saved: as it is, with the background cut out, or cut out with a white border
         int mode = cur.cut ? (cur.outline ? 2 : 1) : 0;
-        LinearLayout modes = PanelKit.segmented(this, new String[]{"Original", "Cut out", "Outline"}, mode, picked -> {
-            if (busy != null) return;
-            setMode(cur, picked);
-        });
-        bar.addView(modes, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        if (cur.gif != null) {   // an animation keeps all its frames: no cut-out, saved exactly as picked
+            TextView gifNote = PanelKit.caption(this, "GIF \u00b7 SAVED AS IT IS");
+            gifNote.setTextSize(9.5f);
+            gifNote.setPadding(dp(2), dp(9), 0, dp(9));
+            bar.addView(gifNote);
+        } else {
+            LinearLayout modes = PanelKit.segmented(this, new String[]{"Original", "Cut out", "Outline"}, mode, picked -> {
+                if (busy != null) return;
+                setMode(cur, picked);
+            });
+            bar.addView(modes, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        }
         View spacer = new View(this);
         bar.addView(spacer, new LinearLayout.LayoutParams(0, 1, 1f));
         if (n > 1) {
@@ -298,7 +332,7 @@ public class AddStickerActivity extends Activity {
         ImageView preview = new ImageView(this);
         preview.setScaleType(ImageView.ScaleType.FIT_CENTER);
         preview.setPadding(dp(16), dp(8), dp(16), dp(16));
-        preview.setImageBitmap(cur.shown());
+        showPreview(preview, cur);
         col.addView(preview, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
         stage.addView(col, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -364,6 +398,30 @@ public class AddStickerActivity extends Activity {
         root.addView(saveSheet(), sheetLp());
     }
 
+    /** The big picture: a GIF plays (Android 9+), anything else is the bitmap as it will be saved. */
+    private void showPreview(ImageView view, Item it) {
+        if (it.gif != null && android.os.Build.VERSION.SDK_INT >= 28) {
+            try {
+                if (it.anim == null) {
+                    it.anim = android.graphics.ImageDecoder.decodeDrawable(
+                            android.graphics.ImageDecoder.createSource(getContentResolver(), it.gif),
+                            (decoder, info, src) -> {
+                                int side = Math.max(info.getSize().getWidth(), info.getSize().getHeight());
+                                if (side > 720) decoder.setTargetSampleSize(Math.max(1, Math.round(side / 720f)));
+                            });
+                }
+                view.setImageDrawable(it.anim);
+                if (it.anim instanceof android.graphics.drawable.AnimatedImageDrawable) {
+                    ((android.graphics.drawable.AnimatedImageDrawable) it.anim).start();
+                }
+                return;
+            } catch (java.io.IOException | RuntimeException e) {
+                it.anim = null;
+            }
+        }
+        view.setImageBitmap(it.shown());
+    }
+
     private LinearLayout.LayoutParams sheetLp() {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -417,7 +475,18 @@ public class AddStickerActivity extends Activity {
             FrameLayout.LayoutParams xLp = new FrameLayout.LayoutParams(dp(20), dp(20), Gravity.TOP | Gravity.END);
             xLp.setMargins(0, dp(2), dp(2), 0);
             cell.addView(x, xLp);
-            if (it.cut) {
+            if (it.gif != null) {
+                TextView gifTag = new TextView(this);
+                gifTag.setText("GIF");
+                gifTag.setTextSize(8);
+                gifTag.setTextColor(Color.BLACK);
+                gifTag.setTypeface(Fonts.cascadiaMono(this));
+                gifTag.setGravity(Gravity.CENTER);
+                gifTag.setBackground(UiKit.rounded(this, Color.WHITE, Color.WHITE, 0f, 5));
+                FrameLayout.LayoutParams tLp = new FrameLayout.LayoutParams(dp(22), dp(14), Gravity.BOTTOM | Gravity.START);
+                tLp.setMargins(dp(3), 0, 0, dp(3));
+                cell.addView(gifTag, tLp);
+            } else if (it.cut) {
                 PanelKit.IconView badge = new PanelKit.IconView(this, KeyIcons.SCISSORS);
                 badge.setIconScale(0.28f);
                 badge.setBackground(UiKit.rounded(this, Color.WHITE, Color.WHITE, 0f, 5));
@@ -576,9 +645,13 @@ public class AddStickerActivity extends Activity {
             render();
             return;
         }
+        Item it = items.get(i);
+        if (it.gif != null) {   // an animation is not cut out
+            applyFrom(i + 1, mode);
+            return;
+        }
         busy = "Removing background " + (i + 1) + "/" + items.size() + "...";
         render();
-        Item it = items.get(i);
         cutItem(it, () -> {
             if (it.cutBmp != null) applyMode(it, mode);
             applyFrom(i + 1, mode);
@@ -672,18 +745,24 @@ public class AddStickerActivity extends Activity {
             }
             target = newName.trim();
         }
-        List<Bitmap> bitmaps = new ArrayList<>();
-        for (Item i : items) bitmaps.add(i.shown());
+        List<Item> toSave = new ArrayList<>(items);
+        List<Bitmap> shown = new ArrayList<>();
+        for (Item i : toSave) shown.add(i.shown());
         String to = target;
         Context app = getApplicationContext();
-        if (bitmaps.size() > 1) Toast.makeText(this, "Adding " + bitmaps.size() + " images...", Toast.LENGTH_SHORT).show();
+        if (toSave.size() > 1) Toast.makeText(this, "Adding " + toSave.size() + " images...", Toast.LENGTH_SHORT).show();
         new Thread(() -> {
             int ok = 0;
-            for (Bitmap b : bitmaps) if (StickerStore.save(app, b, to)) ok++;
+            for (int k = 0; k < toSave.size(); k++) {
+                Item it = toSave.get(k);
+                boolean saved = it.gif != null ? StickerStore.addGif(app, it.gif, to)
+                        : StickerStore.save(app, shown.get(k), to);
+                if (saved) ok++;
+            }
             final int done = ok;
             runOnUiThread(() -> {
-                if (done < bitmaps.size()) {
-                    Toast.makeText(this, done + " of " + bitmaps.size() + " added", Toast.LENGTH_SHORT).show();
+                if (done < toSave.size()) {
+                    Toast.makeText(this, done + " of " + toSave.size() + " added", Toast.LENGTH_SHORT).show();
                 }
                 if (done > 0) setResult(RESULT_OK);
                 finish();

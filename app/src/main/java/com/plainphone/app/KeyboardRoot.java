@@ -300,6 +300,7 @@ final class KeyboardRoot extends LinearLayout {
         ink.release();
         clip.release();
         scan.release();
+        emoji.release();
     }
 
     private void show(int which) {
@@ -325,6 +326,7 @@ final class KeyboardRoot extends LinearLayout {
         else ink.release();
         if (which != 0) clip.release();
         if (which != 4) scan.release();
+        if (which != 1) emoji.release();
         if (which == 5) settings.refresh();
     }
 }

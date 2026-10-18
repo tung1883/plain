@@ -28,7 +28,73 @@ final class StickerStore {
     /** The name of the collection that holds images added before collections existed. */
     static final String DEFAULT = "Default";
 
+    /** The biggest GIF taken, so a chat app does not refuse it. */
+    static final long MAX_GIF_BYTES = 6L * 1024 * 1024;
+
     private StickerStore() {}
+
+    private static boolean isImageName(String name) {
+        return name.endsWith(".png") || name.endsWith(".gif");
+    }
+
+    static boolean isGifFile(File f) {
+        return f.getName().endsWith(".gif");
+    }
+
+    /** True when the picked file starts like a GIF. */
+    static boolean isGif(Context c, Uri source) {
+        try (InputStream in = c.getContentResolver().openInputStream(source)) {
+            byte[] head = new byte[6];
+            if (in == null || in.read(head) < 6) return false;
+            String h = new String(head, java.nio.charset.StandardCharsets.US_ASCII);
+            return h.equals("GIF87a") || h.equals("GIF89a");
+        } catch (IOException | RuntimeException e) {
+            return false;
+        }
+    }
+
+    /** The file's size in bytes, counting the stream when the provider does not say. */
+    static long length(Context c, Uri source) {
+        try (android.content.res.AssetFileDescriptor afd = c.getContentResolver().openAssetFileDescriptor(source, "r")) {
+            if (afd != null && afd.getLength() >= 0) return afd.getLength();
+        } catch (IOException | RuntimeException ignored) {
+        }
+        long n = 0;
+        try (InputStream in = c.getContentResolver().openInputStream(source)) {
+            byte[] buf = new byte[16384];
+            int r;
+            while (in != null && (r = in.read(buf)) > 0 && n <= MAX_GIF_BYTES) n += r;
+        } catch (IOException | RuntimeException ignored) {
+        }
+        return n;
+    }
+
+    /** Copy a picked GIF in exactly as it is (animation kept), unless it is over the size limit. */
+    static boolean addGif(Context c, Uri source, String collection) {
+        File out = new File(dir(c, collection), System.nanoTime() + ".gif");
+        try (InputStream in = c.getContentResolver().openInputStream(source);
+             FileOutputStream os = new FileOutputStream(out)) {
+            if (in == null) return false;
+            byte[] buf = new byte[16384];
+            long total = 0;
+            int r;
+            while ((r = in.read(buf)) > 0) {
+                total += r;
+                if (total > MAX_GIF_BYTES) {
+                    os.close();
+                    delete(out);
+                    return false;
+                }
+                os.write(buf, 0, r);
+            }
+            justAdded = true;
+            pendingCollection = clean(collection).isEmpty() ? DEFAULT : clean(collection);
+            return true;
+        } catch (IOException | RuntimeException e) {
+            delete(out);
+            return false;
+        }
+    }
 
     private static File root(Context c) {
         File d = new File(c.getFilesDir(), "stickers");
@@ -66,13 +132,13 @@ final class StickerStore {
     /** Delete a collection and every image in it. The default collection is only emptied. */
     static void deleteCollection(Context c, String collection) {
         File d = dir(c, collection);
-        File[] files = d.listFiles((x, name) -> name.endsWith(".png"));
+        File[] files = d.listFiles((x, name) -> isImageName(name));
         if (files != null) for (File f : files) delete(f);
         if (!d.equals(root(c))) delete(d);
     }
 
     static List<File> list(Context c, String collection) {
-        File[] files = dir(c, collection).listFiles((d, name) -> name.endsWith(".png"));
+        File[] files = dir(c, collection).listFiles((d, name) -> isImageName(name));
         List<File> out = new ArrayList<>();
         if (files == null) return out;
         Arrays.sort(files, Comparator.comparingLong(File::lastModified).reversed());
