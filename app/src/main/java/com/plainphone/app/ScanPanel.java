@@ -13,6 +13,7 @@ import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Looper;
 import android.view.Gravity;
+import android.view.ScaleGestureDetector;
 import android.view.Surface;
 import android.view.TextureView;
 import android.view.ViewGroup;
@@ -49,6 +50,13 @@ final class ScanPanel extends LinearLayout {
     private volatile boolean capturing;
     private int facing = Camera.CameraInfo.CAMERA_FACING_BACK;
     private final PanelKit.IconView flip;
+    private final TextView zoomLabel;
+
+    // pinch zoom: the camera's own zoom steps (ratios in percent, 100 = none)
+    private volatile List<Integer> zoomRatios;
+    private float zoomTarget = 100f;
+    private volatile int zoomWanted;
+    private final java.util.concurrent.atomic.AtomicBoolean zoomQueued = new java.util.concurrent.atomic.AtomicBoolean();
 
     ScanPanel(Context ctx, KeyboardRoot.Host host) {
         super(ctx);
@@ -105,6 +113,32 @@ final class ScanPanel extends LinearLayout {
         flipLp.topMargin = PanelKit.dp(ctx, 6);
         flipLp.rightMargin = PanelKit.dp(ctx, 6);
         camBox.addView(flip, flipLp);
+
+        zoomLabel = new TextView(ctx);   // "2.0x" while pinching
+        zoomLabel.setTextSize(11);
+        zoomLabel.setTextColor(0xFFFFFFFF);
+        zoomLabel.setTypeface(Fonts.cascadiaMono(ctx));
+        zoomLabel.setPadding(PanelKit.dp(ctx, 8), PanelKit.dp(ctx, 4), PanelKit.dp(ctx, 8), PanelKit.dp(ctx, 4));
+        zoomLabel.setBackground(UiKit.rounded(ctx, 0xCC161616, 0xFF2B2B2B, 1f, 8));
+        zoomLabel.setAlpha(0f);
+        FrameLayout.LayoutParams zLp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.START);
+        zLp.topMargin = PanelKit.dp(ctx, 6);
+        zLp.leftMargin = PanelKit.dp(ctx, 6);
+        camBox.addView(zoomLabel, zLp);
+
+        ScaleGestureDetector pinch = new ScaleGestureDetector(ctx, new ScaleGestureDetector.SimpleOnScaleGestureListener() {
+            @Override
+            public boolean onScale(ScaleGestureDetector d) {
+                zoomBy(d.getScaleFactor());
+                return true;
+            }
+        });
+        camBox.setOnTouchListener((v, e) -> {
+            getParent().requestDisallowInterceptTouchEvent(true);
+            pinch.onTouchEvent(e);
+            return true;
+        });
 
         acts = new LinearLayout(ctx);
         choose = button(ctx, "Photo", true, v -> host.scanText());
@@ -212,6 +246,35 @@ final class ScanPanel extends LinearLayout {
         preview = v;
     }
 
+    /** Zoom by a pinch step: pick the camera's nearest zoom ratio and apply it on the camera thread. */
+    private void zoomBy(float factor) {
+        List<Integer> ratios = zoomRatios;
+        if (ratios == null || ratios.size() < 2) return;
+        zoomTarget = Math.max(100f, Math.min(ratios.get(ratios.size() - 1), zoomTarget * factor));
+        int best = 0;
+        for (int i = 0; i < ratios.size(); i++) {
+            if (Math.abs(ratios.get(i) - zoomTarget) < Math.abs(ratios.get(best) - zoomTarget)) best = i;
+        }
+        zoomLabel.setText(String.format(java.util.Locale.US, "%.1fx", ratios.get(best) / 100f));
+        zoomLabel.animate().cancel();
+        zoomLabel.setAlpha(1f);
+        zoomLabel.animate().alpha(0f).setStartDelay(900).setDuration(300).start();
+        zoomWanted = best;
+        if (!zoomQueued.getAndSet(true)) {
+            camHandler().post(() -> {   // coalesced: only the newest wanted step is applied
+                zoomQueued.set(false);
+                Camera c = cam;
+                if (c == null) return;
+                try {
+                    Camera.Parameters p = c.getParameters();
+                    p.setZoom(zoomWanted);
+                    c.setParameters(p);
+                } catch (RuntimeException ignored) {
+                }
+            });
+        }
+    }
+
     /** Switch between the back and the front camera. */
     private void flipCamera() {
         if (capturing || !preview.isAvailable()) return;
@@ -305,6 +368,8 @@ final class ScanPanel extends LinearLayout {
             if (p.getSupportedFocusModes().contains(Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE)) {
                 p.setFocusMode(Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE);
             }
+            zoomTarget = 100f;
+            zoomRatios = p.isZoomSupported() ? p.getZoomRatios() : null;
             c.setParameters(p);
             boolean turned = display % 180 == 90;
             int shownW = turned ? prev.height : prev.width, shownH = turned ? prev.width : prev.height;
