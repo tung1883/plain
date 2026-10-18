@@ -40,7 +40,7 @@ final class ScanPanel extends LinearLayout {
     private final KeyboardRoot.Host host;
     private final LinearLayout drop, acts, camActs;
     private final FrameLayout camBox;
-    private final TextureView preview;
+    private TextureView preview;   // replaced on every flip: a fresh surface for each camera
     private final TextView hint, result, choose, camera, insert;
     private String text = "";
 
@@ -93,31 +93,9 @@ final class ScanPanel extends LinearLayout {
         camBox = new FrameLayout(ctx);
         camBox.setBackground(UiKit.rounded(ctx, 0xFF000000, PanelKit.LINE, 1f, 12));
         UiKit.clipRounded(ctx, camBox, 12);
-        preview = new TextureView(ctx);
-        camBox.addView(preview, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER));
         camBox.setVisibility(GONE);
         addView(camBox, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-        preview.setSurfaceTextureListener(new TextureView.SurfaceTextureListener() {
-            @Override
-            public void onSurfaceTextureAvailable(SurfaceTexture st, int w, int h) {
-                openCamera(st);
-            }
-
-            @Override
-            public void onSurfaceTextureSizeChanged(SurfaceTexture st, int w, int h) {
-            }
-
-            @Override
-            public boolean onSurfaceTextureDestroyed(SurfaceTexture st) {
-                closeCamera();
-                return true;
-            }
-
-            @Override
-            public void onSurfaceTextureUpdated(SurfaceTexture st) {
-            }
-        });
+        newPreview();
 
         acts = new LinearLayout(ctx);
         choose = button(ctx, "Photo", true, v -> host.scanText());
@@ -204,13 +182,42 @@ final class ScanPanel extends LinearLayout {
         if (cam != null || camBox.getVisibility() == VISIBLE) stopCamera();
     }
 
+    /** A new preview view; its surface opens the camera as soon as it is ready. */
+    private void newPreview() {
+        TextureView v = new TextureView(getContext());
+        v.setSurfaceTextureListener(new TextureView.SurfaceTextureListener() {
+            @Override
+            public void onSurfaceTextureAvailable(SurfaceTexture st, int w, int h) {
+                openCamera(st);
+            }
+
+            @Override
+            public void onSurfaceTextureSizeChanged(SurfaceTexture st, int w, int h) {
+            }
+
+            @Override
+            public boolean onSurfaceTextureDestroyed(SurfaceTexture st) {
+                closeCamera();
+                return true;
+            }
+
+            @Override
+            public void onSurfaceTextureUpdated(SurfaceTexture st) {
+            }
+        });
+        camBox.addView(v, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER));
+        preview = v;
+    }
+
     /** Switch between the back and the front camera. */
     private void flipCamera() {
         if (capturing || !preview.isAvailable()) return;
         closeCamera();
         facing = facing == Camera.CameraInfo.CAMERA_FACING_BACK
                 ? Camera.CameraInfo.CAMERA_FACING_FRONT : Camera.CameraInfo.CAMERA_FACING_BACK;
-        openCamera(preview.getSurfaceTexture());
+        camBox.removeView(preview);   // the old camera leaves its surface unusable; start a new one
+        newPreview();
     }
 
     // The camera is opened, configured, photographed and released on its own thread, so the
@@ -288,9 +295,11 @@ final class ScanPanel extends LinearLayout {
             Camera.Size pic = bestSize(p.getSupportedPictureSizes(), 5_000_000, (float) prev.width / prev.height);
             p.setPreviewSize(prev.width, prev.height);
             p.setPictureSize(pic.width, pic.height);
-            p.setRecordingHint(true);   // favours a steady preview frame rate
-            int[] fps = bestFpsRange(p.getSupportedPreviewFpsRange());
-            if (fps != null) p.setPreviewFpsRange(fps[0], fps[1]);
+            if (!front) {   // some front cameras show black with these, so back camera only
+                p.setRecordingHint(true);   // favours a steady preview frame rate
+                int[] fps = bestFpsRange(p.getSupportedPreviewFpsRange());
+                if (fps != null) p.setPreviewFpsRange(fps[0], fps[1]);
+            }
             if (p.getSupportedFocusModes().contains(Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE)) {
                 p.setFocusMode(Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE);
             }
