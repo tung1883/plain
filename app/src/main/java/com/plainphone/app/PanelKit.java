@@ -105,7 +105,10 @@ final class PanelKit {
             t.setTextColor(on ? Color.BLACK : 0xFF8A8A8A);
             if (on) t.setBackground(UiKit.rounded(c, Color.WHITE, Color.WHITE, 0f, 7));
             t.setOnClickListener(v -> pick.accept(idx));
-            row.addView(t);
+            android.widget.LinearLayout.LayoutParams lp = new android.widget.LinearLayout.LayoutParams(
+                    android.view.ViewGroup.LayoutParams.WRAP_CONTENT, android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
+            if (i > 0) lp.leftMargin = dp(c, 4);   // a gap between the options
+            row.addView(t, lp);
         }
         return row;
     }

@@ -54,12 +54,15 @@ public class AddStickerActivity extends Activity {
         final Bitmap original;
         Bitmap cutBmp;      // the subject with a transparent background, once computed
         boolean cut;        // showing/saving the cut-out
+        Bitmap outlineBmp;  // the cut-out with a white sticker border, once computed
+        boolean outline;    // showing/saving the outlined cut-out (only while cut)
 
         Item(Bitmap original) {
             this.original = original;
         }
 
         Bitmap shown() {
+            if (cut && outline && outlineBmp != null) return outlineBmp;
             return cut && cutBmp != null ? cutBmp : original;
         }
     }
@@ -144,8 +147,90 @@ public class AddStickerActivity extends Activity {
         return UiKit.dp(this, v);
     }
 
-    private boolean allCut() {
-        for (Item i : items) if (!i.cut) return false;
+    private static final String[] MODES = {"Original", "Cut out", "Outline"};
+
+    /** The mode every picture is in (0 original, 1 cut out, 2 outlined), or -1 when they differ. */
+    private int commonMode() {
+        int first = -2;
+        for (Item i : items) {
+            int m = i.cut ? (i.outline ? 2 : 1) : 0;
+            if (first == -2) first = m;
+            else if (m != first) return -1;
+        }
+        return first == -2 ? -1 : first;
+    }
+
+    private android.widget.PopupWindow allMenu;
+
+    /** The small menu under the header button: apply one mode to the whole batch. */
+    private void showAllMenu(View anchor) {
+        int common = commonMode();
+        LinearLayout menu = new LinearLayout(this);
+        menu.setOrientation(LinearLayout.VERTICAL);
+        menu.setPadding(dp(6), dp(6), dp(6), dp(6));
+        menu.setBackground(UiKit.rounded(this, 0xFF101010, 0xFF333333, 1f, 12));
+        TextView cap = PanelKit.caption(this, "APPLY TO ALL " + items.size());
+        cap.setTextSize(9.5f);
+        cap.setSingleLine(true);
+        cap.setPadding(dp(8), dp(6), dp(8), dp(6));
+        menu.addView(cap);
+        for (int m = 0; m < MODES.length; m++) {
+            final int mode = m;
+            LinearLayout row = new LinearLayout(this);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(dp(8), dp(10), dp(14), dp(10));
+            row.setBackground(UiKit.pressable(this, 0x00000000, PanelKit.DOWN, 0, 0f, 8));
+            row.addView(new RadioDot(this, common == m), new LinearLayout.LayoutParams(dp(14), dp(14)));
+            TextView label = new TextView(this);
+            label.setText(MODES[m]);
+            label.setTextSize(13);
+            label.setTextColor(PanelKit.FG);
+            label.setTypeface(Fonts.cascadiaMono(this));
+            label.setSingleLine(true);
+            label.setPadding(dp(10), 0, 0, 0);
+            row.addView(label);
+            row.setOnClickListener(v -> {
+                if (allMenu != null) allMenu.dismiss();
+                if (busy == null) applyAll(mode);
+            });
+            menu.addView(row);
+        }
+        allMenu = new android.widget.PopupWindow(menu, ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT, true);
+        allMenu.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0x00000000));   // tap outside closes it
+        allMenu.setElevation(dp(8));
+        allMenu.showAsDropDown(anchor, 0, dp(4), Gravity.END);
+    }
+
+    /** A radio dot: a ring, filled in the middle when it is the current choice. */
+    private static final class RadioDot extends View {
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final boolean on;
+
+        RadioDot(Context c, boolean on) {
+            super(c);
+            this.on = on;
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            float d = getResources().getDisplayMetrics().density;
+            float cx = getWidth() / 2f, cy = getHeight() / 2f, r = Math.min(cx, cy) - d * 1.25f;
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(d * 1.5f);
+            paint.setColor(on ? Color.WHITE : 0xFF555555);
+            canvas.drawCircle(cx, cy, r, paint);
+            if (on) {
+                paint.setStyle(Paint.Style.FILL);
+                paint.setColor(Color.WHITE);
+                canvas.drawCircle(cx, cy, r - d * 3f, paint);
+            }
+        }
+    }
+
+    /** True when every picture is in this mode: 1 = cut out, 2 = cut out with a white border. */
+    private boolean allIn(int mode) {
+        for (Item i : items) if (!i.cut || i.outline != (mode == 2)) return false;
         return !items.isEmpty();
     }
 
@@ -169,11 +254,17 @@ public class AddStickerActivity extends Activity {
         title.setTextColor(Color.WHITE);
         title.setTypeface(Fonts.cascadiaMono(this));
         head.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        if (n > 1) {   // with one image the preview's own button does the same
-            TextView all = PanelKit.chipSmall(this, "Cut out all", allCut(), v -> {
-                if (busy == null) cutAll();
-            });
-            head.addView(all, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(30)));
+        if (n > 1) {   // with one image the preview's own control does the same
+            int common = commonMode();
+            String state = common < 0 ? "Mixed" : MODES[common];
+            TextView all = PanelKit.chipSmall(this, "", common > 0, v -> showAllMenu(v));
+            android.text.SpannableString label = new android.text.SpannableString("ALL  " + state + " ▾");
+            label.setSpan(new android.text.style.ForegroundColorSpan(common > 0 ? 0xFF555555 : PanelKit.DIM),
+                    0, 3, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            label.setSpan(new android.text.style.RelativeSizeSpan(0.85f),
+                    0, 3, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            all.setText(label);
+            head.addView(all, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(32)));
         }
         root.addView(head, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
@@ -188,28 +279,20 @@ public class AddStickerActivity extends Activity {
         LinearLayout bar = new LinearLayout(this);
         bar.setGravity(Gravity.CENTER_VERTICAL);
         bar.setPadding(dp(10), dp(8), dp(10), 0);
-        TextView tag = PanelKit.caption(this, (cur.cut ? "BACKGROUND REMOVED" : "ORIGINAL")
-                + (n > 1 ? " · " + (sel + 1) + "/" + n : ""));
-        tag.setTextSize(9.5f);
-        tag.setSingleLine(true);
-        bar.addView(tag, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView cutBtn = PanelKit.chipSmall(this, cur.cut ? "Cut out" : "Remove background", cur.cut, v -> {
+        // how the picture is saved: as it is, with the background cut out, or cut out with a white border
+        int mode = cur.cut ? (cur.outline ? 2 : 1) : 0;
+        LinearLayout modes = PanelKit.segmented(this, new String[]{"Original", "Cut out", "Outline"}, mode, picked -> {
             if (busy != null) return;
-            if (cur.cut) {
-                cur.cut = false;
-                render();
-            } else {
-                busy = "Removing background...";
-                render();
-                cutItem(cur, () -> {
-                    busy = null;
-                    render();
-                });
-            }
+            setMode(cur, picked);
         });
-        LinearLayout.LayoutParams cutLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(30));
-        cutLp.leftMargin = dp(8);
-        bar.addView(cutBtn, cutLp);
+        bar.addView(modes, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        View spacer = new View(this);
+        bar.addView(spacer, new LinearLayout.LayoutParams(0, 1, 1f));
+        if (n > 1) {
+            TextView count = PanelKit.caption(this, (sel + 1) + "/" + n);
+            count.setTextSize(9.5f);
+            bar.addView(count);
+        }
         col.addView(bar, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         ImageView preview = new ImageView(this);
@@ -473,17 +556,21 @@ public class AddStickerActivity extends Activity {
 
     // ----------------------------------------------------------- background removal
 
-    /** Cut every image out, one after the other; or, if all are already cut, put them all back. */
-    private void cutAll() {
-        if (allCut()) {
-            for (Item i : items) i.cut = false;
+    /** Put every picture in a mode: 0 = original, 1 = cut out, 2 = outlined. */
+    private void applyAll(int mode) {
+        if (mode == 0) {
+            for (Item i : items) {
+                i.cut = false;
+                i.outline = false;
+            }
             render();
             return;
         }
-        cutFrom(0);
+        if (allIn(mode)) return;
+        applyFrom(0, mode);
     }
 
-    private void cutFrom(int i) {
+    private void applyFrom(int i, int mode) {
         if (i >= items.size()) {
             busy = null;
             render();
@@ -491,13 +578,65 @@ public class AddStickerActivity extends Activity {
         }
         busy = "Removing background " + (i + 1) + "/" + items.size() + "...";
         render();
-        cutItem(items.get(i), () -> cutFrom(i + 1));
+        Item it = items.get(i);
+        cutItem(it, () -> {
+            if (it.cutBmp != null) applyMode(it, mode);
+            applyFrom(i + 1, mode);
+        });
+    }
+
+    /** Switch one picture to Original (0), Cut out (1) or Outline (2); cuts it out first if needed. */
+    private void setMode(Item it, int mode) {
+        if (mode == 0) {
+            it.cut = false;
+            it.outline = false;
+            render();
+            return;
+        }
+        if (it.cutBmp != null) {
+            applyMode(it, mode);
+            render();
+            return;
+        }
+        busy = "Removing background...";
+        render();
+        cutItem(it, () -> {
+            busy = null;
+            if (it.cutBmp != null) applyMode(it, mode);
+            render();
+        });
+    }
+
+    private void applyMode(Item it, int mode) {
+        it.cut = true;
+        it.outline = mode == 2;
+        if (it.outline && it.outlineBmp == null) it.outlineBmp = withWhiteBorder(it.cutBmp);
+    }
+
+    /**
+     * The cut-out with a white sticker border: a white copy of its shape is stamped around in a
+     * ring (twice, at two radii, so no gap shows), then the picture goes on top.
+     */
+    private static Bitmap withWhiteBorder(Bitmap cut) {
+        int r = Math.max(4, Math.round(Math.max(cut.getWidth(), cut.getHeight()) * 0.025f));
+        Bitmap out = Bitmap.createBitmap(cut.getWidth() + 2 * r, cut.getHeight() + 2 * r, Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(out);
+        Paint white = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+        white.setColorFilter(new android.graphics.PorterDuffColorFilter(Color.WHITE, android.graphics.PorterDuff.Mode.SRC_IN));
+        for (int ring = 1; ring <= 2; ring++) {
+            float radius = r * ring / 2f;
+            for (int k = 0; k < 24; k++) {
+                double a = k * Math.PI / 12;
+                c.drawBitmap(cut, r + (float) (Math.cos(a) * radius), r + (float) (Math.sin(a) * radius), white);
+            }
+        }
+        c.drawBitmap(cut, r, r, new Paint(Paint.FILTER_BITMAP_FLAG));
+        return out;
     }
 
     /** Cut one image's subject out (on the device, no network), then call {@code done}. */
     private void cutItem(Item it, Runnable done) {
         if (it.cutBmp != null) {
-            it.cut = true;
             done.run();
             return;
         }
@@ -512,7 +651,6 @@ public class AddStickerActivity extends Activity {
                         Toast.makeText(this, "No clear subject in one image", Toast.LENGTH_SHORT).show();
                     } else {
                         it.cutBmp = fg;
-                        it.cut = true;
                     }
                     done.run();
                 })
@@ -555,6 +693,7 @@ public class AddStickerActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (allMenu != null) allMenu.dismiss();
         if (segmenter != null) segmenter.close();
         super.onDestroy();
     }
