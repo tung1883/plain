@@ -105,7 +105,7 @@ final class DevKeyboardView extends View {
     private String bubbleText = "";
     private List<List<KeyRect>> rects = new ArrayList<>();
     private boolean sym, devRow = true;
-    private int heightPct = 100;                     // 75..130
+    private float heightPct = 100f;                   // 75..130
     private int builtW = -1;
 
     DevKeyboardView(Context ctx, Listener listener) {
@@ -131,8 +131,8 @@ final class DevKeyboardView extends View {
     }
 
     /** Resize live while the user drags the height button; not saved here. */
-    void setHeightPct(int pct) {
-        heightPct = Math.max(75, Math.min(130, pct));
+    void setHeightPct(float pct) {
+        heightPct = Math.max(75f, Math.min(130f, pct));
         builtW = -1;
         requestLayout();
         invalidate();
@@ -140,7 +140,11 @@ final class DevKeyboardView extends View {
 
     /** Height of one row in dp, before its 4dp gap: the dev row and number row are shorter. */
     private int rowDp(int kind) {
-        float base = 42f * heightPct / 100f;
+        return rowDp(kind, heightPct);
+    }
+
+    private int rowDp(int kind, float pct) {
+        float base = 42f * pct / 100f;
         if (kind == ROW_DEV) return Math.round(base * 0.76f);
         if (kind == ROW_NUM) return Math.round(base * 0.9f);
         return Math.round(base);
@@ -222,8 +226,13 @@ final class DevKeyboardView extends View {
     // ------------------------------------------------------------------- geometry
 
     int heightPx() {
+        return heightPxAt(heightPct);
+    }
+
+    /** What {@link #heightPx()} would be at {@code pct} percent. */
+    int heightPxAt(float pct) {
         int h = dp(4);
-        for (int kind : rowKinds) h += dp(rowDp(kind) + 4);
+        for (int kind : rowKinds) h += dp(rowDp(kind, pct) + 4);
         return h;
     }
 

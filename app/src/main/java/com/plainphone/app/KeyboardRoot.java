@@ -198,7 +198,7 @@ final class KeyboardRoot extends LinearLayout {
         body.requestLayout();
     }
 
-    /** Hold the height button and drag: up = taller, down = shorter, in 5% steps (75..130). */
+    /** Hold the height button and drag: up = taller, down = shorter, in 1% steps (75..130). */
     private boolean dragHeight(View v, android.view.MotionEvent e) {
         float density = getResources().getDisplayMetrics().density;
         switch (e.getActionMasked()) {
@@ -207,16 +207,20 @@ final class KeyboardRoot extends LinearLayout {
                 dragPct0 = dragPct = Config.getKbHeightPct(getContext());
                 getParent().requestDisallowInterceptTouchEvent(true);
                 resize.setActive(true);
+                // Hold the window at its tallest while dragging: only the keys redraw, so the
+                // toolbar (and the finger on it) never moves. The window settles on release.
+                body.getLayoutParams().height = keys.heightPxAt(130) + body.getPaddingTop() + body.getPaddingBottom();
+                body.requestLayout();
                 removeCallbacks(hideReadout);
                 readout.setText(dragPct + "%");
                 return true;
             case android.view.MotionEvent.ACTION_MOVE: {
-                float raw = dragPct0 + (dragY0 - e.getRawY()) / density * 0.4f;
-                int pct = Math.max(75, Math.min(130, Math.round(raw / 5f) * 5));
+                // 1% steps (about 3dp of height each) so the keys follow the finger
+                float raw = dragPct0 + (dragY0 - e.getRawY()) / density * 0.35f;
+                int pct = Math.max(75, Math.min(130, Math.round(raw)));
                 if (pct != dragPct) {
                     dragPct = pct;
                     keys.setHeightPct(pct);
-                    applyBodyHeight();
                     readout.setText(pct + "%");
                 }
                 return true;
@@ -224,6 +228,7 @@ final class KeyboardRoot extends LinearLayout {
             case android.view.MotionEvent.ACTION_UP:
             case android.view.MotionEvent.ACTION_CANCEL:
                 Config.setKbHeightPct(getContext(), dragPct);
+                applyBodyHeight();
                 resize.setActive(false);
                 postDelayed(hideReadout, 600);
                 return true;
