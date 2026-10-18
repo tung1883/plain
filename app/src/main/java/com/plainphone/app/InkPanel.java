@@ -8,6 +8,7 @@ import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -60,24 +61,31 @@ final class InkPanel extends LinearLayout {
         setOrientation(VERTICAL);
         lang = Math.max(0, Math.min(LANGS.length - 1, PanelKit.prefs(ctx).getInt(LANG_KEY, 0)));
 
+        // one line: the language button, then the candidates (or the model status when there are none)
         LinearLayout head = new LinearLayout(ctx);
         head.setGravity(Gravity.CENTER_VERTICAL);
         langChip = PanelKit.chipSmall(ctx, "", true, v -> nextLanguage());
         head.addView(langChip, new LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        status = PanelKit.caption(ctx, "");
-        status.setPadding(PanelKit.dp(ctx, 8), 0, 0, 0);
-        head.addView(status, new LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        addView(head, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
+        FrameLayout slot = new FrameLayout(ctx);
+        status = PanelKit.caption(ctx, "");
+        status.setSingleLine(true);
+        status.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        status.setPadding(PanelKit.dp(ctx, 8), 0, 0, 0);
+        slot.addView(status, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER_VERTICAL));
         HorizontalScrollView strip = new HorizontalScrollView(ctx);
         strip.setHorizontalScrollBarEnabled(false);
         candidates = new LinearLayout(ctx);
         candidates.setGravity(Gravity.CENTER_VERTICAL);
         strip.addView(candidates, new ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, PanelKit.dp(ctx, 38)));
-        LayoutParams stripLp = new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, PanelKit.dp(ctx, 38));
-        stripLp.topMargin = PanelKit.dp(ctx, 4);
-        addView(strip, stripLp);
+                ViewGroup.LayoutParams.WRAP_CONTENT, PanelKit.dp(ctx, 36)));
+        slot.addView(strip, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, PanelKit.dp(ctx, 36)));
+        LayoutParams slotLp = new LayoutParams(0, PanelKit.dp(ctx, 36), 1f);
+        slotLp.leftMargin = PanelKit.dp(ctx, 4);
+        head.addView(slot, slotLp);
+        addView(head, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, PanelKit.dp(ctx, 38)));
         View under = new View(ctx);
         under.setBackgroundColor(PanelKit.LINE);
         addView(under, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1));
@@ -242,8 +250,9 @@ final class InkPanel extends LinearLayout {
             String text = c.getText();
             TextView chip = new TextView(ctx);   // plain text; the best match sits on a key fill
             chip.setText(text);
-            chip.setTextSize(20);
+            chip.setTextSize(12);   // same as the Space / Clear buttons
             chip.setTextColor(Color.WHITE);
+            chip.setTypeface(Fonts.cascadiaMono(ctx));   // the keyboard's font; CJK falls back to the system
             chip.setGravity(Gravity.CENTER);
             chip.setMinWidth(PanelKit.dp(ctx, 38));
             chip.setPadding(PanelKit.dp(ctx, 12), 0, PanelKit.dp(ctx, 12), 0);
