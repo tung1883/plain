@@ -113,6 +113,7 @@ final class PanelKit {
     static final class IconView extends View {
         private int kind;
         private boolean active, fill, tab, tabOn;
+        private float iconScale = 0.34f;   // icon half-size as a fraction of the view's short side
 
         IconView(Context c, int kind) {
             super(c);
@@ -142,6 +143,11 @@ final class PanelKit {
             invalidate();
         }
 
+        void setIconScale(float scale) {
+            iconScale = scale;
+            invalidate();
+        }
+
         void setFill(boolean on) {
             fill = on;
             invalidate();
@@ -150,7 +156,7 @@ final class PanelKit {
         @Override
         protected void onDraw(Canvas canvas) {
             int color = tab ? (tabOn ? Color.WHITE : 0xFF7A7A7A) : active ? Color.BLACK : fill ? Color.WHITE : FG;
-            float s = Math.min(getWidth(), getHeight()) * 0.34f;
+            float s = Math.min(getWidth(), getHeight()) * iconScale;
             if (kind == KeyIcons.KEYS) {
                 drawAbc(canvas, color, s);
                 return;

@@ -34,6 +34,9 @@ final class KeyboardRoot extends LinearLayout {
         /** Pick a photo and type the text found in it. */
         void scanText();
 
+        /** Ask for the camera permission (the keyboard cannot show the prompt itself). */
+        void requestCameraPermission();
+
         /** A keyboard setting changed; re-apply it now. */
         void settingsChanged();
 
@@ -296,6 +299,7 @@ final class KeyboardRoot extends LinearLayout {
         translate.release();
         ink.release();
         clip.release();
+        scan.release();
     }
 
     private void show(int which) {
@@ -320,6 +324,7 @@ final class KeyboardRoot extends LinearLayout {
         if (which == 3) ink.refresh();
         else ink.release();
         if (which != 0) clip.release();
+        if (which != 4) scan.release();
         if (which == 5) settings.refresh();
     }
 }

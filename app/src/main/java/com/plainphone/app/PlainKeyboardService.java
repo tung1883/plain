@@ -194,6 +194,12 @@ public class PlainKeyboardService extends InputMethodService
     }
 
     @Override
+    public void requestCameraPermission() {
+        startActivity(new android.content.Intent(this, CameraPermissionActivity.class)
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK));
+    }
+
+    @Override
     public void addSticker() {
         startActivity(new android.content.Intent(this, AddStickerActivity.class)
                 .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK));

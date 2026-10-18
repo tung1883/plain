@@ -110,6 +110,7 @@ final class InkPanel extends LinearLayout {
         acts.addView(action(ctx, "Space", v -> host.insertText(" ")));
         PanelKit.IconView bksp = new PanelKit.IconView(ctx, KeyIcons.BACKSPACE);
         bksp.setBackground(UiKit.pressable(ctx, PanelKit.KEY, PanelKit.DOWN, PanelKit.LINE, 1f, 9));
+        bksp.setIconScale(0.22f);
         bksp.setOnClickListener(v -> {
             if (!pad.isEmpty()) clearInk();
             else host.sendKey(KeyEvent.KEYCODE_DEL);
@@ -119,6 +120,7 @@ final class InkPanel extends LinearLayout {
         acts.addView(bksp, b);
         PanelKit.IconView enter = new PanelKit.IconView(ctx, KeyIcons.ENTER);
         enter.setBackground(UiKit.pressable(ctx, PanelKit.KEY, PanelKit.DOWN, PanelKit.LINE, 1f, 9));
+        enter.setIconScale(0.22f);
         enter.setOnClickListener(v -> host.sendKey(KeyEvent.KEYCODE_ENTER));
         LayoutParams eLp = new LayoutParams(0, PanelKit.dp(ctx, 34), 1f);
         eLp.rightMargin = PanelKit.dp(ctx, 4);
