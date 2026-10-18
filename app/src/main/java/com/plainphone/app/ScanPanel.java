@@ -9,6 +9,9 @@ import android.graphics.Matrix;
 import android.graphics.SurfaceTexture;
 import android.graphics.drawable.GradientDrawable;
 import android.hardware.Camera;
+import android.os.Handler;
+import android.os.HandlerThread;
+import android.os.Looper;
 import android.view.Gravity;
 import android.view.Surface;
 import android.view.TextureView;
@@ -41,9 +44,9 @@ final class ScanPanel extends LinearLayout {
     private final TextView hint, result, choose, camera, insert;
     private String text = "";
 
-    private Camera cam;
-    private int jpegRotation;
-    private boolean capturing;
+    private volatile Camera cam;         // touched on the camera thread only
+    private volatile int jpegRotation;
+    private volatile boolean capturing;
     private int facing = Camera.CameraInfo.CAMERA_FACING_BACK;
     private final PanelKit.IconView flip;
 
@@ -210,17 +213,43 @@ final class ScanPanel extends LinearLayout {
         openCamera(preview.getSurfaceTexture());
     }
 
+    // The camera is opened, configured, photographed and released on its own thread, so the
+    // keyboard never waits on it. Jobs run in order, so close-then-open (flip) is safe.
+
+    private static HandlerThread camThread;
+    private static Handler camHandler;
+
+    private static synchronized Handler camHandler() {
+        if (camHandler == null) {
+            camThread = new HandlerThread("scan-camera");
+            camThread.start();
+            camHandler = new Handler(camThread.getLooper());
+        }
+        return camHandler;
+    }
+
+    private final Handler ui = new Handler(Looper.getMainLooper());
+
     private void closeCamera() {
-        if (cam == null) return;
+        camHandler().post(this::releaseCam);
+    }
+
+    private void releaseCam() {   // camera thread
+        Camera c = cam;
+        cam = null;
+        if (c == null) return;
         try {
-            cam.stopPreview();
+            c.stopPreview();
         } catch (RuntimeException ignored) {
         }
-        cam.release();
-        cam = null;
+        c.release();
     }
 
     private void openCamera(SurfaceTexture st) {
+        camHandler().post(() -> doOpen(st));
+    }
+
+    private void doOpen(SurfaceTexture st) {   // camera thread
         if (cam != null) return;
         Context ctx = getContext();
         try {
@@ -234,7 +263,8 @@ final class ScanPanel extends LinearLayout {
                 }
             }
             Camera.getCameraInfo(id, info);
-            cam = Camera.open(id);
+            Camera c = Camera.open(id);
+            cam = c;
 
             int degrees = 0;
             switch (((WindowManager) ctx.getSystemService(Context.WINDOW_SERVICE))
@@ -250,24 +280,42 @@ final class ScanPanel extends LinearLayout {
                     : (info.orientation - degrees + 360) % 360;
             jpegRotation = front ? (info.orientation - degrees + 360) % 360
                     : (info.orientation + degrees) % 360;
-            cam.setDisplayOrientation(display);
+            c.setDisplayOrientation(display);
 
-            Camera.Parameters p = cam.getParameters();
+            Camera.Parameters p = c.getParameters();
+            // a 4:3 preview up to 1280x960 and a capped photo keep it smooth; text recognition needs no more
             Camera.Size prev = bestSize(p.getSupportedPreviewSizes(), 1280 * 960, 4f / 3f);
-            Camera.Size pic = bestSize(p.getSupportedPictureSizes(), 12_000_000, (float) prev.width / prev.height);
+            Camera.Size pic = bestSize(p.getSupportedPictureSizes(), 5_000_000, (float) prev.width / prev.height);
             p.setPreviewSize(prev.width, prev.height);
             p.setPictureSize(pic.width, pic.height);
+            p.setRecordingHint(true);   // favours a steady preview frame rate
+            int[] fps = bestFpsRange(p.getSupportedPreviewFpsRange());
+            if (fps != null) p.setPreviewFpsRange(fps[0], fps[1]);
             if (p.getSupportedFocusModes().contains(Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE)) {
                 p.setFocusMode(Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE);
             }
-            cam.setParameters(p);
-            fitPreview(display % 180 == 90 ? prev.height : prev.width, display % 180 == 90 ? prev.width : prev.height);
-            cam.setPreviewTexture(st);
-            cam.startPreview();
+            c.setParameters(p);
+            boolean turned = display % 180 == 90;
+            int shownW = turned ? prev.height : prev.width, shownH = turned ? prev.width : prev.height;
+            ui.post(() -> fitPreview(shownW, shownH));
+            c.setPreviewTexture(st);
+            c.startPreview();
         } catch (java.io.IOException | RuntimeException e) {
-            Toast.makeText(ctx, "Camera not available", Toast.LENGTH_SHORT).show();
-            stopCamera();
+            releaseCam();
+            ui.post(() -> {
+                Toast.makeText(ctx, "Camera not available", Toast.LENGTH_SHORT).show();
+                stopCamera();
+            });
         }
+    }
+
+    /** The highest, steadiest frame-rate range the camera offers. */
+    private static int[] bestFpsRange(List<int[]> ranges) {
+        int[] best = null;
+        for (int[] r : ranges) {
+            if (best == null || r[1] > best[1] || (r[1] == best[1] && r[0] > best[0])) best = r;
+        }
+        return best;
     }
 
     /** The largest size with about the wanted shape, not above {@code maxPixels}. */
@@ -297,25 +345,31 @@ final class ScanPanel extends LinearLayout {
     }
 
     private void capture() {
-        if (cam == null || capturing) return;
+        if (capturing) return;
         capturing = true;
-        try {
-            cam.takePicture(null, null, (data, c) -> {
+        camHandler().post(() -> {
+            Camera c = cam;
+            if (c == null) {
                 capturing = false;
-                read(data);
-            });
-        } catch (RuntimeException e) {
-            capturing = false;
-            Toast.makeText(getContext(), "Could not take the photo", Toast.LENGTH_SHORT).show();
-        }
+                return;
+            }
+            try {
+                c.takePicture(null, null, (data, camera) -> {   // runs on the camera thread
+                    int rotation = jpegRotation;
+                    releaseCam();
+                    Bitmap bmp = decode(data, rotation);
+                    capturing = false;
+                    ui.post(() -> recognize(bmp));
+                });
+            } catch (RuntimeException e) {
+                capturing = false;
+                ui.post(() -> Toast.makeText(getContext(), "Could not take the photo", Toast.LENGTH_SHORT).show());
+            }
+        });
     }
 
-    /** Turn the JPEG upright, close the camera and read the text in it. */
-    private void read(byte[] jpeg) {
-        int rotation = jpegRotation;
-        stopCamera();
-        hint.setText("Reading...");
-        Bitmap bmp;
+    /** The JPEG as an upright bitmap of at most {@link #MAX_SIDE} pixels, or null. */
+    private static Bitmap decode(byte[] jpeg, int rotation) {
         try {
             BitmapFactory.Options bounds = new BitmapFactory.Options();
             bounds.inJustDecodeBounds = true;
@@ -324,20 +378,24 @@ final class ScanPanel extends LinearLayout {
             while (Math.max(bounds.outWidth, bounds.outHeight) / (sample * 2) >= MAX_SIDE) sample *= 2;
             BitmapFactory.Options o = new BitmapFactory.Options();
             o.inSampleSize = sample;
-            bmp = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.length, o);
+            Bitmap bmp = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.length, o);
+            if (bmp == null || rotation == 0) return bmp;
+            Matrix m = new Matrix();
+            m.postRotate(rotation);
+            return Bitmap.createBitmap(bmp, 0, 0, bmp.getWidth(), bmp.getHeight(), m, true);
         } catch (RuntimeException | OutOfMemoryError e) {
-            bmp = null;
+            return null;
         }
+    }
+
+    /** Close the camera view and read the text in the photo. */
+    private void recognize(Bitmap bmp) {
+        stopCamera();
         if (bmp == null) {
-            setResult("");
             Toast.makeText(getContext(), "Could not read the photo", Toast.LENGTH_SHORT).show();
             return;
         }
-        if (rotation != 0) {
-            Matrix m = new Matrix();
-            m.postRotate(rotation);
-            bmp = Bitmap.createBitmap(bmp, 0, 0, bmp.getWidth(), bmp.getHeight(), m, true);
-        }
+        hint.setText("Reading...");
         TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
                 .process(InputImage.fromBitmap(bmp, 0))
                 .addOnSuccessListener(found -> {
