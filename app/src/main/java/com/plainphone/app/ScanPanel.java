@@ -44,6 +44,8 @@ final class ScanPanel extends LinearLayout {
     private Camera cam;
     private int jpegRotation;
     private boolean capturing;
+    private int facing = Camera.CameraInfo.CAMERA_FACING_BACK;
+    private final PanelKit.IconView flip;
 
     ScanPanel(Context ctx, KeyboardRoot.Host host) {
         super(ctx);
@@ -132,6 +134,13 @@ final class ScanPanel extends LinearLayout {
 
         camActs = new LinearLayout(ctx);
         camActs.addView(button(ctx, "Cancel", false, v -> stopCamera()));
+        flip = new PanelKit.IconView(ctx, KeyIcons.SWAP);   // front / back camera
+        flip.setIconScale(0.28f);
+        flip.setBackground(UiKit.pressable(ctx, PanelKit.KEY, PanelKit.DOWN, PanelKit.LINE, 1f, 9));
+        flip.setOnClickListener(v -> flipCamera());
+        LayoutParams flipLp = new LayoutParams(PanelKit.dp(ctx, 52), PanelKit.dp(ctx, 40));
+        flipLp.rightMargin = PanelKit.dp(ctx, 4);
+        camActs.addView(flip, flipLp);
         camActs.addView(button(ctx, "Capture", true, v -> capture()));
         camActs.setVisibility(GONE);
         addView(camActs, actsLp);
@@ -173,6 +182,7 @@ final class ScanPanel extends LinearLayout {
         acts.setVisibility(GONE);
         camBox.setVisibility(VISIBLE);
         camActs.setVisibility(VISIBLE);
+        flip.setVisibility(Camera.getNumberOfCameras() > 1 ? VISIBLE : GONE);
         if (preview.isAvailable()) openCamera(preview.getSurfaceTexture());
     }
 
@@ -189,6 +199,15 @@ final class ScanPanel extends LinearLayout {
     void release() {
         capturing = false;
         if (cam != null || camBox.getVisibility() == VISIBLE) stopCamera();
+    }
+
+    /** Switch between the back and the front camera. */
+    private void flipCamera() {
+        if (capturing || !preview.isAvailable()) return;
+        closeCamera();
+        facing = facing == Camera.CameraInfo.CAMERA_FACING_BACK
+                ? Camera.CameraInfo.CAMERA_FACING_FRONT : Camera.CameraInfo.CAMERA_FACING_BACK;
+        openCamera(preview.getSurfaceTexture());
     }
 
     private void closeCamera() {
@@ -209,7 +228,7 @@ final class ScanPanel extends LinearLayout {
             int id = 0;
             for (int i = 0; i < Camera.getNumberOfCameras(); i++) {
                 Camera.getCameraInfo(i, info);
-                if (info.facing == Camera.CameraInfo.CAMERA_FACING_BACK) {
+                if (info.facing == facing) {
                     id = i;
                     break;
                 }
@@ -225,8 +244,12 @@ final class ScanPanel extends LinearLayout {
                 case Surface.ROTATION_270: degrees = 270; break;
                 default:
             }
-            int display = (info.orientation - degrees + 360) % 360;
-            jpegRotation = (info.orientation + degrees) % 360;
+            boolean front = info.facing == Camera.CameraInfo.CAMERA_FACING_FRONT;
+            // the front camera's preview is mirrored, so its display angle runs the other way
+            int display = front ? (360 - (info.orientation + degrees) % 360) % 360
+                    : (info.orientation - degrees + 360) % 360;
+            jpegRotation = front ? (info.orientation - degrees + 360) % 360
+                    : (info.orientation + degrees) % 360;
             cam.setDisplayOrientation(display);
 
             Camera.Parameters p = cam.getParameters();
