@@ -10,6 +10,8 @@
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
@@ -525,6 +527,42 @@
             android:name=".SandboxPyService"
             android:process=":sandbox_py"
             android:exported="false" />
+
+        <service
+            android:name=".PlainKeyboardService"
+            android:label="PlainPhone keyboard"
+            android:exported="true"
+            android:permission="android.permission.BIND_INPUT_METHOD">
+            <intent-filter>
+                <action android:name="android.view.InputMethod" />
+            </intent-filter>
+            <meta-data
+                android:name="android.view.im"
+                android:resource="@xml/method" />
+        </service>
+
+        <activity
+            android:name=".KeyboardSetupActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".AddStickerActivity"
+            android:windowSoftInputMode="adjustResize"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
+            android:name=".CameraPermissionActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <activity
+            android:name=".ScanTextActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
         <service
             android:name=".DevService"

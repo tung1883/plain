@@ -885,6 +885,40 @@ class Config {
         prefs(context).edit().putBoolean("keybar_labels", on).apply();
     }
 
+    // --- developer keyboard (system IME) ----------------------------
+
+    /** Keyboard height as a percent of the default (75..130). Derived once from the old size setting. */
+    static int getKbHeightPct(Context context) {
+        SharedPreferences p = prefs(context);
+        if (!p.contains("kb_height_pct")) {
+            String size = p.getString("kb_size", "medium");
+            int pct = size.equals("small") ? 86 : size.equals("large") ? 114 : 100;
+            p.edit().putInt("kb_height_pct", pct).apply();
+            return pct;
+        }
+        return Math.max(75, Math.min(130, p.getInt("kb_height_pct", 100)));
+    }
+
+    static void setKbHeightPct(Context context, int pct) {
+        prefs(context).edit().putInt("kb_height_pct", Math.max(75, Math.min(130, pct))).apply();
+    }
+
+    static boolean isKbDevRow(Context context) {
+        return prefs(context).getBoolean("kb_dev_row", true);
+    }
+
+    static void setKbDevRow(Context context, boolean on) {
+        prefs(context).edit().putBoolean("kb_dev_row", on).apply();
+    }
+
+    static boolean isKbAutoPair(Context context) {
+        return prefs(context).getBoolean("kb_auto_pair", false);
+    }
+
+    static void setKbAutoPair(Context context, boolean on) {
+        prefs(context).edit().putBoolean("kb_auto_pair", on).apply();
+    }
+
     static int getDevScreenFps(Context context) {
         return prefs(context).getInt("dev_screen_fps", 12);
     }
