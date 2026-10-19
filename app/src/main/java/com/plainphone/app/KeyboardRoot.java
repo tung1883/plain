@@ -295,6 +295,25 @@ final class KeyboardRoot extends LinearLayout {
         show(which);
     }
 
+    /** True when Back has a step inside the open panel (close a viewer, leave select mode ...). */
+    boolean canGoBack() {
+        switch (open) {
+            case 0: return clip.canGoBack();
+            case 1: return emoji.canGoBack();
+            case 4: return scan.canGoBack();
+            default: return false;
+        }
+    }
+
+    void goBack() {
+        switch (open) {
+            case 0: clip.goBack(); break;
+            case 1: emoji.goBack(); break;
+            case 4: scan.goBack(); break;
+            default:
+        }
+    }
+
     void release() {
         translate.release();
         ink.release();

@@ -4,11 +4,13 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.graphics.Bitmap;
+import android.graphics.Color;
 import android.graphics.BitmapFactory;
 import android.graphics.Paint;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.FrameLayout;
 import android.widget.GridLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -24,6 +26,8 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -33,7 +37,7 @@ import java.util.Map;
  * saves from the clipboard) and the user's own images. The emoji lists are code-point ranges
  * filtered by what the system font can draw, so a missing glyph never shows as an empty box.
  */
-final class EmojiPanel extends LinearLayout {
+final class EmojiPanel extends FrameLayout {
 
     private static final String RECENT_KEY = "emoji_recent", FACES_KEY = "faces_custom";
     private static final int MAX_RECENT = 24, COLUMNS = 8;
@@ -58,29 +62,56 @@ final class EmojiPanel extends LinearLayout {
 
     private final KeyboardRoot.Host host;
     private final GridLayout grid;
-    private final LinearLayout tabs;
+    private final LinearLayout main, tabs, actions;
+    private final FrameLayout sheet;       // a small sheet over the panel: move to, merge into, confirm delete
+
+    // selecting in the image tab: 0 none, 1 images, 2 collections
+    private int selMode;
+    private final Set<String> pickImg = new LinkedHashSet<>();    // image file paths
+    private final Set<String> pickColl = new LinkedHashSet<>();   // collection names
     private String cat = "Rec";
 
     EmojiPanel(Context ctx, KeyboardRoot.Host host) {
         super(ctx);
         this.host = host;
-        setOrientation(VERTICAL);
+        main = new LinearLayout(ctx);
+        main.setOrientation(LinearLayout.VERTICAL);
+        addView(main, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
         ScrollView scroll = new ScrollView(ctx);
         scroll.setVerticalScrollBarEnabled(false);
         grid = new GridLayout(ctx);
         scroll.addView(grid, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        addView(scroll, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        main.addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+
+        actions = new LinearLayout(ctx);   // while selecting: replaces the category tabs
+        actions.setPadding(0, PanelKit.dp(ctx, 4), 0, 0);
+        actions.setVisibility(GONE);
+        main.addView(actions, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         tabs = new LinearLayout(ctx);
         tabs.setPadding(0, PanelKit.dp(ctx, 3), 0, 0);
-        addView(tabs, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        main.addView(tabs, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        sheet = new FrameLayout(ctx);
+        sheet.setVisibility(GONE);
+        addView(sheet, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
     }
 
     void refresh() {
+        if (!"Img".equals(cat)) {   // selecting only exists in the image tab
+            selMode = 0;
+            pickImg.clear();
+            pickColl.clear();
+        }
         drawTabs();
         drawGrid();
+        drawBars();
     }
 
     /** Open on one tab, e.g. the image tab after adding a picture. */
@@ -103,14 +134,14 @@ final class EmojiPanel extends LinearLayout {
                 cat = c;
                 refresh();
             });
-            LayoutParams lp = new LayoutParams(0, PanelKit.dp(ctx, 30), 1f);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, PanelKit.dp(ctx, 30), 1f);
             lp.rightMargin = PanelKit.dp(ctx, 2);
             tabs.addView(t, lp);
         }
     }
 
     private void drawGrid() {
-        release();   // the old thumbnails are about to go
+        stopAnims();   // the old thumbnails are about to go
         grid.removeAllViews();
         if ("Txt".equals(cat)) {
             drawFaces();
@@ -252,7 +283,6 @@ final class EmojiPanel extends LinearLayout {
     // ----------------------------------------------------------------- images
 
     private String collection = StickerStore.DEFAULT;   // the image collection on show
-    private String confirmDelete;                       // a collection chip waiting for its second tap
 
     private void drawImages() {
         Context ctx = getContext();
@@ -265,34 +295,91 @@ final class EmojiPanel extends LinearLayout {
         }
         List<String> names = StickerStore.collections(ctx);
         if (!names.contains(collection)) collection = StickerStore.DEFAULT;
+        List<File> files = StickerStore.list(ctx, collection);
 
-        // one chip per collection; hold one to delete it (tap the "Delete?" chip to confirm)
+        // forget picks of things that are gone
+        pickColl.retainAll(names);
+        Set<String> have = new java.util.HashSet<>();
+        for (File f : files) have.add(f.getAbsolutePath());
+        pickImg.retainAll(have);
+
+        if (selMode == 1) {
+            grid.addView(selectHeader(ctx, pickImg.size() + " SELECTED", files.size()), cell(4, 0));
+        } else {
+            if (selMode == 2) {
+                grid.addView(selectHeader(ctx, pickColl.size() + (pickColl.size() == 1 ? " COLLECTION SELECTED"
+                        : " COLLECTIONS SELECTED"), names.size()), cell(4, 0));
+            }
+            GridLayout.LayoutParams topLp = cell(4, 0);
+            topLp.setMargins(0, 0, 0, PanelKit.dp(ctx, 4));
+            grid.addView(collectionRow(ctx, names), topLp);
+        }
+
+        if (files.isEmpty()) {
+            TextView hint = PanelKit.caption(ctx, "NO IMAGES IN " + collection.toUpperCase());
+            GridLayout.LayoutParams hLp = cell(4, 0);
+            hLp.setMargins(PanelKit.dp(ctx, 4), PanelKit.dp(ctx, 8), 0, 0);
+            grid.addView(hint, hLp);
+            return;
+        }
+        if (selMode == 0) {
+            TextView caption = PanelKit.caption(ctx, "TAP TO SEND - HOLD TO SELECT");
+            GridLayout.LayoutParams cLp = cell(4, 0);
+            cLp.setMargins(PanelKit.dp(ctx, 4), PanelKit.dp(ctx, 2), 0, PanelKit.dp(ctx, 4));
+            grid.addView(caption, cLp);
+        }
+        for (File f : files) grid.addView(imageCell(ctx, f, size), cell(1, size));
+    }
+
+    /** "3 SELECTED" with All and Done, shown while selecting. */
+    private View selectHeader(Context ctx, String title, int total) {
+        LinearLayout head = new LinearLayout(ctx);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        head.setPadding(PanelKit.dp(ctx, 4), 0, 0, PanelKit.dp(ctx, 2));
+        TextView cap = PanelKit.caption(ctx, title);
+        head.addView(cap, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        head.addView(PanelKit.link(ctx, "All", v -> {
+            if (selMode == 1) {
+                for (File f : StickerStore.list(ctx, collection)) pickImg.add(f.getAbsolutePath());
+            } else {
+                pickColl.addAll(StickerStore.collections(ctx));
+            }
+            refresh();
+        }));
+        head.addView(PanelKit.link(ctx, "Done", v -> stopSelecting()));
+        return head;
+    }
+
+    private void stopSelecting() {
+        selMode = 0;
+        pickImg.clear();
+        pickColl.clear();
+        refresh();
+    }
+
+    /** The collection chips: tap to open one; while selecting collections, tap to pick. */
+    private View collectionRow(Context ctx, List<String> names) {
         android.widget.HorizontalScrollView strip = new android.widget.HorizontalScrollView(ctx);
         strip.setHorizontalScrollBarEnabled(false);
         LinearLayout chips = new LinearLayout(ctx);
         for (String name : names) {
-            boolean deleting = name.equals(confirmDelete);
-            TextView chip = PanelKit.chipSmall(ctx, deleting ? "Delete " + name + "?" : name,
-                    !deleting && name.equals(collection), v -> {
-                        if (deleting) {
-                            StickerStore.deleteCollection(ctx, name);
-                            confirmDelete = null;
-                            collection = StickerStore.DEFAULT;
+            boolean picked = pickColl.contains(name);
+            String label = name + "  " + StickerStore.list(ctx, name).size();
+            if (selMode == 2) label = (picked ? "● " : "○ ") + label;
+            TextView chip = PanelKit.chipSmall(ctx, label,
+                    selMode == 2 ? picked : name.equals(collection), v -> {
+                        if (selMode == 2) {
+                            if (!pickColl.remove(name)) pickColl.add(name);
                         } else {
                             collection = name;
-                            confirmDelete = null;
                         }
                         refresh();
                     });
-            chip.setOnLongClickListener(v -> {
-                confirmDelete = name;
+            chip.setOnLongClickListener(v -> {   // hold a collection to start selecting collections
+                if (selMode == 1) return false;
+                selMode = 2;
+                pickColl.add(name);
                 refresh();
-                postDelayed(() -> {
-                    if (name.equals(confirmDelete)) {
-                        confirmDelete = null;
-                        if ("Img".equals(cat)) refresh();
-                    }
-                }, 3000);
                 return true;
             });
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
@@ -302,52 +389,259 @@ final class EmojiPanel extends LinearLayout {
         }
         strip.addView(chips);
 
-        // one row: the collections scroll on the left, a + button stays on the right
+        // one row: the collections scroll on the left, "+ Add" stays on the right (not while selecting)
         LinearLayout top = new LinearLayout(ctx);
         top.setGravity(Gravity.CENTER_VERTICAL);
         top.addView(strip, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        TextView add = new TextView(ctx);   // plain white text, no button background
-        add.setText("+ Add");
-        add.setTextSize(12);
-        add.setTextColor(0xFFFFFFFF);
-        add.setTypeface(Fonts.cascadiaMono(ctx));
-        add.setGravity(Gravity.CENTER);
-        add.setSingleLine(true);
-        add.setPadding(PanelKit.dp(ctx, 12), 0, PanelKit.dp(ctx, 8), 0);
-        add.setOnClickListener(v -> host.addSticker(collection));
-        LinearLayout.LayoutParams addLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, PanelKit.dp(ctx, 32));
-        top.addView(add, addLp);
-        GridLayout.LayoutParams topLp = cell(4, 0);
-        topLp.setMargins(0, 0, 0, PanelKit.dp(ctx, 4));
-        grid.addView(top, topLp);
+        if (selMode == 0) {
+            TextView add = new TextView(ctx);   // plain white text, no button background
+            add.setText("+ Add");
+            add.setTextSize(12);
+            add.setTextColor(0xFFFFFFFF);
+            add.setTypeface(Fonts.cascadiaMono(ctx));
+            add.setGravity(Gravity.CENTER);
+            add.setSingleLine(true);
+            add.setPadding(PanelKit.dp(ctx, 12), 0, PanelKit.dp(ctx, 8), 0);
+            add.setOnClickListener(v -> host.addSticker(collection));
+            top.addView(add, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, PanelKit.dp(ctx, 32)));
+        }
+        return top;
+    }
 
-        List<File> files = StickerStore.list(ctx, collection);
-        if (files.isEmpty()) {
-            TextView hint = PanelKit.caption(ctx, "NO IMAGES IN " + collection.toUpperCase());
-            GridLayout.LayoutParams hLp = cell(4, 0);
-            hLp.setMargins(PanelKit.dp(ctx, 4), PanelKit.dp(ctx, 8), 0, 0);
-            grid.addView(hint, hLp);
-            return;
+    /** One image: tap sends it (or picks it while selecting), hold starts selecting. */
+    private View imageCell(Context ctx, File f, int size) {
+        boolean picked = pickImg.contains(f.getAbsolutePath());
+        FrameLayout cell = new FrameLayout(ctx);
+        ImageView iv = new ImageView(ctx);
+        iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        iv.setPadding(PanelKit.dp(ctx, 4), PanelKit.dp(ctx, 4), PanelKit.dp(ctx, 4), PanelKit.dp(ctx, 4));
+        iv.setBackground(picked ? UiKit.rounded(ctx, 0x00000000, Color.WHITE, PanelKit.dp(ctx, 1.5f), 10)
+                : UiKit.pressable(ctx, 0x00000000, PanelKit.DOWN, 0, 0f, 8));
+        if (!animate(iv, f, size)) iv.setImageBitmap(thumb(f, size));
+        if (selMode == 1 && !picked) iv.setAlpha(0.55f);
+        if (selMode == 2) iv.setAlpha(0.45f);   // collections are being picked: the images wait
+        cell.addView(iv, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        if (selMode == 1) {
+            View ring = new View(ctx);   // a ring in the corner, filled when picked
+            android.graphics.drawable.GradientDrawable dot = new android.graphics.drawable.GradientDrawable();
+            dot.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+            dot.setColor(picked ? Color.WHITE : 0xAA000000);
+            dot.setStroke(PanelKit.dp(ctx, 1), picked ? Color.WHITE : 0xFF777777);
+            ring.setBackground(dot);
+            FrameLayout.LayoutParams rLp = new FrameLayout.LayoutParams(PanelKit.dp(ctx, 15), PanelKit.dp(ctx, 15),
+                    Gravity.TOP | Gravity.END);
+            rLp.setMargins(0, PanelKit.dp(ctx, 4), PanelKit.dp(ctx, 4), 0);
+            cell.addView(ring, rLp);
+            if (picked) {
+                TextView check = new TextView(ctx);
+                check.setText("✓");
+                check.setTextSize(9);
+                check.setTextColor(Color.BLACK);
+                check.setGravity(Gravity.CENTER);
+                cell.addView(check, rLp);
+            }
         }
-        TextView caption = PanelKit.caption(ctx, "TAP TO SEND - HOLD TO DELETE");
-        GridLayout.LayoutParams cLp = cell(4, 0);
-        cLp.setMargins(PanelKit.dp(ctx, 4), PanelKit.dp(ctx, 2), 0, PanelKit.dp(ctx, 4));
-        grid.addView(caption, cLp);
-        for (File f : files) {
-            ImageView iv = new ImageView(ctx);
-            iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
-            iv.setPadding(PanelKit.dp(ctx, 4), PanelKit.dp(ctx, 4), PanelKit.dp(ctx, 4), PanelKit.dp(ctx, 4));
-            iv.setBackground(UiKit.pressable(ctx, 0x00000000, PanelKit.DOWN, 0, 0f, 8));
-            if (!animate(iv, f, size)) iv.setImageBitmap(thumb(f, size));
-            iv.setOnClickListener(v -> host.sendSticker(f));
-            iv.setOnLongClickListener(v -> {
-                StickerStore.delete(f);
+        if (StickerStore.isGifFile(f) && selMode != 2) {
+            TextView tag = new TextView(ctx);
+            tag.setText("GIF");
+            tag.setTextSize(7.5f);
+            tag.setTextColor(Color.BLACK);
+            tag.setTypeface(Fonts.cascadiaMono(ctx));
+            tag.setGravity(Gravity.CENTER);
+            tag.setBackground(UiKit.rounded(ctx, Color.WHITE, Color.WHITE, 0f, 4));
+            cell.addView(tag, new FrameLayout.LayoutParams(PanelKit.dp(ctx, 20), PanelKit.dp(ctx, 12),
+                    Gravity.BOTTOM | Gravity.START));
+        }
+
+        cell.setOnClickListener(v -> {
+            if (selMode == 1) {
+                if (!pickImg.remove(f.getAbsolutePath())) pickImg.add(f.getAbsolutePath());
                 refresh();
-                return true;
-            });
-            grid.addView(iv, cell(1, size));
+            } else if (selMode == 0) {
+                host.sendSticker(f);
+            }
+        });
+        cell.setOnLongClickListener(v -> {   // hold an image to start selecting images
+            if (selMode == 2) return false;
+            selMode = 1;
+            pickImg.add(f.getAbsolutePath());
+            refresh();
+            return true;
+        });
+        return cell;
+    }
+
+    // ------------------------------------------------------- actions and sheets
+
+    /** The bottom row: category tabs normally, the selection's actions while selecting. */
+    private void drawBars() {
+        Context ctx = getContext();
+        boolean selecting = selMode != 0 && "Img".equals(cat);
+        tabs.setVisibility(selecting ? GONE : VISIBLE);
+        actions.setVisibility(selecting ? VISIBLE : GONE);
+        actions.removeAllViews();
+        if (!selecting) return;
+        int n = selMode == 1 ? pickImg.size() : pickColl.size();
+        boolean canFirst = selMode == 1 ? n > 0 : n > 1;   // merging needs two or more
+        TextView first = PanelKit.chip(ctx, selMode == 1 ? "Move to..." : "Merge into...", false, v -> {
+            if (canFirst) openSheet(selMode == 1 ? 1 : 2);
+        });
+        TextView delete = PanelKit.chip(ctx, "Delete" + (n > 0 ? " " + n : ""), true, v -> {
+            if (n > 0) openSheet(selMode == 1 ? 3 : 4);
+        });
+        first.setAlpha(canFirst ? 1f : 0.4f);
+        delete.setAlpha(n > 0 ? 1f : 0.4f);
+        LinearLayout.LayoutParams a = new LinearLayout.LayoutParams(0, PanelKit.dp(ctx, 38), 1f);
+        a.rightMargin = PanelKit.dp(ctx, 4);
+        actions.addView(first, a);
+        actions.addView(delete, new LinearLayout.LayoutParams(0, PanelKit.dp(ctx, 38), 1f));
+    }
+
+    private List<File> pickedFiles() {
+        List<File> out = new ArrayList<>();
+        for (String path : pickImg) out.add(new File(path));
+        return out;
+    }
+
+    /** 1 move to, 2 merge into, 3 confirm deleting images, 4 confirm deleting collections. */
+    private void openSheet(int kind) {
+        Context ctx = getContext();
+        sheet.removeAllViews();
+        View scrim = new View(ctx);
+        scrim.setBackgroundColor(0x99000000);
+        scrim.setOnClickListener(v -> closeSheet());
+        sheet.addView(scrim, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        LinearLayout box = new LinearLayout(ctx);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setBackground(UiKit.rounded(ctx, 0xFF101010, 0xFF333333, 1f, 14));
+        box.setPadding(PanelKit.dp(ctx, 12), PanelKit.dp(ctx, 10), PanelKit.dp(ctx, 12), PanelKit.dp(ctx, 12));
+        box.setClickable(true);   // taps on the sheet itself do not reach the scrim
+
+        if (kind == 1) {
+            box.addView(sheetTitle(ctx, "MOVE " + pickImg.size() + " TO"));
+            if (StickerStore.collections(ctx).size() < 2) {
+                TextView none = PanelKit.caption(ctx, "NO OTHER COLLECTION - ADD IMAGES TO A NEW ONE FIRST");
+                none.setPadding(PanelKit.dp(ctx, 2), PanelKit.dp(ctx, 6), 0, PanelKit.dp(ctx, 6));
+                box.addView(none);
+            }
+            for (String name : StickerStore.collections(ctx)) {
+                if (name.equals(collection)) continue;
+                box.addView(optionRow(ctx, name, StickerStore.list(ctx, name).size(), () -> {
+                    int moved = StickerStore.move(ctx, pickedFiles(), name);
+                    done("Moved " + moved + " to " + name);
+                }));
+            }
+        } else if (kind == 2) {
+            box.addView(sheetTitle(ctx, "MERGE " + pickColl.size() + " INTO"));
+            for (String name : pickColl) {
+                box.addView(optionRow(ctx, name, StickerStore.list(ctx, name).size(), () -> {
+                    int moved = StickerStore.merge(ctx, new ArrayList<>(pickColl), name);
+                    collection = name;
+                    done("Merged " + moved + " images into " + name);
+                }));
+            }
+        } else {
+            int images = 0;
+            if (kind == 4) for (String c : pickColl) images += StickerStore.list(ctx, c).size();
+            TextView msg = new TextView(ctx);
+            msg.setTextSize(12);
+            msg.setTextColor(0xFFE8E8E8);
+            msg.setTypeface(Fonts.cascadiaMono(ctx));
+            msg.setLineSpacing(0, 1.25f);
+            msg.setPadding(0, 0, 0, PanelKit.dp(ctx, 10));
+            msg.setText(kind == 3
+                    ? "Delete " + pickImg.size() + (pickImg.size() == 1 ? " image" : " images") + " from " + collection + "?"
+                    : "Delete " + pickColl.size() + (pickColl.size() == 1 ? " collection" : " collections") + " and the "
+                            + images + (images == 1 ? " image" : " images") + " in "
+                            + (pickColl.size() == 1 ? "it" : "them") + "? This cannot be undone.");
+            box.addView(msg);
+            LinearLayout row = new LinearLayout(ctx);
+            LinearLayout.LayoutParams a = new LinearLayout.LayoutParams(0, PanelKit.dp(ctx, 38), 1f);
+            a.rightMargin = PanelKit.dp(ctx, 4);
+            row.addView(PanelKit.chip(ctx, "Cancel", false, v -> closeSheet()), a);
+            row.addView(PanelKit.chip(ctx, "Delete", true, v -> {
+                if (kind == 3) {
+                    int k = 0;
+                    for (File f : pickedFiles()) {
+                        StickerStore.delete(f);
+                        k++;
+                    }
+                    done("Deleted " + k);
+                } else {
+                    int k = pickColl.size();
+                    for (String c : new ArrayList<>(pickColl)) StickerStore.deleteCollection(ctx, c);
+                    collection = StickerStore.DEFAULT;
+                    done("Deleted " + k + (k == 1 ? " collection" : " collections"));
+                }
+            }), new LinearLayout.LayoutParams(0, PanelKit.dp(ctx, 38), 1f));
+            box.addView(row);
         }
+        sheet.addView(box, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM));
+        sheet.setVisibility(VISIBLE);
+    }
+
+    /** True while a sheet or select mode is open: Back should close that, not the keyboard. */
+    boolean canGoBack() {
+        return sheet.getVisibility() == VISIBLE || selMode != 0;
+    }
+
+    void goBack() {
+        if (sheet.getVisibility() == VISIBLE) closeSheet();
+        else if (selMode != 0) stopSelecting();
+    }
+
+    private void closeSheet() {
+        sheet.setVisibility(GONE);
+        sheet.removeAllViews();
+    }
+
+    /** An action finished: close the sheet, leave select mode, say what happened. */
+    private void done(String message) {
+        closeSheet();
+        android.widget.Toast.makeText(getContext(), message, android.widget.Toast.LENGTH_SHORT).show();
+        stopSelecting();
+    }
+
+    private TextView sheetTitle(Context ctx, String text) {
+        TextView t = PanelKit.caption(ctx, text);
+        t.setPadding(PanelKit.dp(ctx, 2), 0, 0, PanelKit.dp(ctx, 6));
+        return t;
+    }
+
+    /** A line in a sheet: a ring, a name, its image count on the right. */
+    private View optionRow(Context ctx, String name, int count, Runnable pick) {
+        LinearLayout row = new LinearLayout(ctx);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(PanelKit.dp(ctx, 6), PanelKit.dp(ctx, 10), PanelKit.dp(ctx, 6), PanelKit.dp(ctx, 10));
+        row.setBackground(UiKit.pressable(ctx, 0x00000000, PanelKit.DOWN, 0, 0f, 8));
+        View ring = new View(ctx);
+        android.graphics.drawable.GradientDrawable dot = new android.graphics.drawable.GradientDrawable();
+        dot.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+        dot.setColor(0x00000000);
+        dot.setStroke(PanelKit.dp(ctx, 1.5f), 0xFF555555);
+        ring.setBackground(dot);
+        row.addView(ring, new LinearLayout.LayoutParams(PanelKit.dp(ctx, 14), PanelKit.dp(ctx, 14)));
+        TextView label = new TextView(ctx);
+        label.setText(name);
+        label.setTextSize(13);
+        label.setTextColor(PanelKit.FG);
+        label.setTypeface(Fonts.cascadiaMono(ctx));
+        label.setPadding(PanelKit.dp(ctx, 10), 0, 0, 0);
+        row.addView(label, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        TextView n = new TextView(ctx);
+        n.setText(String.valueOf(count));
+        n.setTextSize(10);
+        n.setTextColor(PanelKit.DIM);
+        n.setTypeface(Fonts.cascadiaMono(ctx));
+        row.addView(n);
+        row.setOnClickListener(v -> pick.run());
+        return row;
     }
 
     // GIF thumbnails play (Android 9+); they stop whenever the panel is left or redrawn
@@ -375,10 +669,19 @@ final class EmojiPanel extends LinearLayout {
         }
     }
 
-    /** Stop every playing thumbnail. */
-    void release() {
+    private void stopAnims() {
         for (android.graphics.drawable.AnimatedImageDrawable a : anims) a.stop();
         anims.clear();
+    }
+
+    /** Called when the keyboard leaves this panel: stop the GIFs and drop any selection. */
+    void release() {
+        stopAnims();
+        selMode = 0;
+        pickImg.clear();
+        pickColl.clear();
+        sheet.setVisibility(GONE);
+        sheet.removeAllViews();
     }
 
     private static Bitmap thumb(File f, int size) {

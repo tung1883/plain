@@ -236,6 +236,16 @@ final class ClipboardPanel extends FrameLayout {
         refresh();
     }
 
+    /** True while the image viewer or select mode is open: Back should close that, not the keyboard. */
+    boolean canGoBack() {
+        return viewing != null || selecting;
+    }
+
+    void goBack() {
+        if (viewing != null) closeViewer();
+        else if (selecting) stopSelecting();
+    }
+
     private void closeViewer() {
         viewing = null;
         viewer.setVisibility(GONE);

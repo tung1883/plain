@@ -62,6 +62,27 @@ public class PlainKeyboardService extends InputMethodService
         if (root != null) root.release();
     }
 
+    // Back first closes whatever is open inside the keyboard (a viewer, select mode, a sheet, the
+    // camera); only when nothing is, it hides the keyboard as usual.
+    @Override
+    public boolean onKeyDown(int keyCode, KeyEvent event) {
+        if (keyCode == KeyEvent.KEYCODE_BACK && root != null && root.canGoBack()) {
+            event.startTracking();
+            return true;
+        }
+        return super.onKeyDown(keyCode, event);
+    }
+
+    @Override
+    public boolean onKeyUp(int keyCode, KeyEvent event) {
+        if (keyCode == KeyEvent.KEYCODE_BACK && event.isTracking() && !event.isCanceled()
+                && root != null && root.canGoBack()) {
+            root.goBack();
+            return true;
+        }
+        return super.onKeyUp(keyCode, event);
+    }
+
     @Override
     public boolean onEvaluateFullscreenMode() {
         return false;

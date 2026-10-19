@@ -212,6 +212,15 @@ final class ScanPanel extends LinearLayout {
         setResult(text);
     }
 
+    /** True while the camera is open: Back should close it, not the keyboard. */
+    boolean canGoBack() {
+        return camBox.getVisibility() == VISIBLE;
+    }
+
+    void goBack() {
+        stopCamera();
+    }
+
     /** Called when the keyboard leaves this panel. */
     void release() {
         capturing = false;

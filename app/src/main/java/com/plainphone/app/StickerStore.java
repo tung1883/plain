@@ -137,6 +137,39 @@ final class StickerStore {
         if (!d.equals(root(c))) delete(d);
     }
 
+    private static File[] imagesIn(File dir) {
+        File[] files = dir.listFiles((d, name) -> isImageName(name));
+        return files == null ? new File[0] : files;
+    }
+
+    /** Move images into a collection (their file names are kept unless taken). Returns how many moved. */
+    static int move(Context c, List<File> files, String toCollection) {
+        File dest = dir(c, toCollection);
+        int moved = 0;
+        for (File f : files) {
+            if (dest.equals(f.getParentFile())) continue;
+            File target = new File(dest, f.getName());
+            if (target.exists()) {
+                String n = f.getName();
+                target = new File(dest, System.nanoTime() + n.substring(n.lastIndexOf('.')));
+            }
+            if (f.renameTo(target)) moved++;
+        }
+        return moved;
+    }
+
+    /** Move every image of these collections into one of them and remove the emptied ones. */
+    static int merge(Context c, List<String> names, String into) {
+        int moved = 0;
+        for (String n : names) {
+            if (clean(n).equals(clean(into))) continue;
+            File dir = dir(c, n);
+            moved += move(c, new ArrayList<>(Arrays.asList(imagesIn(dir))), into);
+            if (!dir.equals(root(c))) delete(dir);
+        }
+        return moved;
+    }
+
     static List<File> list(Context c, String collection) {
         File[] files = dir(c, collection).listFiles((d, name) -> isImageName(name));
         List<File> out = new ArrayList<>();
