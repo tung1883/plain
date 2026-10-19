@@ -39,10 +39,6 @@ final class KeyboardSettingsPanel extends LinearLayout {
         boolean pair = Config.isKbAutoPair(ctx);
         addRow(ctx, "Auto-close", "( [ { \" ' type their pair", pair ? 0 : 1,
                 i -> Config.setKbAutoPair(ctx, i == 0));
-
-        TextView tip = PanelKit.caption(ctx, "HEIGHT: HOLD THE ↕ BUTTON ON THE KEYS AND DRAG");
-        tip.setPadding(PanelKit.dp(ctx, 4), PanelKit.dp(ctx, 10), 0, 0);
-        list.addView(tip);
     }
 
     /** One setting: label and hint on the left, an On/Off control on the right. */
