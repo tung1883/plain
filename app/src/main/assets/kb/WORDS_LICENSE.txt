@@ -1,0 +1,8 @@
+words_*.txt: the most frequent words of each language, filtered from the FrequencyWords lists
+(https://github.com/hermitdave/FrequencyWords, 2018 content, built from OpenSubtitles), which are
+licensed CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/).
+
+ngram_*.txt: counts of which of those words follow which, from the OPUS OpenSubtitles 2018
+monolingual corpus (https://opus.nlpl.eu/OpenSubtitles.php), built with tools/lang/build_ngrams.js.
+
+Both are shared under CC BY-SA 4.0.

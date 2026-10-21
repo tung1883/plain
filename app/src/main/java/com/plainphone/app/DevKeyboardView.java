@@ -34,6 +34,14 @@ final class DevKeyboardView extends View {
         void enter();
 
         void switchKeyboard();
+
+        /** Tap on the globe key (only when several languages are on): the next language. */
+        default void nextLanguage() {
+        }
+
+        /** Long-press on the globe key: pick a language. */
+        default void languagePicker() {
+        }
     }
 
     private static final class Key {
@@ -76,8 +84,6 @@ final class DevKeyboardView extends View {
 
     private static final String NUM = "1234567890";
     private static final String NUM_SHIFTED = "!@#$%^&*()";
-    private static final String[] LETTER_ROWS = {"qwertyuiop", "asdfghjkl", "zxcvbnm"};
-    private static final String[] LETTER_ALTS = {"`~=+-_[]{}", "<>()/\\|;:", "'\"*&?!%"};
 
     private static final String[][] SYM_ROWS = {{"@", "#", "$", "%", "&", "*", "-", "+", "=", "/"},
             {"(", ")", "[", "]", "{", "}", "<", ">", "\\", "|"}};
@@ -105,6 +111,11 @@ final class DevKeyboardView extends View {
     private String bubbleText = "";
     private List<List<KeyRect>> rects = new ArrayList<>();
     private boolean sym, devRow = true;
+    private Layouts.Spec letterSpec = Layouts.QWERTY;
+    private String langTag = "", langName = "";
+    private boolean numRow = true, forceNumRow;          // the number row: the setting, and a layout that needs it
+    private boolean jamoLabels;                         // Korean: letter keys show their jamo
+    private boolean multiLang;                        // several languages on: the Ime key is a globe
     private float heightPct = 100f;                   // 75..130
     private int builtW = -1;
 
@@ -124,9 +135,46 @@ final class DevKeyboardView extends View {
     /** Re-read the settings; call when the keyboard is shown. */
     void refresh() {
         devRow = Config.isKbDevRow(getContext());
+        numRow = Config.isKbNumRow(getContext());
         heightPct = Config.getKbHeightPct(getContext());
         buildRows();
         requestLayout();
+        invalidate();
+    }
+
+    /** Swap the letter rows (language layout); the number row, modifiers and bottom row stay. */
+    void setLetterLayout(Layouts.Spec spec) {
+        letterSpec = spec;
+        buildRows();
+        requestLayout();
+        invalidate();
+    }
+
+    /** Korean keys show jamo; Vietnamese VNI needs the number row even when the setting hides it. */
+    void setLabelsAndNumRow(boolean jamo, boolean needNumRow) {
+        boolean rebuild = needNumRow != forceNumRow;
+        jamoLabels = jamo;
+        forceNumRow = needNumRow;
+        if (rebuild) {
+            buildRows();
+            requestLayout();
+        }
+        invalidate();
+    }
+
+    /** Arm Shift for the next letter (auto-capital), unless the user already set a modifier state. */
+    void armShift() {
+        if (mods[SHIFT] == 0) {
+            mods[SHIFT] = 1;
+            invalidate();
+        }
+    }
+
+    /** The active language: its tag shows on the globe key, its name on the space bar (when {@code multi}). */
+    void setLanguage(String tag, String nativeName, boolean multi) {
+        langTag = tag;
+        langName = nativeName;
+        multiLang = multi;
         invalidate();
     }
 
@@ -176,22 +224,26 @@ final class DevKeyboardView extends View {
             r.add(d);
             kinds.add(ROW_DEV);
         }
-        List<Key> num = new ArrayList<>();
-        for (int i = 0; i < 10; i++) {
-            num.add(new Key(NUM.substring(i, i + 1), 1f, "F" + (i + 1), NUM_SHIFTED.substring(i, i + 1)));
+        if (numRow || forceNumRow) {
+            List<Key> num = new ArrayList<>();
+            for (int i = 0; i < 10; i++) {
+                num.add(new Key(NUM.substring(i, i + 1), 1f, "F" + (i + 1), NUM_SHIFTED.substring(i, i + 1)));
+            }
+            r.add(num);
+            kinds.add(ROW_NUM);
         }
-        r.add(num);
-        kinds.add(ROW_NUM);
         if (!sym) {
             for (int row = 0; row < 3; row++) {
                 List<Key> l = new ArrayList<>();
-                String letters = LETTER_ROWS[row];
-                if (row == 1) l.add(k("", 0.5f, null));
+                String letters = letterSpec.rows[row];
+                // the middle row is centred with a spacer when shorter than the 10-key row
+                float spacer = row == 1 ? (10 - letters.length()) / 2f : 0f;
+                if (spacer > 0) l.add(k("", spacer, null));
                 if (row == 2) l.add(k("Shift", 1.5f, null));
                 for (int i = 0; i < letters.length(); i++) {
-                    l.add(k(letters.substring(i, i + 1), 1f, LETTER_ALTS[row].substring(i, i + 1)));
+                    l.add(k(letters.substring(i, i + 1), 1f, letterSpec.alt(row, i)));
                 }
-                if (row == 1) l.add(k("", 0.5f, null));
+                if (spacer > 0) l.add(k("", spacer, null));
                 if (row == 2) l.add(k("Bksp", 1.5f, null));
                 r.add(l);
                 kinds.add(ROW_KEYS);
@@ -337,10 +389,19 @@ final class DevKeyboardView extends View {
 
                 float cx = kr.r.centerX(), cy = kr.r.centerY();
                 int icon = KeyIcons.forId(id);
-                if (id.equals("Space")) {
+                if (id.equals("Space") && multiLang) {
+                    text.setColor(0xFF777777);
+                    text.setTextSize(dp(11));
+                    canvas.drawText(langName, cx, cy - (text.ascent() + text.descent()) / 2f, text);
+                } else if (id.equals("Space")) {
                     fill.setColor(0xFF3A3A3A);
                     float hw = kr.r.width() * 0.15f;
                     canvas.drawRoundRect(cx - hw, cy - dp(1), cx + hw, cy + dp(1), dp(1), dp(1), fill);
+                } else if (id.equals("Ime") && multiLang) {
+                    KeyIcons.draw(canvas, KeyIcons.GLOBE, cx, cy - dp(5), dp(6), fg, false);
+                    text.setColor(fg);
+                    text.setTextSize(dp(8.5f));
+                    canvas.drawText(langTag, cx, cy + dp(10) - (text.ascent() + text.descent()) / 2f, text);
                 } else if (icon != 0) {
                     KeyIcons.draw(canvas, icon, cx, cy, dp(7), fg, id.equals("Shift") && mods[SHIFT] == 2);
                 } else {
@@ -379,13 +440,17 @@ final class DevKeyboardView extends View {
             case "Sym": return sym ? "abc" : "?#+";
             default:
         }
+        if (jamoLabels && id.length() == 1) {
+            String j = HangulComposer.jamoFor(id.charAt(0), mods[SHIFT] != 0);
+            if (j != null) return j;
+        }
         if (id.length() == 1) return shiftedOut(key);
         return id;
     }
 
     /** The character a character key produces right now (honours Shift). */
     private String shiftedOut(Key key) {
-        if (mods[SHIFT] == 0) return key.id;
+        if (mods[SHIFT] == 0 || key.id.equals("ß")) return key.id;   // ß has no one-letter capital
         if (key.shifted != null) return key.shifted;
         return key.id.toUpperCase(java.util.Locale.ROOT);
     }
@@ -451,6 +516,13 @@ final class DevKeyboardView extends View {
                 }
             };
             handler.postDelayed(p.repeat, REPEAT_FIRST_MS);
+        } else if (multiLang && kr.key.id.equals("Ime")) {
+            p.longPress = () -> {
+                p.consumed = true;
+                performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS);
+                listener.languagePicker();
+            };
+            handler.postDelayed(p.longPress, LONG_PRESS_MS);
         } else if (kr.key.alt != null) {
             p.longPress = () -> {
                 p.consumed = true;
@@ -546,7 +618,10 @@ final class DevKeyboardView extends View {
         }
         switch (id) {
             case "Sym": sym = !sym; buildRows(); requestLayout(); invalidate(); return;
-            case "Ime": listener.switchKeyboard(); return;
+            case "Ime":
+                if (multiLang) listener.nextLanguage();
+                else listener.switchKeyboard();
+                return;
             case "Enter": listener.enter(); consumeArmed(); return;
             case "Space": charOut(" "); return;
             default:
@@ -564,7 +639,7 @@ final class DevKeyboardView extends View {
 
     /** Output for a typed (or long-press) single char: Shift applies to letters and number-row keys. */
     private String shiftedOutFor(String id) {
-        if (mods[SHIFT] == 0) return id;
+        if (mods[SHIFT] == 0 || id.equals("ß")) return id;
         int n = NUM.indexOf(id);
         if (n >= 0) return NUM_SHIFTED.substring(n, n + 1);
         return id.toUpperCase(java.util.Locale.ROOT);

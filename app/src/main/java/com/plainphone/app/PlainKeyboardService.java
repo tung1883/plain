@@ -12,7 +12,10 @@ import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
 import android.view.inputmethod.InputMethodManager;
 
-/** The PlainPhone developer keyboard: no suggestions, autocorrect or auto-capitalisation. */
+/**
+ * The PlainPhone developer keyboard. Typing assists (suggestions, auto-correct, auto-capital) are
+ * off unless a language or the spell-check setting asks for them; see {@link TypingController}.
+ */
 public class PlainKeyboardService extends InputMethodService
         implements DevKeyboardView.Listener, KeyboardRoot.Host {
 
@@ -44,7 +47,10 @@ public class PlainKeyboardService extends InputMethodService
     public void onStartInputView(EditorInfo info, boolean restarting) {
         super.onStartInputView(info, restarting);
         recordClip();   // a copy made while another keyboard was active
-        if (root != null) root.refresh();
+        if (root != null) {
+            root.refresh();
+            root.setField(composeAllowed(info), suggestAllowed(info));
+        }
         if (StickerStore.justAdded && root != null) {
             StickerStore.justAdded = false;
             root.showImages();
@@ -54,6 +60,35 @@ public class PlainKeyboardService extends InputMethodService
             ScanTextActivity.pending = null;
             root.showScanResult(scanned);   // shown for the user to insert, not typed on its own
         }
+    }
+
+    /** Passwords and non-text fields get the keys exactly as typed (no Vietnamese / Korean composing). */
+    private static boolean composeAllowed(EditorInfo info) {
+        if (info == null) return false;
+        int t = info.inputType;
+        if ((t & android.text.InputType.TYPE_MASK_CLASS) != android.text.InputType.TYPE_CLASS_TEXT) return false;
+        int v = t & android.text.InputType.TYPE_MASK_VARIATION;
+        return v != android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+                && v != android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+                && v != android.text.InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD;
+    }
+
+    /** Suggestions and auto-correct also stay out of URL and e-mail fields and fields that ask for none. */
+    private static boolean suggestAllowed(EditorInfo info) {
+        if (!composeAllowed(info)) return false;
+        int t = info.inputType;
+        int v = t & android.text.InputType.TYPE_MASK_VARIATION;
+        return v != android.text.InputType.TYPE_TEXT_VARIATION_URI
+                && v != android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
+                && v != android.text.InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS
+                && (t & android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) == 0;
+    }
+
+    @Override
+    public void onUpdateSelection(int oldSelStart, int oldSelEnd, int newSelStart, int newSelEnd,
+                                  int candidatesStart, int candidatesEnd) {
+        super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd);
+        if (root != null) root.selectionChanged(newSelStart, newSelEnd, candidatesStart, candidatesEnd);
     }
 
     @Override
@@ -175,6 +210,39 @@ public class PlainKeyboardService extends InputMethodService
             case "{": return "}";
             default: return null;
         }
+    }
+
+    @Override
+    public void setComposing(String s) {
+        InputConnection ic = getCurrentInputConnection();
+        if (ic != null) ic.setComposingText(s, 1);
+    }
+
+    @Override
+    public void finishComposing() {
+        InputConnection ic = getCurrentInputConnection();
+        if (ic != null) ic.finishComposingText();
+    }
+
+    @Override
+    public String textBefore(int n) {
+        InputConnection ic = getCurrentInputConnection();
+        if (ic == null) return "";
+        CharSequence c = ic.getTextBeforeCursor(n, 0);
+        return c == null ? "" : c.toString();
+    }
+
+    @Override
+    public void deleteBefore(int n) {
+        InputConnection ic = getCurrentInputConnection();
+        if (ic != null) ic.deleteSurroundingText(n, 0);
+    }
+
+    @Override
+    public int capsMode() {
+        InputConnection ic = getCurrentInputConnection();
+        EditorInfo info = getCurrentInputEditorInfo();
+        return ic == null || info == null ? 0 : ic.getCursorCapsMode(info.inputType);
     }
 
     @Override

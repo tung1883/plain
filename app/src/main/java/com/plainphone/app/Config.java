@@ -919,6 +919,68 @@ class Config {
         prefs(context).edit().putBoolean("kb_auto_pair", on).apply();
     }
 
+    // ---- keyboard languages (see Layouts / InputLang)
+
+    /** Enabled input languages in globe-cycle order, as ids ("en,de,vi"). */
+    static String getKbLangs(Context context) {
+        return prefs(context).getString("kb_langs", "en");
+    }
+
+    static void setKbLangs(Context context, String csv) {
+        prefs(context).edit().putString("kb_langs", csv).apply();
+    }
+
+    static String getKbLangCur(Context context) {
+        return prefs(context).getString("kb_lang_cur", "en");
+    }
+
+    static void setKbLangCur(Context context, String id) {
+        prefs(context).edit().putString("kb_lang_cur", id).apply();
+    }
+
+    /** Chosen layout name for a language, or null for its default. */
+    static String getKbLayout(Context context, String lang) {
+        return prefs(context).getString("kb_lay_" + lang, null);
+    }
+
+    static void setKbLayout(Context context, String lang, String layout) {
+        prefs(context).edit().putString("kb_lay_" + lang, layout).apply();
+    }
+
+    static boolean isKbSpell(Context context) {
+        return prefs(context).getBoolean("kb_spell", false);
+    }
+
+    static void setKbSpell(Context context, boolean on) {
+        prefs(context).edit().putBoolean("kb_spell", on).apply();
+    }
+
+    static boolean isKbAutocorrect(Context context) {
+        return prefs(context).getBoolean("kb_autocorrect", false);
+    }
+
+    static void setKbAutocorrect(Context context, boolean on) {
+        prefs(context).edit().putBoolean("kb_autocorrect", on).apply();
+    }
+
+    /** Languages whose words are also suggested while typing a Latin language, as ids. */
+    static String getKbMix(Context context) {
+        return prefs(context).getString("kb_mix", "");
+    }
+
+    static void setKbMix(Context context, String csv) {
+        prefs(context).edit().putString("kb_mix", csv).apply();
+    }
+
+    /** Number row on every layout that has room for it; on by default (the dev layout always had it). */
+    static boolean isKbNumRow(Context context) {
+        return prefs(context).getBoolean("kb_numrow", true);
+    }
+
+    static void setKbNumRow(Context context, boolean on) {
+        prefs(context).edit().putBoolean("kb_numrow", on).apply();
+    }
+
     static int getDevScreenFps(Context context) {
         return prefs(context).getInt("dev_screen_fps", 12);
     }
