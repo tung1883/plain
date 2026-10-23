@@ -20,6 +20,7 @@ class SearchResultsAdapter extends BaseAdapter {
 
     private static final int TYPE_HEADER = 0;
     private static final int TYPE_RESULT = 1;
+    private static final int TYPE_CONTENT = 2;
 
     static class Header {
         final SearchResult.Kind kind; // null when label is set directly (no collapse toggle)
@@ -49,6 +50,7 @@ class SearchResultsAdapter extends BaseAdapter {
 
     private final List<Object> rows;
     private Typeface typeface;
+    private TextMatch.Query query;     // what was typed, to mark in the rows
 
     SearchResultsAdapter(Context context, List<Object> rows, Typeface typeface) {
         this.context = context;
@@ -83,12 +85,15 @@ class SearchResultsAdapter extends BaseAdapter {
 
     @Override
     public int getViewTypeCount() {
-        return 2;
+        return 3;
     }
 
     @Override
     public int getItemViewType(int position) {
-        return rows.get(position) instanceof SearchResult ? TYPE_RESULT : TYPE_HEADER;
+        Object row = rows.get(position);
+        if (!(row instanceof SearchResult)) return TYPE_HEADER;
+        SearchResult r = (SearchResult) row;
+        return r.style == SearchResult.Style.CONTENT && r.payload instanceof ContentHit ? TYPE_CONTENT : TYPE_RESULT;
     }
 
     @Override
@@ -99,9 +104,9 @@ class SearchResultsAdapter extends BaseAdapter {
     @Override
     public View getView(int position, View convertView, ViewGroup parent) {
         Object row = rows.get(position);
-        return row instanceof SearchResult
-                ? resultView((SearchResult) row, convertView)
-                : headerView((Header) row, convertView);
+        if (!(row instanceof SearchResult)) return headerView((Header) row, convertView);
+        SearchResult r = (SearchResult) row;
+        return getItemViewType(position) == TYPE_CONTENT ? contentView(r, convertView) : resultView(r, convertView);
     }
 
     private View headerView(Header header, View convertView) {
@@ -118,6 +123,7 @@ class SearchResultsAdapter extends BaseAdapter {
             text = text + "  (" + header.hiddenCount + ")";
         }
         label.setText(text);
+        label.setTextColor(header.kind == SearchResult.Kind.BEST ? Color.WHITE : Color.GRAY);
         label.setTypeface(typeface);
 
         toggle.setVisibility(header.kind == null ? View.GONE : View.VISIBLE);
@@ -202,8 +208,10 @@ class SearchResultsAdapter extends BaseAdapter {
             action2.setOnClickListener(null);
         }
 
-        title.setText(result.title);
+        title.setText(query == null ? result.title : Highlight.apply(result.title, query));
         title.setTypeface(typeface);
+        title.setTextSize(result.style == SearchResult.Style.CALC ? 26 : 20);
+        view.setBackground(result.style == SearchResult.Style.BEST ? bestBackground() : rowBackground());
         int baseFlags = title.getPaintFlags() & ~android.graphics.Paint.STRIKE_THRU_TEXT_FLAG;
         if (result.strike) {
             title.setPaintFlags(baseFlags | android.graphics.Paint.STRIKE_THRU_TEXT_FLAG);
@@ -215,7 +223,9 @@ class SearchResultsAdapter extends BaseAdapter {
         if (result.subtitle == null) {
             subtitle.setVisibility(View.GONE);
         } else {
-            subtitle.setText(result.subtitle);
+            boolean marks = query != null && (result.kind == SearchResult.Kind.CONTENT
+                    || result.kind == SearchResult.Kind.NOTE || result.kind == SearchResult.Kind.TODO);
+            subtitle.setText(marks ? Highlight.apply(result.subtitle, query) : result.subtitle);
             subtitle.setTypeface(typeface);
             // A "\n" in the subtitle means separate lines (e.g. a sync pair's
             // schedule, then its status); otherwise one line, cut in the middle.
@@ -316,9 +326,130 @@ class SearchResultsAdapter extends BaseAdapter {
         return view;
     }
 
+    /** The search the rows answer; matched words are drawn bold. Null for none. */
+    void setQuery(TextMatch.Query query) {
+        this.query = query;
+    }
+
     void setTypeface(Typeface typeface) {
         this.typeface = typeface;
         notifyDataSetChanged();
+    }
+
+    /** A search result from file contents: the name and a type tag, then where in the folder tree and the file, then the passage. */
+    private View contentView(SearchResult result, View convertView) {
+        LinearLayout view = convertView instanceof LinearLayout ? (LinearLayout) convertView : newContentView();
+        LinearLayout col = (LinearLayout) view.getChildAt(0);
+        TextView title = (TextView) col.getChildAt(0);
+        TextView where = (TextView) col.getChildAt(1);
+        TextView snippet = (TextView) col.getChildAt(2);
+        TextView tag = (TextView) view.getChildAt(1);
+        ContentHit hit = (ContentHit) result.payload;
+
+        title.setTypeface(typeface);
+        title.setText(query == null ? result.title : Highlight.apply(result.title, query));
+        StringBuilder line = new StringBuilder(hit.folder == null ? "" : hit.folder);
+        if (!hit.locator.isEmpty()) line.append(line.length() > 0 ? " · " : "").append(hit.locator);
+        if (hit.matches > 1) line.append(" · ").append(hit.matches).append(" matches");
+        where.setTypeface(typeface);
+        where.setText(line.toString());
+        snippet.setTypeface(typeface);
+        snippet.setText(query == null ? hit.snippet : Highlight.apply(hit.snippet, query));
+        String name = hit.file.getName();
+        int dot = name.lastIndexOf('.');
+        tag.setTypeface(typeface);
+        tag.setText(dot < 0 ? "FILE" : name.substring(dot + 1).toUpperCase(java.util.Locale.ROOT));
+        return view;
+    }
+
+    private LinearLayout newContentView() {
+        LinearLayout view = new LinearLayout(context);
+        view.setOrientation(LinearLayout.HORIZONTAL);
+        view.setGravity(Gravity.CENTER_VERTICAL);
+        view.setBackground(rowBackground());
+        view.setPadding(48, 28, 48, 28);
+
+        LinearLayout col = new LinearLayout(context);
+        col.setOrientation(LinearLayout.VERTICAL);
+
+        TextView title = new TextView(context);
+        title.setTextColor(Color.WHITE);
+        title.setTextSize(20);
+        title.setSingleLine(true);
+        title.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        col.addView(title);
+
+        TextView where = new TextView(context);
+        where.setTextColor(0xFFC9C9C9);
+        where.setTextSize(13);
+        where.setSingleLine(true);
+        where.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
+        col.addView(where, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        TextView snippet = new TextView(context);
+        snippet.setTextColor(0xFF9A9A9A);
+        snippet.setTextSize(14);
+        snippet.setMaxLines(2);
+        snippet.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        sp.topMargin = 6;
+        col.addView(snippet, sp);
+
+        view.addView(col, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        TextView tag = new TextView(context);
+        tag.setTextColor(0xFF9A9A9A);
+        tag.setTextSize(11);
+        tag.setLetterSpacing(0.1f);
+        tag.setSingleLine(true);
+        tag.setPadding(UiKit.dp(context, 7), UiKit.dp(context, 2), UiKit.dp(context, 7), UiKit.dp(context, 2));
+        tag.setBackground(UiKit.rounded(context, Color.TRANSPARENT, 0xFF2C2C2C, 1f, 6));
+        LinearLayout.LayoutParams tp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        tp.leftMargin = 24;
+        view.addView(tag, tp);
+        return view;
+    }
+
+    /** The row background plus a thin white bar at the left edge: the "Best match" mark. */
+    private Drawable bestBackground() {
+        android.graphics.drawable.LayerDrawable d = new android.graphics.drawable.LayerDrawable(
+                new Drawable[]{rowBackground(), new LeftBar(UiKit.dp(context, 2), UiKit.dp(context, 8))});
+        return d;
+    }
+
+    private static final class LeftBar extends Drawable {
+        private final android.graphics.Paint paint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+        private final int width, inset;
+
+        LeftBar(int width, int inset) {
+            this.width = width;
+            this.inset = inset;
+            paint.setColor(Color.WHITE);
+        }
+
+        @Override
+        public void draw(android.graphics.Canvas canvas) {
+            android.graphics.Rect b = getBounds();
+            canvas.drawRoundRect(b.left, b.top + inset, b.left + width, b.bottom - inset, width, width, paint);
+        }
+
+        @Override
+        public void setAlpha(int alpha) {
+            paint.setAlpha(alpha);
+        }
+
+        @Override
+        public void setColorFilter(android.graphics.ColorFilter filter) {
+            paint.setColorFilter(filter);
+        }
+
+        @Override
+        public int getOpacity() {
+            return android.graphics.PixelFormat.TRANSLUCENT;
+        }
     }
 
     private Drawable rowBackground() {

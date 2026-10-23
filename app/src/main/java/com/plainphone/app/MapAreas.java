@@ -39,6 +39,8 @@ final class MapAreas {
                 if (area != null) areas.add(area);
             }
         }
+        // lowest order first = drawn first = underneath; the first area also sets the camera
+        areas.sort(java.util.Comparator.comparingInt((MapArea a) -> a.order).thenComparing(a -> a.id));
         return areas;
     }
 
@@ -58,7 +60,7 @@ final class MapAreas {
             JSONObject meta = new JSONObject(sb.toString());
             return new MapArea(meta.getString("id"), meta.getString("displayName"),
                     "map/" + dir.getName(), meta.getDouble("centerLat"),
-                    meta.getDouble("centerLon"), meta.getDouble("defaultZoom"));
+                    meta.getDouble("centerLon"), meta.getDouble("defaultZoom"), meta.optInt("order", 0));
         } catch (Exception e) {
             return null; // corrupt/partial download — skip it rather than crash the merge
         }

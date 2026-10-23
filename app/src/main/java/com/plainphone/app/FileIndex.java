@@ -73,6 +73,12 @@ class FileIndex {
     }
 
     static List<Scored> search(Context context, TextMatch.Query query, int limit) {
+        return search(context, query, limit, null);
+    }
+
+    /** As above, keeping only the entries {@code accept} allows (null = all). */
+    static List<Scored> search(Context context, TextMatch.Query query, int limit,
+                               java.util.function.Predicate<Entry> accept) {
         ensureFresh(context);
 
         List<Entry> snapshot = entries;
@@ -80,6 +86,7 @@ class FileIndex {
         if (snapshot == null || query.empty) return hits;
 
         for (Entry entry : snapshot) {
+            if (accept != null && !accept.test(entry)) continue;
             int score = TextMatch.score(entry.folded, entry.signature, query, entry.directory);
             if (score != TextMatch.NO_MATCH) hits.add(new Scored(entry, score));
         }

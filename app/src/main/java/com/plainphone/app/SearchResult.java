@@ -3,6 +3,7 @@ package com.plainphone.app;
 class SearchResult {
 
     enum Kind {
+        BEST("Best match"),
         APP("Apps"),
         ACTION("Actions"),
         NOTE("Notes"),
@@ -12,6 +13,7 @@ class SearchResult {
         SYSTEM("Phone settings"),
         WEB("Web"),
         FILE("Files"),
+        CONTENT("Inside files"),
         CONTACT("Contacts"),
         VAULT("Vault"),
         DEV("Dev"),
@@ -33,9 +35,18 @@ class SearchResult {
 
     final String subtitle;
 
-    final int score;
+    /** Lower is better. Search history may lower it a little after the result is built. */
+    int score;
+
+    /** The score the source gave; {@link #score} may be lowered from it by what the user picked before. */
+    final int baseScore;
 
     final Object payload;
+
+    /** How a row is drawn in search results; other screens leave it PLAIN. */
+    enum Style { PLAIN, BEST, CONTENT, CALC }
+
+    Style style = Style.PLAIN;
 
     /** Render the title struck through and greyed — used for completed to-dos. */
     boolean strike;
@@ -68,6 +79,7 @@ class SearchResult {
         this.title = title;
         this.subtitle = subtitle;
         this.score = score;
+        this.baseScore = score;
         this.action = action;
         this.payload = payload;
     }
@@ -80,6 +92,11 @@ class SearchResult {
     SearchResult check(boolean on) {
         this.showCheck = true;
         this.checked = on;
+        return this;
+    }
+
+    SearchResult styled(Style s) {
+        this.style = s;
         return this;
     }
 
@@ -102,6 +119,11 @@ class SearchResult {
             this.secondaryAction2 = run;
         }
         return this;
+    }
+
+    /** Set the score used for ordering (from {@link #baseScore}, never compounding). */
+    void rank(int score) {
+        this.score = score;
     }
 
     void activate() {

@@ -6,6 +6,7 @@ Go back in time and turn your smartphones into bricks. Together we will stop doo
 
 - **Plain home screen**: plain and simple home UI, apps not even getting their own icons
 - **Flagged-app gating**: countdown before you can use those gross addictive apps
+- **Search**: apps, notes, to-dos, files, contacts and settings in one box. Operators (`"phrase"`, `-word`, `pdf:`, `note:`, `in:week`), a Best match group that learns what you pick, a calculator and unit converter, `todo ...` / `note ...` quick capture, and (opt-in) search inside text, Office, EPUB and PDF files (PDFs with a text layer only)
 
 And when you ever want to change the settings, you need to wait and solve some math problems (we all know you ain't doing no math)
 

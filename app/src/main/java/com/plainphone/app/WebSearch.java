@@ -45,7 +45,7 @@ class WebSearch {
         Intent target = targetIntent(host, browser, typed, isUrl);
 
         results.add(new SearchResult(SearchResult.Kind.WEB, typed, cachedLabel, 0,
-                () -> open(host, browser, target)));
+                () -> open(host, browser, target), target.getDataString()));
 
         int rank = 1;
         for (WebTarget custom : Config.getWebTargets(host)) {
@@ -54,7 +54,7 @@ class WebSearch {
             view.setPackage(browser);
             results.add(new SearchResult(SearchResult.Kind.WEB, typed,
                     WebTarget.nameOrHost(custom.name, custom.url), rank++,
-                    () -> open(host, browser, view)));
+                    () -> open(host, browser, view), view.getDataString()));
         }
         return results;
     }

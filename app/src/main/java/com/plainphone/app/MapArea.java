@@ -18,15 +18,20 @@ final class MapArea {
     final double centerLat;
     final double centerLon;
     final double defaultZoom;
+    /** Drawing order when areas are layered: higher goes on top. A city area with deeper zoom
+     *  than the country map under it needs the higher number, or the country's stretched tiles
+     *  would cover its detail. Default 0 (meta.json may omit it). */
+    final int order;
 
     MapArea(String id, String displayName, String assetDir,
-            double centerLat, double centerLon, double defaultZoom) {
+            double centerLat, double centerLon, double defaultZoom, int order) {
         this.id = id;
         this.displayName = displayName;
         this.assetDir = assetDir;
         this.centerLat = centerLat;
         this.centerLon = centerLon;
         this.defaultZoom = defaultZoom;
+        this.order = order;
     }
 
     String pmtilesAsset() { return assetDir + "/" + id + ".pmtiles"; }

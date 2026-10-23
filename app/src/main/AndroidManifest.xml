@@ -213,6 +213,11 @@
             android:theme="@style/Theme.PlainPhone" />
 
         <activity
+            android:name=".IndexedFilesActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
             android:name=".WebTargetsActivity"
             android:exported="false"
             android:theme="@style/Theme.PlainPhone" />

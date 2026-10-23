@@ -73,11 +73,15 @@ dependencies {
     implementation("com.google.mlkit:entity-extraction:16.0.0-beta5")
     implementation("com.google.mlkit:digital-ink-recognition:18.1.0")
     implementation("com.google.mlkit:text-recognition:16.0.1")
+    // Text of PDF files for the content search (their text layer only; scans are skipped).
+    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
     // Cuts the subject out of a sticker photo, background made transparent.
     implementation("com.google.android.gms:play-services-mlkit-subject-segmentation:16.0.0-beta1")
     testImplementation("junit:junit:4.13.2")
     // Real org.json for JVM tests (android.jar only has stubs that return null).
     testImplementation("org.json:json:20231013")
+    // XmlPullParser implementation for JVM tests of the document extractors (Android has its own).
+    testImplementation("net.sf.kxml:kxml2:2.3.0")
 }
 
 // Stockfish binary isn't tracked in git (100MB) — fetch it from the GitHub release once,

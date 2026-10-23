@@ -34,6 +34,7 @@ public final class IndexScheduler {
             schedule(context);
             if (FileIndex.canWalk(context)) {
                 SearchJobs.startFileIndex(context.getApplicationContext());
+                SearchJobs.startContentIndex(context.getApplicationContext());
             }
         }
     }

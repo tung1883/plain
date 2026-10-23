@@ -195,9 +195,30 @@ public class JobService extends Service {
                 push(notif("Indexing files", "Scanning...", 0));
                 int count = FileIndex.rebuildNow(app);
                 push(notif("Indexing files", count + " entries", 100));
+                SearchJobs.startContentIndex(app);     // look inside the documents too, if the user wants that
+            } else if (SearchJobs.TYPE_CONTENT_INDEX.equals(job.type)) {
+                opensIndexedFiles = true;
+                push(notif("Indexing documents", "Starting…", 0));
+                ContentIndexer.Result r = ContentIndexer.run(app, new ContentIndexer.Control() {
+                    @Override
+                    public boolean cancelled() {
+                        for (JobQueue.Job j : JobQueue.pendingByType(app, SearchJobs.TYPE_CONTENT_INDEX)) {
+                            if (j.id.equals(job.id)) return JobQueue.STATUS_PAUSED.equals(j.status);
+                        }
+                        return true;      // the job was cleared
+                    }
+
+                    @Override
+                    public void progress(int done, int total) {
+                        push(notif("Indexing documents", done + " / " + total, total == 0 ? 0 : done * 100 / total));
+                    }
+                });
+                push(notif("Indexing documents", r.indexed + " files read" + (r.paused ? " (waiting)" : ""), 100));
             }
         } catch (Exception e) {
             android.util.Log.w("JobService", "search job failed", e);
+        } finally {
+            opensIndexedFiles = false;
         }
         JobQueue.clear(app, job.id);
         running = false;
@@ -922,6 +943,8 @@ public class JobService extends Service {
         getSystemService(NotificationManager.class).notify(NOTIF_ID, n);
     }
 
+    private volatile boolean opensIndexedFiles;
+
     private Notification notif(String title, String text, int pct) {
         NotificationManager manager = getSystemService(NotificationManager.class);
         if (manager.getNotificationChannel(CHANNEL_ID) == null) {
@@ -930,8 +953,12 @@ public class JobService extends Service {
             channel.setShowBadge(false);
             manager.createNotificationChannel(channel);
         }
-        PendingIntent open = PendingIntent.getActivity(this, 0,
-                new Intent(this, MainActivity.class),
+        // while documents are being read, the notification leads to the list of what was read (behind the Settings lock)
+        Intent target = opensIndexedFiles
+                ? new Intent(this, SettingsGateActivity.class)
+                        .putExtra(SettingsActivity.EXTRA_DESTINATION, IndexedFilesActivity.class.getName())
+                : new Intent(this, MainActivity.class);
+        PendingIntent open = PendingIntent.getActivity(this, 0, target,
                 PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         Notification.Builder b = new Notification.Builder(this, CHANNEL_ID)
                 .setContentTitle(title)

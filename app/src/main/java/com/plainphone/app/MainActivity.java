@@ -54,6 +54,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -70,6 +71,7 @@ public class MainActivity extends Activity implements SelectionHost {
 
     private List<Object> rows;
     private SearchResultsAdapter adapter;
+    private Chips chips;
     private EditText search;
     private Drawable searchIcon;
     private Drawable clearIcon;
@@ -79,10 +81,12 @@ public class MainActivity extends Activity implements SelectionHost {
     private String currentQuery = "";
 
     private TextMatch.Query currentSearch = TextMatch.prepare("");
+    private ParsedQuery parsed = QueryParser.parse("");
 
     private String deviceQuery = "";
     private List<SearchResult> deviceFiles = new ArrayList<>();
     private List<SearchResult> deviceContacts = new ArrayList<>();
+    private List<SearchResult> deviceContent = new ArrayList<>();
     private final Handler searchHandler = new Handler(Looper.getMainLooper());
     private Runnable pendingDeviceSearch;
     private int deviceSearchToken;
@@ -373,6 +377,9 @@ public class MainActivity extends Activity implements SelectionHost {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         IndexScheduler.schedule(this);
+        if (System.currentTimeMillis() - Config.getContentLastRun(this) > 60L * 60 * 1000) {
+            SearchJobs.startContentIndex(this);     // catch up on documents changed since the last run
+        }
         DevSyncScheduler.schedule(this);
         pm = getPackageManager();
         Config.migrateArt(this);
@@ -505,6 +512,7 @@ public class MainActivity extends Activity implements SelectionHost {
 
     @Override
     public void onBackPressed() {
+        if (Sheet.dismissTop(this)) return;
         if (selectMode != null) {
             exitSelection();
             return;
@@ -789,6 +797,16 @@ public class MainActivity extends Activity implements SelectionHost {
         headerZone.addView(search, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
+        chips = new Chips(this, georgia, i -> {
+            String query = OperatorChips.toggle(search.getText().toString(), OperatorChips.ALL[i][1]);
+            search.setText(query);
+            search.setSelection(query.length());
+        });
+        chips.setVisibility(View.GONE);
+        headerZone.addView(chips, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        search.setOnFocusChangeListener((v, focused) -> updateChips(search.getText().toString()));
+
         tipRow = buildTipRow(georgia);
         headerZone.addView(tipRow, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
@@ -962,7 +980,7 @@ public class MainActivity extends Activity implements SelectionHost {
                     return;
                 }
                 SearchResult result = adapter.resultAt(position);
-                if (result != null) result.activate();
+                if (result != null) activateResult(result);
             }
         });
 
@@ -999,24 +1017,10 @@ public class MainActivity extends Activity implements SelectionHost {
                 else enterSelection(HomeMode.WORKSPACE, wid);
                 return true;
             }
-            if (result.payload instanceof FileIndex.Entry) {
-                FileIndex.Entry entry = (FileIndex.Entry) result.payload;
-
-                if (entry.directory) return false;
-                showFileOptions(entry.name,
-                        () -> DeviceSearch.openWithChooser(this, entry.file),
-                        () -> DeviceSearch.revealInFileManager(this, entry.file));
-                return true;
-            }
-            if (result.payload instanceof DeviceSearch.MediaFile) {
-
-                DeviceSearch.MediaFile media = (DeviceSearch.MediaFile) result.payload;
-                showFileOptions(result.title,
-                        () -> DeviceSearch.openWithChooser(this, media.uri, media.mime), null);
-                return true;
-            }
-
-            return false;
+            List<ResultActions.Option> options = ResultActions.forResult(this, result);
+            if (options.isEmpty()) return false;
+            showOptions(result.title, optionsSubtitle(result), options);
+            return true;
         });
 
         search.addTextChangedListener(new TextWatcher() {
@@ -1037,7 +1041,7 @@ public class MainActivity extends Activity implements SelectionHost {
             if (actionId != EditorInfo.IME_ACTION_GO) return false;
             SearchResult first = firstResult();
             if (first == null || first.guarded) return false;
-            first.activate();
+            activateResult(first);
             return true;
         });
 
@@ -1221,11 +1225,29 @@ public class MainActivity extends Activity implements SelectionHost {
     }
 
     private void filter(String query) {
-        currentSearch = TextMatch.prepare(query);
-        currentQuery = currentSearch.folded;
+        parsed = QueryParser.parse(query);
+        currentSearch = parsed.core;
+        currentQuery = TextMatch.fold(query);     // operators included: it keys the cached file / contact results
+        if (adapter != null) adapter.setQuery(currentSearch);
+        updateChips(query);
 
         renderRows();
         if (!Lock.SEARCH.gateActive(this)) scheduleDeviceSearch(currentQuery);
+    }
+
+    /** The filter chips show while searching (a query typed, or the box in focus); the active ones are the operators in the query. */
+    private void updateChips(String query) {
+        if (chips == null) return;
+        boolean show = !query.isEmpty() || search.hasFocus();
+        chips.setVisibility(show ? View.VISIBLE : View.GONE);
+        if (!show) return;
+        String[] labels = new String[OperatorChips.ALL.length];
+        boolean[] on = new boolean[labels.length];
+        for (int i = 0; i < labels.length; i++) {
+            labels[i] = OperatorChips.ALL[i][0];
+            on[i] = OperatorChips.isOn(query, OperatorChips.ALL[i][1]);
+        }
+        chips.set(labels, on);
     }
 
     private void updateSearchAffordance() {
@@ -2766,11 +2788,7 @@ public class MainActivity extends Activity implements SelectionHost {
                     Lock.SEARCH.pinGate(this), REQUEST_SEARCH_UNLOCK)));
         } else {
             if (Lock.SEARCH.isLocked(this)) Lock.SEARCH.keepUnlocked(this);
-            addGroup(SearchResult.Kind.APP, appResults(currentSearch), true);
-            for (SearchResult.Kind kind : SearchResult.Kind.values()) {
-                if (kind == SearchResult.Kind.APP) continue;
-                addGroup(kind, resultsFor(kind, needle), true);
-            }
+            renderSearchGroups(needle);
         }
 
         adapter.notifyDataSetChanged();
@@ -2780,9 +2798,60 @@ public class MainActivity extends Activity implements SelectionHost {
         syncHeaderCollapse();
     }
 
+    /** Run the typed search against every source, rank the answers, and lay the groups out (Best match first). */
+    private void renderSearchGroups(String needle) {
+        Map<SearchResult.Kind, List<SearchResult>> groups = new EnumMap<>(SearchResult.Kind.class);
+        for (SearchResult.Kind kind : SearchResult.Kind.values()) {
+            if (kind == SearchResult.Kind.BEST || !parsed.wants(kind)) continue;
+            List<SearchResult> results = new ArrayList<>(kind == SearchResult.Kind.APP
+                    ? appResults(currentSearch) : resultsFor(kind, needle));
+            dropFiltered(results);
+            PickStore.apply(this, results, currentSearch.folded);
+            for (SearchResult r : results) {
+                if (r.style == SearchResult.Style.BEST) r.style = SearchResult.Style.PLAIN;   // rows are reused between renders
+            }
+            groups.put(kind, results);
+        }
+        List<SearchResult> best = BestMatch.pick(groups);
+        for (SearchResult r : best) r.style = SearchResult.Style.BEST;
+        addGroup(SearchResult.Kind.BEST, best, true);
+        for (SearchResult.Kind kind : SearchResult.Kind.values()) {
+            List<SearchResult> group = groups.get(kind);
+            if (group != null) addGroup(kind, group, true);
+        }
+    }
+
+    /** Leave out results the query's minus words or date filter rule out. */
+    private void dropFiltered(List<SearchResult> results) {
+        if (parsed.excluded.isEmpty() && parsed.since <= 0) return;
+        for (java.util.Iterator<SearchResult> it = results.iterator(); it.hasNext(); ) {
+            SearchResult r = it.next();
+            String text = TextMatch.fold(r.title + " " + (r.subtitle == null ? "" : r.subtitle));
+            boolean tooOld = r.payload instanceof Note && !parsed.acceptsTime(((Note) r.payload).updatedAt);
+            if (parsed.rejects(text) || tooOld) it.remove();
+        }
+    }
+
+    /** The dim line under a menu title: where the file is, or what the row says under its name. */
+    private String optionsSubtitle(SearchResult result) {
+        if (result.payload instanceof ContentHit) {
+            ContentHit h = (ContentHit) result.payload;
+            return h.locator.isEmpty() ? h.folder : h.folder + " · " + h.locator;
+        }
+        if (result.subtitle == null) return null;
+        int nl = result.subtitle.indexOf('\n');
+        return nl < 0 ? result.subtitle : result.subtitle.substring(0, nl);
+    }
+
+    /** Remember what the user picked from search, then run it. */
+    private void activateResult(SearchResult result) {
+        PickStore.record(this, result, currentSearch.folded);
+        result.activate();
+    }
+
     private List<SearchResult> resultsFor(SearchResult.Kind kind, String needle) {
         switch (kind) {
-            case ACTION: return QuickActions.results(this, currentSearch);
+            case ACTION: return QuickActions.results(this, parsed);
             case NOTE: return noteResults(needle);
             case TODO: return todoResults(needle);
             case RECORDING: return recordingResults(needle);
@@ -2790,6 +2859,7 @@ public class MainActivity extends Activity implements SelectionHost {
             case SYSTEM: return SearchTargets.system(this, currentSearch);
             case WEB: return webResults();
             case FILE: return fileResults(needle);
+            case CONTENT: return contentResults(needle);
             case CONTACT: return contactResults(needle);
             case VAULT: return vaultResults(needle);
             default: return new ArrayList<>();
@@ -3392,6 +3462,21 @@ public class MainActivity extends Activity implements SelectionHost {
         return results;
     }
 
+    /** Rows for "Inside files": the matches found by the background search, or what is stopping it. */
+    private List<SearchResult> contentResults(String needle) {
+        if (!Config.isContentSearchEnabled(this)) return new ArrayList<>();
+        if (!FileIndex.canWalk(this)) {
+            return singleRow(new SearchResult(SearchResult.Kind.CONTENT, "Search inside files",
+                    "Tap to allow access to your files", 0, () -> DeviceSearch.requestAllFilesAccess(this)));
+        }
+        List<SearchResult> results = needle.equals(deviceQuery) ? new ArrayList<>(deviceContent) : new ArrayList<>();
+        if (results.isEmpty() && ContentIndexer.isRunning()) {
+            results.add(new SearchResult(SearchResult.Kind.CONTENT, "Reading documents…",
+                    "Search again in a moment to include them", 0, () -> {}));
+        }
+        return results;
+    }
+
     private List<SearchResult> contactResults(String needle) {
         if (!Config.isContactSearchEnabled(this)) return new ArrayList<>();
         if (!DeviceSearch.canSearchContacts(this)) {
@@ -3468,14 +3553,20 @@ public class MainActivity extends Activity implements SelectionHost {
 
         final int token = ++deviceSearchToken;
         TextMatch.Query query = currentSearch;
+        ParsedQuery typed = parsed;
         pendingDeviceSearch = () -> new Thread(() -> {
-            List<SearchResult> files = DeviceSearch.files(this, query);
-            List<SearchResult> contacts = DeviceSearch.contacts(this, query);
+            List<SearchResult> files = typed.wants(SearchResult.Kind.FILE)
+                    ? DeviceSearch.files(this, typed) : new ArrayList<SearchResult>();
+            List<SearchResult> contacts = typed.wants(SearchResult.Kind.CONTACT)
+                    ? DeviceSearch.contacts(this, query) : new ArrayList<SearchResult>();
+            List<SearchResult> content = typed.wants(SearchResult.Kind.CONTENT) && Config.isContentSearchEnabled(this)
+                    && FileIndex.canWalk(this) ? ContentSearch.search(this, typed, 10) : new ArrayList<SearchResult>();
             runOnUiThread(() -> {
                 if (token != deviceSearchToken) return;
                 deviceQuery = needle;
                 deviceFiles = files;
                 deviceContacts = contacts;
+                deviceContent = content;
                 renderRows();
             });
         }).start();
@@ -3566,39 +3657,7 @@ public class MainActivity extends Activity implements SelectionHost {
 
     private void launchApp(ResolveInfo info) {
         String pkg = info.activityInfo.packageName;
-        ForegroundExtras.beforeOpen(this, pkg);   // a blocking app: accessibility off before any gate
-
-        TimeBlock blockingBlock = TimeBlockRules.getBlockingBlock(this, pkg);
-        if (blockingBlock != null) {
-            Intent gate = new Intent(this, TimeBlockGateActivity.class);
-            gate.putExtra("package", pkg);
-            gate.putExtra("blockId", blockingBlock.id);
-            startActivity(gate);
-            return;
-        }
-
-        if (Config.isLocksEnabled(this)
-                && Config.isApplockEnabled(this)
-                && Config.getLockedPackages(this).contains(pkg)
-                && !Config.isAppRecentlyUnlocked(this, pkg)) {
-            Intent gate = new Intent(this, PinGateActivity.class);
-            gate.putExtra("package", pkg);
-            gate.putExtra("label", labelFor(info).toString());
-            startActivity(gate);
-            return;
-        }
-
-        if (Config.getFlaggedPackages(this).contains(pkg)) {
-            Intent gate = new Intent(this, FlaggedGateActivity.class);
-            gate.putExtra("package", pkg);
-            gate.putExtra("label", labelFor(info).toString());
-            startActivity(gate);
-            return;
-        }
-
-        if (Config.getLockedPackages(this).contains(pkg)) {
-            Config.markAppUnlocked(this, pkg);
-        }
+        if (GatedLaunch.gate(this, pkg, labelFor(info))) return;
 
         Intent launchIntent = pm.getLaunchIntentForPackage(pkg);
         if (launchIntent != null) {
@@ -3610,31 +3669,14 @@ public class MainActivity extends Activity implements SelectionHost {
     private void showAppOptions(ResolveInfo info) {
         String pkg = info.activityInfo.packageName;
         CharSequence label = labelFor(info);
-        Typeface georgia = Fonts.current(this);
 
         int appFlags = info.activityInfo.applicationInfo.flags;
         boolean uninstallable = (appFlags & android.content.pm.ApplicationInfo.FLAG_SYSTEM) == 0
                 || (appFlags & android.content.pm.ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0;
-
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackground(UiKit.dialogBackground(this));
-        UiKit.clipRounded(this, root, UiKit.R_MD);
-        // Inset so the full-bleed option rows don't paint over the box border
-        // (bottom inset clears the rounded-corner arc too).
-        root.setPadding(2, 24, 2, UiKit.dp(this, UiKit.R_MD));
-
-        root.addView(UiKit.dialogTitle(this, label.toString()));
-
-        android.widget.FrameLayout scrim = UiKit.wrapScrim(this, root, 0.85f);
-        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(
-                this, R.style.Theme_PlainPhone_RoundedDialog)
-                .setView(scrim)
-                .create();
-
         boolean pinned = Config.getPinnedPackages(this).contains(pkg);
-        root.addView(optionRow(georgia, pinned ? "Unpin app" : "Pin app", v -> {
-            dialog.dismiss();
+
+        List<ResultActions.Option> options = new ArrayList<>();
+        options.add(new ResultActions.Option(null, pinned ? "Unpin app" : "Pin app", null, () -> {
             List<String> pinnedPackages = Config.getPinnedPackages(this);
             if (pinned) {
                 pinnedPackages.remove(pkg);
@@ -3644,65 +3686,39 @@ public class MainActivity extends Activity implements SelectionHost {
             Config.setPinnedPackages(this, pinnedPackages);
             filter(search.getText().toString());
         }));
-
-        root.addView(optionRow(georgia, "App info", v -> {
-            dialog.dismiss();
-            startActivity(new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                    android.net.Uri.parse("package:" + pkg)));
-        }));
-
+        options.add(new ResultActions.Option(null, "App info", null, () ->
+                startActivity(new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        android.net.Uri.parse("package:" + pkg)))));
         if (uninstallable) {
-            root.addView(optionRow(georgia, "Uninstall", v -> {
-                dialog.dismiss();
-                startActivity(new Intent(Intent.ACTION_DELETE,
-                        android.net.Uri.parse("package:" + pkg)));
-            }));
+            options.add(new ResultActions.Option(null, "Uninstall", null, () ->
+                    startActivity(new Intent(Intent.ACTION_DELETE, android.net.Uri.parse("package:" + pkg)))));
         }
-
-        root.addView(optionRow(georgia, "Flag app", v -> {
-            dialog.dismiss();
+        options.add(new ResultActions.Option(null, "Flag app", null, () -> {
             Set<String> flagged = Config.getFlaggedPackages(this);
             flagged.add(pkg);
             Config.setFlaggedPackages(this, flagged);
             android.widget.Toast.makeText(this, label + " flagged",
                     android.widget.Toast.LENGTH_SHORT).show();
         }));
-
-        UiKit.finishCentered(dialog, scrim);
+        showOptions(label.toString(), null, options);
     }
 
-    private void showFileOptions(String title, Runnable openWith, Runnable revealInFileManager) {
-        Typeface georgia = Fonts.current(this);
+    private void showOptions(String title, List<ResultActions.Option> options) {
+        showOptions(title, null, options);
+    }
 
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackground(UiKit.dialogBackground(this));
-        UiKit.clipRounded(this, root, UiKit.R_MD);
-        // Inset so the full-bleed option rows don't paint over the box border
-        // (bottom inset clears the rounded-corner arc too).
-        root.setPadding(2, 24, 2, UiKit.dp(this, UiKit.R_MD));
-
-        root.addView(UiKit.dialogTitle(this, title));
-
-        android.widget.FrameLayout scrim = UiKit.wrapScrim(this, root, 0.85f);
-        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(
-                this, R.style.Theme_PlainPhone_RoundedDialog)
-                .setView(scrim)
-                .create();
-
-        root.addView(optionRow(georgia, "Open with…", v -> {
-            dialog.dismiss();
-            openWith.run();
-        }));
-
-        if (revealInFileManager != null) {
-            root.addView(optionRow(georgia, "Show in file manager", v -> {
-                dialog.dismiss();
-                revealInFileManager.run();
+    /** The long-press menu: a bottom sheet with the title, an optional dim line under it, and one row per action. */
+    private void showOptions(String title, String subtitle, List<ResultActions.Option> options) {
+        Sheet sheet = Sheet.show(this, title, subtitle);
+        android.widget.LinearLayout list = new android.widget.LinearLayout(this);
+        list.setOrientation(android.widget.LinearLayout.VERTICAL);
+        for (ResultActions.Option option : options) {
+            list.addView(sheet.optionRow(option.icon, option.label, option.detail, () -> {
+                sheet.dismiss();
+                option.run.run();
             }));
         }
-
-        UiKit.finishCentered(dialog, scrim);
+        sheet.setContent(list);
     }
 
     private TextView optionRow(Typeface georgia, String label, View.OnClickListener listener) {

@@ -20,6 +20,17 @@ class DeviceSearch {
 
     private DeviceSearch() {}
 
+    /** A contact found by name; its phone numbers are looked up when a menu needs them. */
+    static class Contact {
+        final long id;
+        final String name;
+
+        Contact(long id, String name) {
+            this.id = id;
+            this.name = name;
+        }
+    }
+
     static class MediaFile {
         final Uri uri;
         final String mime;
@@ -85,15 +96,29 @@ class DeviceSearch {
     }
 
     static List<SearchResult> files(Activity host, TextMatch.Query query) {
-        if (query.empty) return new ArrayList<>();
-        if (FileIndex.canWalk(host)) return indexedFiles(host, query);
-        if (!canSearchFiles(host)) return new ArrayList<>();
-        return mediaStoreFiles(host, query);
+        return files(host, QueryParser.parse(query.raw));
     }
 
-    private static List<SearchResult> indexedFiles(Activity host, TextMatch.Query query) {
+    /** File name matches for a typed search, honouring its extension, date and exclusion operators. */
+    static List<SearchResult> files(Activity host, ParsedQuery parsed) {
+        TextMatch.Query query = parsed.core;
+        if (query.empty && parsed.exts.isEmpty()) return new ArrayList<>();
+        if (FileIndex.canWalk(host)) return indexedFiles(host, parsed);
+        if (!canSearchFiles(host)) return new ArrayList<>();
+        List<SearchResult> out = new ArrayList<>();
+        for (SearchResult r : mediaStoreFiles(host, query)) {
+            if (parsed.acceptsExt(r.title) && !parsed.rejects(TextMatch.fold(r.title))) out.add(r);
+        }
+        return out;
+    }
+
+    private static List<SearchResult> indexedFiles(Activity host, ParsedQuery parsed) {
+        TextMatch.Query query = parsed.core;
         List<SearchResult> results = new ArrayList<>();
-        for (FileIndex.Scored hit : FileIndex.search(host, query, MAX_FILES)) {
+        for (FileIndex.Scored hit : FileIndex.search(host, query, MAX_FILES, entry ->
+                (entry.directory ? parsed.exts.isEmpty() && parsed.since <= 0 : parsed.acceptsExt(entry.name))
+                        && !parsed.rejects(entry.folded)
+                        && (parsed.since <= 0 || parsed.acceptsTime(entry.file.lastModified())))) {
             FileIndex.Entry entry = hit.entry;
             String subtitle = (entry.directory ? "Folder · " : "File · ")
                     + describeLocation(entry.file.getParentFile());
@@ -202,7 +227,7 @@ class DeviceSearch {
                 results.add(new SearchResult(SearchResult.Kind.CONTACT, name,
                         hasPhone ? "Contact · has a phone number" : "Contact",
                         TextMatch.score(name, query),
-                        () -> openContact(host, contactUri)));
+                        () -> openContact(host, contactUri), new Contact(id, name)));
             }
         } catch (Exception ignored) {
 
@@ -212,7 +237,7 @@ class DeviceSearch {
         return results;
     }
 
-    private static void open(Activity host, File file, boolean directory) {
+    static void open(Activity host, File file, boolean directory) {
         if (directory) {
             openFolder(host, file);
             return;
@@ -241,7 +266,7 @@ class DeviceSearch {
             Intent view = new Intent(Intent.ACTION_VIEW);
             view.setDataAndType(uri, TextUtils.isEmpty(mime) ? "*/*" : mime);
             view.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            host.startActivity(Intent.createChooser(view, "Open with"));
+            host.startActivity(GatedLaunch.chooser(host, view, "Open with"));   // without the gated apps
         } catch (Exception e) {
             android.widget.Toast.makeText(host, "No app can open this file",
                     android.widget.Toast.LENGTH_SHORT).show();
@@ -266,7 +291,7 @@ class DeviceSearch {
         view.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         if (view.resolveActivity(host.getPackageManager()) == null) return false;
         try {
-            host.startActivity(view);
+            GatedLaunch.start(host, view);
             return true;
         } catch (Exception e) {
             return false;
@@ -296,6 +321,55 @@ class DeviceSearch {
                     "com.android.externalstorage.documents", documentId);
         }
         return null;
+    }
+
+    /** Phone numbers of a contact (up to 3, without repeats). Needs the contacts permission. */
+    static List<String> phoneNumbers(Context context, long contactId) {
+        List<String> out = new ArrayList<>();
+        if (!canSearchContacts(context)) return out;
+        try (Cursor c = context.getContentResolver().query(
+                ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                new String[]{ContactsContract.CommonDataKinds.Phone.NUMBER},
+                ContactsContract.CommonDataKinds.Phone.CONTACT_ID + " = ?",
+                new String[]{String.valueOf(contactId)}, null)) {
+            while (c != null && c.moveToNext() && out.size() < 3) {
+                String n = c.getString(0);
+                if (!TextUtils.isEmpty(n) && !out.contains(n.trim())) out.add(n.trim());
+            }
+        } catch (Exception ignored) {
+            // the provider refused: no numbers to offer
+        }
+        return out;
+    }
+
+    /** Put {@code text} on the clipboard and say so. */
+    static void copyText(Context context, String label, String text) {
+        android.content.ClipboardManager clipboard =
+                (android.content.ClipboardManager) context.getSystemService(Context.CLIPBOARD_SERVICE);
+        if (clipboard == null) return;
+        clipboard.setPrimaryClip(android.content.ClipData.newPlainText(label, text));
+        android.widget.Toast.makeText(context, "Copied", android.widget.Toast.LENGTH_SHORT).show();
+    }
+
+    /** Offer a file to other apps (the chooser leaves out apps that are currently gated). */
+    static void shareFile(Activity host, File file) {
+        try {
+            shareUri(host, PlainFileProvider.uriFor(host.getPackageName() + ".files", file), guessMime(file));
+        } catch (Exception e) {
+            android.widget.Toast.makeText(host, "Cannot share this file", android.widget.Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    static void shareUri(Activity host, Uri uri, String mime) {
+        Intent send = new Intent(Intent.ACTION_SEND);
+        send.setType(TextUtils.isEmpty(mime) ? "*/*" : mime);
+        send.putExtra(Intent.EXTRA_STREAM, uri);
+        send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        try {
+            host.startActivity(GatedLaunch.chooser(host, send, "Share"));
+        } catch (Exception e) {
+            android.widget.Toast.makeText(host, "Nothing to share with", android.widget.Toast.LENGTH_SHORT).show();
+        }
     }
 
     private static void copyToClipboard(Activity host, String text) {
@@ -331,11 +405,12 @@ class DeviceSearch {
         return TextUtils.isEmpty(mime) ? "*/*" : mime;
     }
 
-    private static String describeLocation(File parent) {
+    static String describeLocation(File parent) {
         if (parent == null) return "Storage";
         String path = parent.getAbsolutePath();
-        if (path.startsWith("/storage/emulated/0")) {
-            String rest = path.substring("/storage/emulated/0".length());
+        java.util.regex.Matcher internal = java.util.regex.Pattern.compile("^/storage/emulated/\\d+").matcher(path);
+        if (internal.find()) {
+            String rest = path.substring(internal.end());
             return rest.isEmpty() || rest.equals("/") ? "Internal storage" : "Internal" + rest;
         }
         if (path.startsWith("/storage/")) {
@@ -360,7 +435,7 @@ class DeviceSearch {
 
     private static void startOrToast(Activity host, Intent intent, String failureMessage) {
         try {
-            host.startActivity(intent);
+            GatedLaunch.start(host, intent);
         } catch (Exception e) {
             android.widget.Toast.makeText(host, failureMessage,
                     android.widget.Toast.LENGTH_SHORT).show();

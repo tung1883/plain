@@ -919,6 +919,75 @@ class Config {
         prefs(context).edit().putBoolean("kb_auto_pair", on).apply();
     }
 
+    // ---- content search (see ContentIndexer)
+
+    /** Stored in the folder set to mean "all of shared storage". */
+    static final String CONTENT_ALL_STORAGE = "*";
+
+    static boolean isContentSearchEnabled(Context context) {
+        return prefs(context).getBoolean("content_search_enabled", false);
+    }
+
+    static void setContentSearchEnabled(Context context, boolean on) {
+        prefs(context).edit().putBoolean("content_search_enabled", on).apply();
+    }
+
+    /** Top-level folders of shared storage to index, or {@link #CONTENT_ALL_STORAGE}. */
+    static Set<String> getContentFolders(Context context) {
+        Set<String> stored = prefs(context).getStringSet("content_folders", null);
+        if (stored == null) return new HashSet<>(java.util.Arrays.asList("Documents", "Download"));     // never chosen: the usual places
+        return new HashSet<>(stored);
+    }
+
+    static void setContentFolders(Context context, Set<String> folders) {
+        prefs(context).edit().putStringSet("content_folders", new HashSet<>(folders)).apply();
+    }
+
+    /** Which kinds of file are read: the groups of {@link Extractors}. */
+    static Set<String> getContentTypes(Context context) {
+        Set<String> stored = prefs(context).getStringSet("content_types", null);
+        return stored == null ? Extractors.allGroups() : new HashSet<>(stored);
+    }
+
+    static void setContentTypes(Context context, Set<String> types) {
+        prefs(context).edit().putStringSet("content_types", new HashSet<>(types)).apply();
+    }
+
+    /** Keep reading documents when the battery is low (under 20 percent) and the phone is not charging. */
+    static boolean isContentAllowLowBattery(Context context) {
+        return prefs(context).getBoolean("content_allow_low_battery", false);
+    }
+
+    static void setContentAllowLowBattery(Context context, boolean on) {
+        prefs(context).edit().putBoolean("content_allow_low_battery", on).apply();
+    }
+
+    /** Size limit of the content index in MB; 0 means no limit. */
+    static int getContentMaxMb(Context context) {
+        return prefs(context).getInt("content_max_mb", 1000);
+    }
+
+    static void setContentMaxMb(Context context, int mb) {
+        prefs(context).edit().putInt("content_max_mb", mb).apply();
+    }
+
+    /** True when the last run stopped because the index reached its size limit. */
+    static boolean isContentCapped(Context context) {
+        return prefs(context).getBoolean("content_capped", false);
+    }
+
+    static void setContentCapped(Context context, boolean capped) {
+        prefs(context).edit().putBoolean("content_capped", capped).apply();
+    }
+
+    static long getContentLastRun(Context context) {
+        return prefs(context).getLong("content_last_run", 0L);
+    }
+
+    static void setContentLastRun(Context context, long millis) {
+        prefs(context).edit().putLong("content_last_run", millis).apply();
+    }
+
     static int getDevScreenFps(Context context) {
         return prefs(context).getInt("dev_screen_fps", 12);
     }
