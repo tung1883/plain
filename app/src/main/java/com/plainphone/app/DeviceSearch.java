@@ -265,8 +265,8 @@ class DeviceSearch {
         try {
             Intent view = new Intent(Intent.ACTION_VIEW);
             view.setDataAndType(uri, TextUtils.isEmpty(mime) ? "*/*" : mime);
-            view.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            host.startActivity(GatedLaunch.chooser(host, view, "Open with"));   // without the gated apps
+            view.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+            host.startActivity(GatedLaunch.chooser(host, view, "Open with").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));   // without the gated apps
         } catch (Exception e) {
             android.widget.Toast.makeText(host, "No app can open this file",
                     android.widget.Toast.LENGTH_SHORT).show();
@@ -288,7 +288,7 @@ class DeviceSearch {
     private static boolean tryOpen(Activity host, Uri uri, String mime) {
         Intent view = new Intent(Intent.ACTION_VIEW);
         view.setDataAndType(uri, mime);
-        view.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        view.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
         if (view.resolveActivity(host.getPackageManager()) == null) return false;
         try {
             GatedLaunch.start(host, view);
@@ -425,7 +425,8 @@ class DeviceSearch {
     private static void openFile(Activity host, Uri uri, String mime) {
         Intent view = new Intent(Intent.ACTION_VIEW);
         view.setDataAndType(uri, TextUtils.isEmpty(mime) ? "*/*" : mime);
-        view.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        // its own task: the viewer gets its own recents card instead of hiding in the launcher's task
+        view.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
         startOrToast(host, view, "No app can open this file");
     }
 
