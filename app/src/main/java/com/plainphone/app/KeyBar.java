@@ -280,7 +280,12 @@ final class KeyBar extends LinearLayout {
         @Override
         protected void onDraw(android.graphics.Canvas canvas) {
             super.onDraw(canvas);
+            // a single-line TextView scrolls its (empty) text to the centre of a very wide layout, about
+            // 524000px sideways; the icon has to be drawn back where the view really is
+            canvas.save();
+            canvas.translate(getScrollX(), getScrollY());
             KeyIcons.draw(canvas, icon, getWidth() / 2f, getHeight() / 2f, dp(7), getCurrentTextColor(), false);
+            canvas.restore();
         }
     }
 
