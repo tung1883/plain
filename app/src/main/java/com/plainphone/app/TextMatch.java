@@ -110,7 +110,7 @@ class TextMatch {
         return folded.toString();
     }
 
-    private static String undecomposable(char c) {
+    static String undecomposable(char c) {
         switch (c) {
             case 'đ': return "d";
             case 'ø': return "o";
