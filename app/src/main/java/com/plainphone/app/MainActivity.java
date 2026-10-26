@@ -718,14 +718,55 @@ public class MainActivity extends Activity implements SelectionHost {
         }).start();
     }
 
+    /** Black screen with the logo, the name under it and a thin line sliding along a track. */
     private void showLoadingSpinner() {
+        final float dp = getResources().getDisplayMetrics().density;
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setGravity(Gravity.CENTER);
         root.setBackgroundColor(Color.BLACK);
 
-        int spSize = Math.round(28 * getResources().getDisplayMetrics().density);
-        root.addView(UiKit.spinner(this), new LinearLayout.LayoutParams(spSize, spSize));
+        // the launcher foreground is the logo on a 108 canvas; at 90dp the mark is about 46dp wide
+        android.widget.ImageView logo = new android.widget.ImageView(this);
+        logo.setImageResource(R.drawable.ic_launcher_foreground);
+        int logoSize = Math.round(90 * dp);
+        root.addView(logo, new LinearLayout.LayoutParams(logoSize, logoSize));
+
+        TextView name = new TextView(this);
+        name.setText("PLAIN");
+        name.setTextColor(Color.WHITE);
+        name.setTextSize(19.5f);
+        name.setTypeface(Fonts.current(this));
+        name.setLetterSpacing(0.32f);
+        LinearLayout.LayoutParams nameLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        nameLp.topMargin = Math.round(-4 * dp);
+        root.addView(name, nameLp);
+
+        int trackW = Math.round(81 * dp), segW = Math.round(33 * dp), barH = Math.max(2, Math.round(3 * dp));
+        FrameLayout track = new FrameLayout(this);
+        android.graphics.drawable.GradientDrawable trackBg = new android.graphics.drawable.GradientDrawable();
+        trackBg.setColor(0xFF222222);
+        trackBg.setCornerRadius(barH / 2f);
+        track.setBackground(trackBg);
+        View seg = new View(this);
+        android.graphics.drawable.GradientDrawable segBg = new android.graphics.drawable.GradientDrawable();
+        segBg.setColor(Color.WHITE);
+        segBg.setCornerRadius(barH / 2f);
+        seg.setBackground(segBg);
+        track.addView(seg, new FrameLayout.LayoutParams(segW, barH));
+        LinearLayout.LayoutParams trackLp = new LinearLayout.LayoutParams(trackW, barH);
+        trackLp.topMargin = Math.round(39 * dp);
+        root.addView(track, trackLp);
+
+        final android.animation.ObjectAnimator slide = android.animation.ObjectAnimator.ofFloat(seg, View.TRANSLATION_X, -segW, trackW);
+        slide.setDuration(1100);
+        slide.setInterpolator(new android.view.animation.AccelerateDecelerateInterpolator());
+        slide.setRepeatCount(ValueAnimator.INFINITE);
+        root.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
+            @Override public void onViewAttachedToWindow(View v) { slide.start(); }
+            @Override public void onViewDetachedFromWindow(View v) { slide.cancel(); }   // the home screen replaces this view
+        });
 
         setContentView(root, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
