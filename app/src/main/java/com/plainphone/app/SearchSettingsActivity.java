@@ -611,7 +611,7 @@ public class SearchSettingsActivity extends Activity {
         return row(label, sub, on ? "On" : "Off", on ? Color.WHITE : DIM, click);
     }
 
-    /** The Locker screen's row: label on the left (18), its state or value on the right (14). */
+    /** The Locker screen's row: label on the left (20), its state or value on the right (16). */
     private View row(String label, String sub, String state, int stateColor, Runnable click) {
         LinearLayout row = new LinearLayout(this);
         row.setGravity(Gravity.CENTER_VERTICAL);
@@ -621,7 +621,7 @@ public class SearchSettingsActivity extends Activity {
 
         LinearLayout col = new LinearLayout(this);
         col.setOrientation(LinearLayout.VERTICAL);
-        col.addView(text(label, 18, Color.WHITE));
+        col.addView(text(label, 20, Color.WHITE));
         if (sub != null) {
             TextView s = text(sub, 13, GRAY);
             s.setPadding(0, UiKit.dp(this, 3), 0, 0);
@@ -629,7 +629,7 @@ public class SearchSettingsActivity extends Activity {
         }
         row.addView(col, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
-        TextView value = text(state, 14, stateColor);
+        TextView value = text(state, 16, stateColor);
         value.setSingleLine(true);
         value.setEllipsize(TextUtils.TruncateAt.END);
         value.setMaxWidth(UiKit.dp(this, 170));
