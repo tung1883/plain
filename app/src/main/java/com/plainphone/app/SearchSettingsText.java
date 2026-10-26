@@ -22,7 +22,7 @@ final class SearchSettingsText {
 
     /** Why some files are not in the index: "3 scanned", "1 too big" ... (only the reasons that apply). */
     static List<String> skippedPills(Map<String, Integer> byStatus) {
-        String[][] reasons = {{"scanned", "scanned"}, {"toobig", "too big"}, {"locked", "locked"}, {"failed", "unreadable"}};
+        String[][] reasons = {{"scanned", "scanned"}, {"toobig", "too big"}, {"locked", "locked"}, {"failed", "unreadable"}, {"crashed", "crashed"}};
         List<String> out = new ArrayList<>();
         for (String[] r : reasons) {
             Integer n = byStatus.get(r[0]);
@@ -38,6 +38,7 @@ final class SearchSettingsText {
             case "locked": return "Password protected";
             case "toobig": return limitMb > 0 ? "Larger than " + limitMb + " MB, too big to read" : "Too big to read";
             case "empty": return "No text in it";
+            case "crashed": return "It crashed the PDF reader, so it is skipped";
             case "failed": return error == null || error.trim().isEmpty() ? "Could not be read" : "Could not be read: " + error.trim();
             default: return status;
         }

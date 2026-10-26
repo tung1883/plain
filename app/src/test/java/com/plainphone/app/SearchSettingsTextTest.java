@@ -69,6 +69,7 @@ public class SearchSettingsTextTest {
         assertEquals("Could not be read: bad zip", SearchSettingsText.reason("failed", " bad zip ", 0));
         assertEquals("Could not be read", SearchSettingsText.reason("failed", null, 0));
         assertEquals("No text in it", SearchSettingsText.reason("empty", null, 0));
+        assertEquals("It crashed the PDF reader, so it is skipped", SearchSettingsText.reason("crashed", null, 0));
     }
 
     @Test

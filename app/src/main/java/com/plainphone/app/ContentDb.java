@@ -254,16 +254,11 @@ final class ContentDb extends SQLiteOpenHelper {
 
     /** Drop everything (the "Clear index" button). */
     void clearAll() {
-        SQLiteDatabase db = getWritableDatabase();
-        db.beginTransaction();
-        try {
-            db.execSQL("DELETE FROM chunks");
-            db.execSQL("DELETE FROM chunk_text");
-            db.execSQL("DELETE FROM docs");
-            db.setTransactionSuccessful();
-        } finally {
-            db.endTransaction();
+        // Deleting the file is the only fast way: dropping or emptying a database of this size takes minutes.
+        synchronized (this) {
+            close();
+            context.deleteDatabase(NAME);
         }
-        db.execSQL("VACUUM");
+        getWritableDatabase();   // creates the empty tables again
     }
 }

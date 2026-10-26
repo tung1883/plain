@@ -27,8 +27,9 @@ final class ContentIndexer {
     private static final String TAG = "PlainContentIndex";
     private static final int MAX_DEPTH = 15;
     private static final long RETRY_FAILED_MS = 24L * 60 * 60 * 1000;
-    private static final int WORKERS = 4;
-    private static final int PDF_AT_ONCE = 3;
+    private static final long RETRY_CRASHED_MS = 6L * 60 * 60 * 1000;
+    private static final int WORKERS = 6;
+    private static final int PDF_AT_ONCE = 1;
 
     private ContentIndexer() {}
 
@@ -44,6 +45,7 @@ final class ContentIndexer {
     }
 
     private static volatile boolean running;
+    private static volatile boolean stopRequested;
     private static volatile int progressDone, progressTotal;
 
     /** Files read so far in the current run (0 when none is running). */
@@ -60,6 +62,21 @@ final class ContentIndexer {
         return running;
     }
 
+    /** Stops the current run (if any) and waits for it to end; the files in flight are finished first. */
+    static void stopAndWait() {
+        stopRequested = true;
+        try {
+            long until = System.currentTimeMillis() + 120_000;
+            while (running && System.currentTimeMillis() < until) Thread.sleep(100);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    static void allowRuns() {
+        stopRequested = false;
+    }
+
     /** Index what changed. Blocks; call from a background thread. */
     static synchronized Result run(Context context, Control control) {
         Context app = context.getApplicationContext();
@@ -68,6 +85,11 @@ final class ContentIndexer {
         try {
             PdfExtractor.install(app);
             ContentDb db = ContentDb.get(app);
+            // files that took the app down last time are not read again
+            for (String path : PdfCrashGuard.takeCrashed(app)) {
+                File crashed = new File(path);
+                db.replace(path, crashed.length(), crashed.lastModified(), "pdf", null, "crashed", "crashed the PDF reader", new ArrayList<ExtractRunner.Passage>());
+            }
             Set<String> groups = Config.getContentTypes(app);
             Collected collected = collect(app, groups);
             List<File> found = collected.files;
@@ -90,7 +112,7 @@ final class ContentIndexer {
             for (File f : found) {
                 ContentDb.Doc d = known.get(f.getAbsolutePath());
                 boolean same = d != null && d.size == f.length() && d.mtime == f.lastModified();
-                if (!same || (d.status.equals("failed") && now - d.indexedAt > RETRY_FAILED_MS)) todo.add(f);
+                if (!same || (d.status.equals("failed") && now - d.indexedAt > RETRY_FAILED_MS) || (d.status.equals("crashed") && now - d.indexedAt > RETRY_CRASHED_MS)) todo.add(f);
             }
             // cheap files first, so something is searchable soon; PDFs last
             Collections.sort(todo, new Comparator<File>() {
@@ -128,7 +150,7 @@ final class ContentIndexer {
             for (final File f : todo) {
                 pool.execute(() -> {
                     if (halted.get()) return;
-                    if (control.cancelled()) {
+                    if (stopRequested || control.cancelled()) {
                         paused.set(true);
                         halted.set(true);
                         return;
@@ -147,7 +169,7 @@ final class ContentIndexer {
                     if (pdf) pdfSlots.acquireUninterruptibly();
                     try {
                         if (halted.get()) return;
-                        if (!indexOne(db, f, control)) {
+                        if (!indexOne(app, db, f, control)) {
                             paused.set(true);
                             halted.set(true);
                             return;
@@ -186,7 +208,7 @@ final class ContentIndexer {
     }
 
     /** False when the run was cancelled while reading this file (nothing was stored for it). */
-    private static boolean indexOne(ContentDb db, File f, Control control) {
+    private static boolean indexOne(Context appContext, ContentDb db, File f, Control control) {
         String name = f.getName();
         String ext = PlainTextExtractor.extensionOf(name);
         String group = Extractors.groupOf(ext);
@@ -200,7 +222,14 @@ final class ContentIndexer {
         TextExtractor extractor = Extractors.forExt(ext);
         if (extractor == null) return true;      // e.g. PDF support not available: leave it for later
         long start = System.currentTimeMillis();
-        ExtractRunner.Result r = ExtractRunner.run(extractor, f, ExtractRunner.MAX_CHARS, control::cancelled);
+        boolean pdf = Extractors.PDF.equals(group);
+        if (pdf) PdfCrashGuard.enter(appContext, path);
+        ExtractRunner.Result r;
+        try {
+            r = ExtractRunner.run(extractor, f, ExtractRunner.MAX_CHARS, control::cancelled);
+        } finally {
+            if (pdf) PdfCrashGuard.leave(appContext, path);
+        }
         if (control.cancelled()) return false;
         db.replace(path, size, mtime, ext, r.title != null ? r.title : name, r.status, r.error, r.passages);
         long took = System.currentTimeMillis() - start;

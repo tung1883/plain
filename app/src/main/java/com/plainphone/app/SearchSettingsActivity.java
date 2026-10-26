@@ -299,7 +299,12 @@ public class SearchSettingsActivity extends Activity {
     private void confirmClear() {
         VaultUi.confirm(this, "Clear the index?", "Search in files will be empty until it reads again.",
                 "Clear", () -> new Thread(() -> {
-                    ContentDb.get(this).clearAll();
+                    ContentIndexer.stopAndWait();   // a run in progress would keep writing to the old file
+                    try {
+                        ContentDb.get(this).clearAll();
+                    } finally {
+                        ContentIndexer.allowRuns();
+                    }
                     runOnUiThread(() -> {
                         Toast.makeText(this, "Index cleared", Toast.LENGTH_SHORT).show();
                         render();

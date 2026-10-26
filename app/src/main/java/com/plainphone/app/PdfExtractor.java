@@ -23,7 +23,14 @@ final class PdfExtractor implements TextExtractor {
     static void install(Context context) {
         if (Extractors.pdf != null) return;
         try {
-            Extractors.pdf = new PdfExtractor(new PdfBoxSource(context));
+            PdfTextSource box = new PdfBoxSource(context);
+            PdfTextSource source = box;
+            try {
+                source = new PdfFallbackSource(new PdfiumSource(context), box);   // pdfium first, PdfBox for what it cannot read
+            } catch (Throwable e) {
+                android.util.Log.w("PlainContentIndex", "pdfium unavailable, using PdfBox", e);
+            }
+            Extractors.pdf = new PdfExtractor(source);
         } catch (Throwable e) {
             android.util.Log.w("PlainContentIndex", "PDF support unavailable", e);
         }
