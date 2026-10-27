@@ -420,14 +420,6 @@ final class KeyboardRoot extends LinearLayout {
         langIdx = idx;
         Config.setKbLangCur(getContext(), currentLang().id);
         applyLanguage();
-        flash(currentLang().tag + " / " + layoutOf(currentLang()));
-    }
-
-    /** Show a short message in the toolbar (where the height % shows). */
-    private void flash(String s) {
-        readout.setText(s);
-        removeCallbacks(hideReadout);
-        postDelayed(hideReadout, 900);
     }
 
     /** Globe long-press: a sheet over the keys listing the languages, with shortcuts to manage them. */
