@@ -76,6 +76,20 @@ final class SearchSettingsText {
         return "last run " + d + (d == 1 ? " day ago" : " days ago");
     }
 
+    /** "~9 min left", "~2 h left" or "under 1 min left"; empty until enough files are done to tell. */
+    static String eta(int done, int total, long elapsedMs) {
+        if (done < 5 || total <= done || elapsedMs <= 0) return "";
+        long leftMin = Math.round(elapsedMs / (double) done * (total - done) / 60000.0);
+        if (leftMin < 1) return "under 1 min left";
+        if (leftMin < 90) return "~" + leftMin + " min left";
+        return "~" + Math.round(leftMin / 60.0) + " h left";
+    }
+
+    /** "Paused at 212 of 480". */
+    static String pausedLine(int done, int total) {
+        return "Paused at " + done + " of " + total;
+    }
+
     /** "Reading 12 of 34…" while a run is going. */
     static String progressLine(int done, int total) {
         return "Reading " + done + " of " + total + "…";

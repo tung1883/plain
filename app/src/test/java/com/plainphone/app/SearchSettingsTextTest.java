@@ -20,6 +20,16 @@ public class SearchSettingsTextTest {
     }
 
     @Test
+    public void etaNeedsAFewFilesThenRoundsToMinutesOrHours() {
+        assertEquals("", SearchSettingsText.eta(2, 100, 60_000));
+        assertEquals("", SearchSettingsText.eta(100, 100, 60_000));
+        assertEquals("under 1 min left", SearchSettingsText.eta(90, 100, 60_000));
+        assertEquals("~9 min left", SearchSettingsText.eta(10, 100, 60_000));
+        assertEquals("~2 h left", SearchSettingsText.eta(10, 1000, 60_000));
+        assertEquals("Paused at 212 of 480", SearchSettingsText.pausedLine(212, 480));
+    }
+
+    @Test
     public void skippedPillsListOnlyWhatApplies() {
         Map<String, Integer> m = new HashMap<>();
         m.put("ok", 30);

@@ -47,6 +47,18 @@ final class ContentIndexer {
     private static volatile boolean running;
     private static volatile boolean stopRequested;
     private static volatile int progressDone, progressTotal;
+    private static volatile long runStartedAt;
+    private static volatile String currentName = "";
+
+    /** Name of the file a worker started reading last ("" when no run is going). */
+    static String currentFile() {
+        return currentName;
+    }
+
+    /** Milliseconds since the current run began (0 when none is running). */
+    static long elapsedMs() {
+        return running && runStartedAt > 0 ? System.currentTimeMillis() - runStartedAt : 0;
+    }
 
     /** Files read so far in the current run (0 when none is running). */
     static int progressDone() {
@@ -82,6 +94,8 @@ final class ContentIndexer {
         Context app = context.getApplicationContext();
         Result result = new Result();
         running = true;
+        runStartedAt = System.currentTimeMillis();
+        currentName = "";
         try {
             PdfExtractor.install(app);
             ContentDb db = ContentDb.get(app);
@@ -150,7 +164,7 @@ final class ContentIndexer {
             for (final File f : todo) {
                 pool.execute(() -> {
                     if (halted.get()) return;
-                    if (stopRequested || control.cancelled()) {
+                    if (stopRequested || Config.isContentUserPaused(app) || control.cancelled()) {
                         paused.set(true);
                         halted.set(true);
                         return;
@@ -194,6 +208,14 @@ final class ContentIndexer {
             }
             result.indexed = finished.get();
             result.paused = paused.get();
+            if (Config.isContentUserPaused(app)) {
+                if (result.indexed >= result.total) {
+                    Config.setContentUserPaused(app, false);     // paused on the last file: nothing is left to resume
+                } else {
+                    Config.setContentPausedAt(app, result.indexed, result.total,
+                            todo.get(Math.min(started.get(), todo.size() - 1)).getName());
+                }
+            }
             result.capped = capped.get();
             Config.setContentCapped(app, result.capped);
             Config.setContentLastRun(app, System.currentTimeMillis());
@@ -201,6 +223,8 @@ final class ContentIndexer {
                     + result.removed + " removed, paused=" + result.paused + ", capped=" + result.capped);
         } finally {
             running = false;
+            runStartedAt = 0;
+            currentName = "";
             progressDone = 0;
             progressTotal = 0;
         }
@@ -222,6 +246,7 @@ final class ContentIndexer {
         TextExtractor extractor = Extractors.forExt(ext);
         if (extractor == null) return true;      // e.g. PDF support not available: leave it for later
         long start = System.currentTimeMillis();
+        currentName = name;
         boolean pdf = Extractors.PDF.equals(group);
         if (pdf) PdfCrashGuard.enter(appContext, path);
         ExtractRunner.Result r;

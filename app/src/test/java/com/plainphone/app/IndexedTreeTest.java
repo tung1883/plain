@@ -18,6 +18,22 @@ public class IndexedTreeTest {
         return new ContentDb.Entry(path, "pdf", status, null, 10);
     }
 
+    @Test
+    public void filterMatchesNameAndFolderWithNameFirst() {
+        List<ContentDb.Entry> all = Arrays.asList(
+                e("/storage/emulated/0/Finance/notes.pdf", "ok"),
+                e("/storage/emulated/0/Books/Corporate Finance.pdf", "ok"),
+                e("/storage/emulated/0/Books/Caf\u00e9 menu.pdf", "ok"));
+        List<ContentDb.Entry> r = IndexedTree.filter(all, "FINANCE", 10);
+        assertEquals(2, r.size());
+        assertTrue(r.get(0).path.endsWith("Corporate Finance.pdf"));     // matched by name
+        assertTrue(r.get(1).path.endsWith("notes.pdf"));                 // matched only by its folder
+        assertEquals(1, IndexedTree.filter(all, "cafe menu", 10).size());
+        assertEquals(0, IndexedTree.filter(all, "finance zzz", 10).size());
+        assertEquals(0, IndexedTree.filter(all, "  ", 10).size());
+        assertEquals(1, IndexedTree.filter(all, "finance", 1).size());
+    }
+
     private static List<String[]> roots() {
         return Arrays.asList(new String[]{"/storage/emulated/0", "Internal only"}, new String[]{"/storage/1234-ABCD", "SD card"});
     }

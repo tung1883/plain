@@ -1010,6 +1010,33 @@ class Config {
         prefs(context).edit().putBoolean("content_capped", capped).apply();
     }
 
+    /** True while the user has paused content indexing: no run starts until they resume. */
+    static boolean isContentUserPaused(Context context) {
+        return prefs(context).getBoolean("content_user_paused", false);
+    }
+
+    static void setContentUserPaused(Context context, boolean paused) {
+        prefs(context).edit().putBoolean("content_user_paused", paused).apply();
+    }
+
+    /** Where the run the user paused stopped: files read, files in the run, and the file that was next. */
+    static void setContentPausedAt(Context context, int done, int total, String next) {
+        prefs(context).edit().putInt("content_paused_done", done).putInt("content_paused_total", total)
+                .putString("content_paused_next", next == null ? "" : next).apply();
+    }
+
+    static int getContentPausedDone(Context context) {
+        return prefs(context).getInt("content_paused_done", 0);
+    }
+
+    static int getContentPausedTotal(Context context) {
+        return prefs(context).getInt("content_paused_total", 0);
+    }
+
+    static String getContentPausedNext(Context context) {
+        return prefs(context).getString("content_paused_next", "");
+    }
+
     static long getContentLastRun(Context context) {
         return prefs(context).getLong("content_last_run", 0L);
     }

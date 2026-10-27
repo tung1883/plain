@@ -23,6 +23,7 @@ final class SearchJobs {
     /** Read new and changed documents into the content index (does nothing when the feature is off). */
     static void startContentIndex(Context context) {
         if (!Config.isContentSearchEnabled(context) || !FileIndex.canWalk(context)) return;
+        if (Config.isContentUserPaused(context)) return;     // the user stopped it; only Resume starts it again
         if (JobQueue.anyOfType(context, TYPE_CONTENT_INDEX)) {
             JobQueue.resumeIfPending(context);
             return;
@@ -30,6 +31,17 @@ final class SearchJobs {
         JobQueue.enqueue(context, new JobQueue.Spec(TYPE_CONTENT_INDEX)
                 .label("Indexing documents")
                 .priority(-30));
+    }
+
+    /** Pause content indexing: the files being read finish, then the run stops and nothing restarts it. */
+    static void pauseContentIndex(Context context) {
+        Config.setContentUserPaused(context, true);
+    }
+
+    /** Continue after {@link #pauseContentIndex}: the index is the progress, so only unread files are read. */
+    static void resumeContentIndex(Context context) {
+        Config.setContentUserPaused(context, false);
+        startContentIndex(context);
     }
 
     static boolean isType(String type) {

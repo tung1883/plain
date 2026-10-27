@@ -14,12 +14,10 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
-import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -48,25 +46,12 @@ public class SearchSettingsActivity extends Activity {
     private Typeface font;
     private final Handler ui = new Handler(Looper.getMainLooper());
     private FrameLayout cardHolder;
-    private boolean ticking;
+    private IndexStatusCard.Ticker ticker;
 
     // Folders popup state
     private final Set<String> open = new HashSet<>();      // expanded tree nodes, "<volume>|<path>"
     private String focus;                                  // node to scroll to and flash
     private ScrollView treeScroll;
-
-    /** Redraws only the status card while a run is going. */
-    private final Runnable tick = new Runnable() {
-        @Override
-        public void run() {
-            if (cardHolder != null) {
-                cardHolder.removeAllViews();
-                cardHolder.addView(buildCard());
-            }
-            ticking = ContentIndexer.isRunning();
-            if (ticking) ui.postDelayed(this, 500);
-        }
-    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -93,8 +78,7 @@ public class SearchSettingsActivity extends Activity {
     @Override
     protected void onPause() {
         super.onPause();
-        ui.removeCallbacks(tick);
-        ticking = false;
+        if (ticker != null) ticker.stop();
     }
 
     // ------------------------------------------------------------------- screen
@@ -151,10 +135,7 @@ public class SearchSettingsActivity extends Activity {
                 () -> Lock.SEARCH.toggleLock(this, this::render)));
 
         root.addView(new View(this), new LinearLayout.LayoutParams(1, UiKit.dp(this, 40)));
-        if (content && ContentIndexer.isRunning() && !ticking) {
-            ticking = true;
-            ui.postDelayed(tick, 500);
-        }
+        if (content && ticker != null && ContentIndexer.isRunning()) ticker.start();
     }
 
     private void addContentBlock() {
@@ -168,148 +149,15 @@ public class SearchSettingsActivity extends Activity {
         }));
         root.addView(row("Index size limit", null, SearchSettingsText.limitLabel(Config.getContentMaxMb(this)), MUTED, this::showSizes));
         cardHolder = new FrameLayout(this);
-        cardHolder.addView(buildCard());
+        ticker = new IndexStatusCard.Ticker(cardHolder, this::card);
+        cardHolder.addView(card());
         root.addView(cardHolder);
     }
 
     // -------------------------------------------------------------- status box
 
-    private View buildCard() {
-        ContentDb.Stats stats = ContentDb.get(this).stats();
-        boolean running = ContentIndexer.isRunning();
-        int maxMb = Config.getContentMaxMb(this);
-
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setBackground(UiKit.rounded(this, Color.BLACK, EDGE, 1f, UiKit.R_MD));
-        card.setPadding(1, 1, 1, 1);     // keep the children off the border
-
-        LinearLayout body = new LinearLayout(this);
-        body.setOrientation(LinearLayout.VERTICAL);
-        int pad = UiKit.dp(this, 16);
-        body.setPadding(pad, pad, pad, pad);
-
-        LinearLayout top = new LinearLayout(this);
-        top.setGravity(Gravity.BOTTOM);
-        top.addView(text(String.valueOf(stats.count("ok")), 30, Color.WHITE));
-        TextView small = text("files indexed", 14, GRAY);
-        small.setPadding(UiKit.dp(this, 6), 0, 0, UiKit.dp(this, 4));
-        top.addView(small);
-        body.addView(top);
-
-        ThinBar bar = new ThinBar(this);
-        bar.setFraction(running && ContentIndexer.progressTotal() > 0
-                ? ContentIndexer.progressDone() / (float) ContentIndexer.progressTotal()
-                : SearchSettingsText.usedFraction(stats.bytes, maxMb));
-        LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, UiKit.dp(this, 6));
-        bp.topMargin = UiKit.dp(this, 12);
-        body.addView(bar, bp);
-
-        LinearLayout meta = new LinearLayout(this);
-        meta.setPadding(0, UiKit.dp(this, 6), 0, 0);
-        String left;
-        if (running) {
-            left = SearchSettingsText.progressLine(ContentIndexer.progressDone(), ContentIndexer.progressTotal());
-        } else if (Config.isContentCapped(this)) {
-            left = "Full at " + SearchSettingsText.limitLabel(maxMb) + ", more files are waiting";
-        } else if (!ContentIndexer.policyAllows(this, Config.isContentAllowLowBattery(this))) {
-            left = "Waiting: battery is low";
-        } else {
-            left = SearchSettingsText.sizeLine(stats.bytes, maxMb);
-        }
-        meta.addView(text(left, 12, GRAY), new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        if (!running) {
-            meta.addView(text(SearchSettingsText.lastRun(Config.getContentLastRun(this), System.currentTimeMillis()), 12, GRAY));
-        }
-        body.addView(meta);
-
-        List<String> skipped = SearchSettingsText.skippedPills(stats.byStatus);
-        if (!running && !skipped.isEmpty()) {
-            HorizontalScrollView scroll = new HorizontalScrollView(this);
-            scroll.setHorizontalScrollBarEnabled(false);
-            LinearLayout pills = new LinearLayout(this);
-            for (String s : skipped) {
-                TextView p = text(s, 12, 0xFFB0B0B0);
-                p.setPadding(UiKit.dp(this, 10), UiKit.dp(this, 3), UiKit.dp(this, 10), UiKit.dp(this, 3));
-                p.setBackground(UiKit.rounded(this, Color.TRANSPARENT, EDGE, 1f, 12));
-                LinearLayout.LayoutParams pp = new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                pp.rightMargin = UiKit.dp(this, 6);
-                pills.addView(p, pp);
-            }
-            scroll.addView(pills);
-            LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            sp.topMargin = UiKit.dp(this, 12);
-            body.addView(scroll, sp);
-        }
-        card.addView(body);
-
-        card.addView(hairline(), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1));
-        LinearLayout actions = new LinearLayout(this);
-        actions.addView(action(running ? "Reading…" : "Index now", running ? DIM : Color.WHITE, this::indexNow));
-        actions.addView(hairline(), new LinearLayout.LayoutParams(1, ViewGroup.LayoutParams.MATCH_PARENT));
-        actions.addView(action("Files", Color.WHITE, () -> startActivity(new Intent(this, IndexedFilesActivity.class))));
-        actions.addView(hairline(), new LinearLayout.LayoutParams(1, ViewGroup.LayoutParams.MATCH_PARENT));
-        actions.addView(action("Clear", Color.WHITE, this::confirmClear));
-        card.addView(actions);
-
-        LinearLayout wrap = new LinearLayout(this);
-        wrap.setPadding(48, UiKit.dp(this, 10), 48, UiKit.dp(this, 10));
-        wrap.addView(card, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        return wrap;
-    }
-
-    private TextView action(String label, int color, Runnable run) {
-        TextView t = text(label, 16, color);
-        t.setGravity(Gravity.CENTER);
-        t.setSingleLine(true);
-        t.setPadding(0, UiKit.dp(this, 14), 0, UiKit.dp(this, 14));
-        // no resting fill and no clipping: a fill or a clip would cut the box border at its corners
-        android.graphics.drawable.StateListDrawable bg = new android.graphics.drawable.StateListDrawable();
-        bg.addState(new int[]{android.R.attr.state_pressed}, UiKit.pressedFill());
-        t.setBackground(bg);
-        t.setOnClickListener(v -> run.run());
-        t.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        return t;
-    }
-
-    private View hairline() {
-        View v = new View(this);
-        v.setBackgroundColor(HAIR);
-        return v;
-    }
-
-    private void indexNow() {
-        if (ContentIndexer.isRunning()) return;
-        if (!FileIndex.canWalk(this)) {
-            DeviceSearch.requestFullFileAccess(this);
-            return;
-        }
-        SearchJobs.startContentIndex(this);
-        Toast.makeText(this, "Reading documents in the background", Toast.LENGTH_SHORT).show();
-        if (!ticking) {
-            ticking = true;
-            ui.postDelayed(tick, 700);
-        }
-    }
-
-    private void confirmClear() {
-        VaultUi.confirm(this, "Clear the index?", "Search in files will be empty until it reads again.",
-                "Clear", () -> new Thread(() -> {
-                    ContentIndexer.stopAndWait();   // a run in progress would keep writing to the old file
-                    try {
-                        ContentDb.get(this).clearAll();
-                    } finally {
-                        ContentIndexer.allowRuns();
-                    }
-                    runOnUiThread(() -> {
-                        Toast.makeText(this, "Index cleared", Toast.LENGTH_SHORT).show();
-                        render();
-                    });
-                }).start(), "Cancel", null);
+    private View card() {
+        return IndexStatusCard.build(this, false, ticker::start, this::render);
     }
 
     // ------------------------------------------------------------ folders popup
@@ -590,6 +438,12 @@ public class SearchSettingsActivity extends Activity {
     }
 
     // ------------------------------------------------------------------ building blocks
+
+    private View hairline() {
+        View v = new View(this);
+        v.setBackgroundColor(HAIR);
+        return v;
+    }
 
     private TextView text(String s, float sp, int color) {
         TextView t = new TextView(this);

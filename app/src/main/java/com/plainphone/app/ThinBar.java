@@ -12,6 +12,7 @@ final class ThinBar extends View {
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF rect = new RectF();
     private float fraction;
+    private int fill = 0xFFFFFFFF;
 
     ThinBar(Context context) {
         super(context);
@@ -22,6 +23,14 @@ final class ThinBar extends View {
         float f = Math.max(0f, Math.min(1f, value));
         if (f != fraction) {
             fraction = f;
+            invalidate();
+        }
+    }
+
+    /** The fill colour: white while reading, grey while paused. */
+    void setFill(int color) {
+        if (color != fill) {
+            fill = color;
             invalidate();
         }
     }
@@ -38,7 +47,7 @@ final class ThinBar extends View {
         rect.set(0, 0, w, h);
         canvas.drawRoundRect(rect, r, r, paint);
         if (fraction > 0f) {
-            paint.setColor(0xFFFFFFFF);
+            paint.setColor(fill);
             rect.set(0, 0, Math.max(h, w * fraction), h);
             canvas.drawRoundRect(rect, r, r, paint);
         }

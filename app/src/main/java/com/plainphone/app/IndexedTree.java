@@ -26,6 +26,31 @@ final class IndexedTree {
         }
     }
 
+    /**
+     * The entries whose path holds every word of {@code query} (case and accents ignored): those whose
+     * file name holds them all first, then the ones matched through the folder. At most {@code cap}.
+     */
+    static List<ContentDb.Entry> filter(List<ContentDb.Entry> all, String query, int cap) {
+        String folded = TextMatch.fold(query);
+        if (folded.isEmpty()) return new ArrayList<>();
+        String[] words = folded.split(" ");
+        List<ContentDb.Entry> byName = new ArrayList<>();
+        List<ContentDb.Entry> byFolder = new ArrayList<>();
+        for (ContentDb.Entry e : all) {
+            String path = TextMatch.fold(e.path);
+            if (!holdsAll(path, words)) continue;
+            int slash = e.path.lastIndexOf('/');
+            (holdsAll(TextMatch.fold(e.path.substring(slash + 1)), words) ? byName : byFolder).add(e);
+        }
+        byName.addAll(byFolder);
+        return byName.size() > cap ? new ArrayList<>(byName.subList(0, cap)) : byName;
+    }
+
+    private static boolean holdsAll(String text, String[] words) {
+        for (String w : words) if (!text.contains(w)) return false;
+        return true;
+    }
+
     /** One line of the flattened tree. Exactly one of {@code folder} / {@code file} is set. */
     static final class Row {
         final int depth;
