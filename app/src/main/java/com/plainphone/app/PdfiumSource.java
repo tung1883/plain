@@ -69,10 +69,15 @@ final class PdfiumSource implements PdfTextSource {
     }
 
     private static String pageText(PdfDocument doc, int index) {
-        try (PdfPage page = doc.openPage(index); PdfTextPage text = page.openTextPage()) {
+        // the library hands back null for a page it cannot open; skip that page, not the whole file
+        PdfPage page = doc.openPage(index);
+        if (page == null) return "";
+        try (PdfPage p = page; PdfTextPage text = p.openTextPage()) {
+            if (text == null) return "";
             int count = text.textPageCountChars();
             if (count <= 0) return "";
-            String s = text.textPageGetText(0, count);
+            // not textPageGetText: its native byte-array path overflows a stack buffer on some pages (SIGABRT, stack protector)
+            String s = text.textPageGetTextLegacy(0, count);
             return s == null ? "" : s;
         }
     }
