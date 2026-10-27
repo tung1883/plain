@@ -70,14 +70,32 @@ final class EmojiPanel extends FrameLayout {
     private final Set<String> pickImg = new LinkedHashSet<>();    // image file paths
     private final Set<String> pickColl = new LinkedHashSet<>();   // collection names
     private String cat = "Rec";
+    private final ComposeSession.Starter composer;
+    private final TextView searchBar;
+    private String query = "";     // non-empty: the grid shows matches from every category
+    private boolean secure;        // password field: no search
 
-    EmojiPanel(Context ctx, KeyboardRoot.Host host) {
+    EmojiPanel(Context ctx, KeyboardRoot.Host host, ComposeSession.Starter composer) {
         super(ctx);
         this.host = host;
+        this.composer = composer;
         main = new LinearLayout(ctx);
         main.setOrientation(LinearLayout.VERTICAL);
         addView(main, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        searchBar = new TextView(ctx);
+        searchBar.setTextSize(12);
+        searchBar.setTypeface(Fonts.cascadiaMono(ctx));
+        searchBar.setSingleLine(true);
+        searchBar.setGravity(Gravity.CENTER_VERTICAL);
+        searchBar.setPadding(PanelKit.dp(ctx, 12), 0, PanelKit.dp(ctx, 12), 0);
+        searchBar.setBackground(UiKit.rounded(ctx, PanelKit.KEY, PanelKit.LINE, 1f, 9));
+        searchBar.setOnClickListener(v -> composer.start(typing, query));
+        LinearLayout.LayoutParams sLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, PanelKit.dp(ctx, 32));
+        sLp.bottomMargin = PanelKit.dp(ctx, 4);
+        main.addView(searchBar, sLp);
 
         ScrollView scroll = new ScrollView(ctx);
         scroll.setVerticalScrollBarEnabled(false);
@@ -103,13 +121,50 @@ final class EmojiPanel extends FrameLayout {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
     }
 
+    /** Typing the search: the grid follows each key, behind the keys, and shows when typing ends. */
+    private final ComposeSession typing = new ComposeSession() {
+        @Override
+        public String hint() {
+            return "Search emoji";
+        }
+
+        @Override
+        public void onChange(String text) {
+            query = text;
+        }
+
+        @Override
+        public void onDone(String text) {
+            query = text.trim();
+            refresh();
+        }
+    };
+
+    void setSecure(boolean secure) {
+        this.secure = secure;
+    }
+
+    private void drawSearchBar() {
+        boolean show = !secure && selMode == 0;
+        searchBar.setVisibility(show ? VISIBLE : GONE);
+        if (query.isEmpty()) {
+            searchBar.setText("Search emoji");
+            searchBar.setTextColor(PanelKit.DIM);
+        } else {
+            searchBar.setText(query);
+            searchBar.setTextColor(Color.WHITE);
+        }
+    }
+
     void refresh() {
+        if (secure) query = "";
         if (!"Img".equals(cat)) {   // selecting only exists in the image tab
             selMode = 0;
             pickImg.clear();
             pickColl.clear();
         }
         drawTabs();
+        drawSearchBar();
         drawGrid();
         drawBars();
     }
@@ -132,6 +187,7 @@ final class EmojiPanel extends FrameLayout {
             t.setTab(c.equals(cat));
             t.setOnClickListener(v -> {
                 cat = c;
+                query = "";
                 refresh();
             });
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, PanelKit.dp(ctx, 30), 1f);
@@ -143,6 +199,10 @@ final class EmojiPanel extends FrameLayout {
     private void drawGrid() {
         stopAnims();   // the old thumbnails are about to go
         grid.removeAllViews();
+        if (!query.isEmpty() && !secure) {
+            drawMatches();
+            return;
+        }
         if ("Txt".equals(cat)) {
             drawFaces();
             return;
@@ -155,6 +215,33 @@ final class EmojiPanel extends FrameLayout {
         grid.setColumnCount(COLUMNS);
         List<String> list = "Rec".equals(cat) ? recents(ctx) : categories().get(cat);
         if (list == null) return;
+        addEmoji(ctx, list);
+    }
+
+    /** The search result: every emoji matching the query, with a label, whatever the tab. */
+    private void drawMatches() {
+        Context ctx = getContext();
+        grid.setColumnCount(COLUMNS);
+        List<String> found = EmojiKeywords.search(ctx, query);
+        TextView label = PanelKit.caption(ctx, "MATCHES FOR \"" + query + "\"");
+        GridLayout.LayoutParams lp = cell(COLUMNS, 0);
+        lp.setMargins(PanelKit.dp(ctx, 4), PanelKit.dp(ctx, 4), 0, PanelKit.dp(ctx, 2));
+        grid.addView(label, lp);
+        if (found.isEmpty()) {
+            TextView none = new TextView(ctx);
+            none.setText("No emoji found");
+            none.setTextSize(12);
+            none.setTextColor(PanelKit.DIM);
+            none.setTypeface(Fonts.cascadiaMono(ctx));
+            none.setGravity(Gravity.CENTER);
+            none.setPadding(0, PanelKit.dp(ctx, 24), 0, 0);
+            grid.addView(none, cell(COLUMNS, 0));
+            return;
+        }
+        addEmoji(ctx, found);
+    }
+
+    private void addEmoji(Context ctx, List<String> list) {
         for (String e : list) {
             TextView t = new TextView(ctx);
             t.setText(e);
@@ -479,6 +566,7 @@ final class EmojiPanel extends FrameLayout {
     /** The bottom row: category tabs normally, the selection's actions while selecting. */
     private void drawBars() {
         Context ctx = getContext();
+        drawSearchBar();
         boolean selecting = selMode != 0 && "Img".equals(cat);
         tabs.setVisibility(selecting ? GONE : VISIBLE);
         actions.setVisibility(selecting ? VISIBLE : GONE);
@@ -677,6 +765,7 @@ final class EmojiPanel extends FrameLayout {
     /** Called when the keyboard leaves this panel: stop the GIFs and drop any selection. */
     void release() {
         stopAnims();
+        query = "";
         selMode = 0;
         pickImg.clear();
         pickColl.clear();

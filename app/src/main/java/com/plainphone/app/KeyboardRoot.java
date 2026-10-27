@@ -51,7 +51,20 @@ final class KeyboardRoot extends LinearLayout {
 
         /** Put one of the keyboard's own images on the system clipboard. */
         void copyImage(java.io.File image);
+
+        /** Send a file into the field; if the field takes no files, insert its name instead. */
+        void attachFile(java.io.File file);
+
+        /** Open a search hit in its app (through the launcher's gates), in its own task. */
+        void openHit(KbHit hit);
+
+        /** Ask for a permission search needs: "files" or "contacts". */
+        void requestAccess(String access);
     }
+
+    // panels, in the order of the toolbar icons
+    static final int P_KEYS = -1, P_CLIP = 0, P_EMOJI = 1, P_TRANSLATE = 2, P_INK = 3, P_SCAN = 4,
+            P_SEARCH = 5, P_SETTINGS = 6;
 
     private final DevKeyboardView keys;
     private final FrameLayout body;
@@ -60,8 +73,9 @@ final class KeyboardRoot extends LinearLayout {
     private final TranslatePanel translate;
     private final InkPanel ink;
     private final ScanPanel scan;
+    private final SearchPanel search;
     private final KeyboardSettingsPanel settings;
-    private final PanelKit.IconView[] icons = new PanelKit.IconView[6];
+    private final PanelKit.IconView[] icons = new PanelKit.IconView[7];
     private final PanelKit.IconView abc, resize;
     private final TextView readout;
     private final Runnable hideReadout = this::clearReadout;
@@ -70,8 +84,11 @@ final class KeyboardRoot extends LinearLayout {
     private final LinearLayout composeBar;
     private final TextView composeText;
     private final StringBuilder compose = new StringBuilder();
-    private boolean composing;     // typing text for the Translate panel instead of the app's field
-    private int open = -1;     // 0 clipboard, 1 emoji, 2 translate, 3 handwriting, 4 scan, 5 settings, -1 keys
+    private final FrameLayout stripBox;
+    private boolean composing;     // typing for a panel (see composeSession) instead of the app's field
+    private ComposeSession composeSession;
+    private int open = P_KEYS;
+    private boolean secure;        // password field: search is off
 
     KeyboardRoot(Context ctx, DevKeyboardView.Listener keyListener, Host host) {
         super(ctx);
@@ -110,9 +127,10 @@ final class KeyboardRoot extends LinearLayout {
                 keyListener.switchKeyboard();
             }
         });
-        clip = new ClipboardPanel(ctx, host);
-        emoji = new EmojiPanel(ctx, host);
+        clip = new ClipboardPanel(ctx, host, this::startCompose);
+        emoji = new EmojiPanel(ctx, host, this::startCompose);
         translate = new TranslatePanel(ctx, host, this::startCompose);
+        search = new SearchPanel(ctx, host, this::startCompose);
         ink = new InkPanel(ctx, host);
         scan = new ScanPanel(ctx, host);
         settings = new KeyboardSettingsPanel(ctx, host);
@@ -121,22 +139,19 @@ final class KeyboardRoot extends LinearLayout {
         bar.setGravity(Gravity.CENTER_VERTICAL);
         bar.setPadding(PanelKit.dp(ctx, 4), PanelKit.dp(ctx, 3), PanelKit.dp(ctx, 8), PanelKit.dp(ctx, 3));
         abc = new PanelKit.IconView(ctx, KeyIcons.KEYS);
-        abc.setOnClickListener(v -> show(-1));
+        abc.setOnClickListener(v -> show(P_KEYS));
         LayoutParams abcLp = new LayoutParams(PanelKit.dp(ctx, 40), PanelKit.dp(ctx, 30));
-        abcLp.rightMargin = PanelKit.dp(ctx, 6);
+        abcLp.rightMargin = PanelKit.dp(ctx, 4);
         bar.addView(abc, abcLp);
 
-        int[] kinds = {KeyIcons.CLIPBOARD, KeyIcons.EMOJI, KeyIcons.TRANSLATE, KeyIcons.PEN, KeyIcons.SCAN, KeyIcons.SLIDERS};
+        int[] kinds = {KeyIcons.CLIPBOARD, KeyIcons.EMOJI, KeyIcons.TRANSLATE, KeyIcons.PEN, KeyIcons.SCAN,
+                KeyIcons.SEARCH, KeyIcons.SLIDERS};
         for (int i = 0; i < icons.length; i++) {
             final int which = i;
             icons[i] = new PanelKit.IconView(ctx, kinds[i]);
-            icons[i].setOnClickListener(v -> show(open == which ? -1 : which));
+            icons[i].setOnClickListener(v -> show(open == which ? P_KEYS : which));
         }
-        for (int i = 0; i < 5; i++) {
-            LayoutParams lp = new LayoutParams(PanelKit.dp(ctx, 38), PanelKit.dp(ctx, 30));
-            lp.rightMargin = PanelKit.dp(ctx, 2);
-            bar.addView(icons[i], lp);
-        }
+        for (int i = 0; i <= P_SEARCH; i++) bar.addView(icons[i], iconLp(ctx));
         readout = PanelKit.caption(ctx, "");
         readout.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
         readout.setTextColor(Color.WHITE);
@@ -144,10 +159,8 @@ final class KeyboardRoot extends LinearLayout {
         bar.addView(readout, new LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
         resize = new PanelKit.IconView(ctx, KeyIcons.RESIZE);
         resize.setOnTouchListener(this::dragHeight);
-        LayoutParams rLp = new LayoutParams(PanelKit.dp(ctx, 38), PanelKit.dp(ctx, 30));
-        rLp.rightMargin = PanelKit.dp(ctx, 2);
-        bar.addView(resize, rLp);
-        bar.addView(icons[5], new LayoutParams(PanelKit.dp(ctx, 38), PanelKit.dp(ctx, 30)));
+        bar.addView(resize, iconLp(ctx));
+        bar.addView(icons[P_SETTINGS], iconLp(ctx));
         addView(bar, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         View hair = new View(ctx);
@@ -173,11 +186,15 @@ final class KeyboardRoot extends LinearLayout {
         composeBar.setVisibility(GONE);
         addView(composeBar, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
+        stripBox = new FrameLayout(ctx);
+        stripBox.setVisibility(GONE);
+        addView(stripBox, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
         body = new FrameLayout(ctx);
         body.setPadding(PanelKit.dp(ctx, 3), PanelKit.dp(ctx, 3), PanelKit.dp(ctx, 3), PanelKit.dp(ctx, 3));
         body.addView(keys, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        for (View p : new View[]{clip, emoji, translate, ink, scan, settings}) {
+        for (View p : new View[]{clip, emoji, translate, ink, scan, search, settings}) {
             p.setVisibility(GONE);
             body.addView(p, new FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -185,16 +202,31 @@ final class KeyboardRoot extends LinearLayout {
         addView(body, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
     }
 
+    private static LayoutParams iconLp(Context ctx) {
+        LayoutParams lp = new LayoutParams(PanelKit.dp(ctx, 34), PanelKit.dp(ctx, 30));
+        lp.rightMargin = PanelKit.dp(ctx, 1);
+        return lp;
+    }
+
+    /** What kind of field the keyboard is in; call before {@link #refresh()}. */
+    void setField(boolean secure, boolean noLearning) {
+        this.secure = secure;
+        search.setField(secure, noLearning);
+        emoji.setSecure(secure);
+        clip.setSecure(secure);
+    }
+
     /** Re-read settings and go back to the keys; call each time the keyboard is shown. */
     void refresh() {
         keys.refresh();
-        show(-1);
+        show(P_KEYS);
         applyBodyHeight();
     }
 
     /** A setting changed in the settings panel: rebuild the keys and resize, staying on the panel. */
     void applySettings() {
         keys.refresh();
+        icons[P_SEARCH].setVisibility(Config.isKbSearchAny(getContext()) ? VISIBLE : GONE);
         applyBodyHeight();
     }
 
@@ -246,48 +278,74 @@ final class KeyboardRoot extends LinearLayout {
         }
     }
 
-    // ---------------------------------------------------- typing for Translate
+    // ---------------------------------------------------- typing for a panel
 
-    /** Show the keys with a text bar above them; what is typed goes there, not to the app. */
-    private void startCompose(String initial) {
+    /** Show the keys with a text bar above them; what is typed goes to {@code session}, not to the app. */
+    private void startCompose(ComposeSession session, String initial) {
         composing = true;
+        composeSession = session;
         compose.setLength(0);
         if (initial != null) compose.append(initial);
-        translate.release();
-        translate.setVisibility(GONE);
+        if (open == P_TRANSLATE) translate.release();
+        View panel = panelOf(open);
+        if (panel != null) panel.setVisibility(GONE);
         keys.setVisibility(VISIBLE);
         composeBar.setVisibility(VISIBLE);
+        stripBox.removeAllViews();
+        View strip = session.strip();
+        if (strip != null) {
+            stripBox.addView(strip);
+            stripBox.setVisibility(VISIBLE);
+        }
         drawCompose();
     }
 
     private void drawCompose() {
         if (compose.length() == 0) {
-            composeText.setText("type the text to translate");
+            composeText.setText(composeSession == null ? "" : composeSession.hint());
             composeText.setTextColor(PanelKit.DIM);
         } else {
             composeText.setText(compose.toString());
             composeText.setTextColor(0xFFFFFFFF);
         }
+        if (composeSession != null) composeSession.onChange(compose.toString());
     }
 
     private void finishCompose() {
+        ComposeSession session = composeSession;
         composing = false;
+        composeSession = null;
         composeBar.setVisibility(GONE);
+        stripBox.setVisibility(GONE);
+        stripBox.removeAllViews();
         keys.setVisibility(INVISIBLE);
-        translate.setVisibility(VISIBLE);
-        translate.setOverride(compose.length() == 0 ? null : compose.toString());
-        translate.refresh();
+        View panel = panelOf(open);
+        if (panel != null) panel.setVisibility(VISIBLE);
+        if (session != null) session.onDone(compose.toString());
+    }
+
+    private View panelOf(int which) {
+        switch (which) {
+            case P_CLIP: return clip;
+            case P_EMOJI: return emoji;
+            case P_TRANSLATE: return translate;
+            case P_INK: return ink;
+            case P_SCAN: return scan;
+            case P_SEARCH: return search;
+            case P_SETTINGS: return settings;
+            default: return null;
+        }
     }
 
     /** Open the emoji panel on its image tab (after an image was added). */
     void showImages() {
-        show(1);
+        show(P_EMOJI);
         emoji.showCategory("Img");
     }
 
     /** Open the scan panel with text read from a photo. */
     void showScanResult(String text) {
-        show(4);
+        show(P_SCAN);
         scan.setResult(text);
     }
 
@@ -295,21 +353,28 @@ final class KeyboardRoot extends LinearLayout {
         show(which);
     }
 
-    /** True when Back has a step inside the open panel (close a viewer, leave select mode ...). */
+    /** True when Back has a step inside the open panel (end typing, close a viewer, leave select mode ...). */
     boolean canGoBack() {
+        if (composing) return true;
         switch (open) {
-            case 0: return clip.canGoBack();
-            case 1: return emoji.canGoBack();
-            case 4: return scan.canGoBack();
+            case P_CLIP: return clip.canGoBack();
+            case P_EMOJI: return emoji.canGoBack();
+            case P_SCAN: return scan.canGoBack();
+            case P_SEARCH: return search.canGoBack();
             default: return false;
         }
     }
 
     void goBack() {
+        if (composing) {
+            finishCompose();
+            return;
+        }
         switch (open) {
-            case 0: clip.goBack(); break;
-            case 1: emoji.goBack(); break;
-            case 4: scan.goBack(); break;
+            case P_CLIP: clip.goBack(); break;
+            case P_EMOJI: emoji.goBack(); break;
+            case P_SCAN: scan.goBack(); break;
+            case P_SEARCH: search.goBack(); break;
             default:
         }
     }
@@ -320,32 +385,34 @@ final class KeyboardRoot extends LinearLayout {
         clip.release();
         scan.release();
         emoji.release();
+        search.release();
     }
 
     private void show(int which) {
         open = which;
         composing = false;
+        composeSession = null;
         composeBar.setVisibility(GONE);
-        if (which != 2) translate.clearOverride();
+        stripBox.setVisibility(GONE);
+        stripBox.removeAllViews();
+        if (which != P_TRANSLATE) translate.clearOverride();
         keys.setVisibility(which < 0 ? VISIBLE : INVISIBLE);
-        clip.setVisibility(which == 0 ? VISIBLE : GONE);
-        emoji.setVisibility(which == 1 ? VISIBLE : GONE);
-        translate.setVisibility(which == 2 ? VISIBLE : GONE);
-        ink.setVisibility(which == 3 ? VISIBLE : GONE);
-        scan.setVisibility(which == 4 ? VISIBLE : GONE);
-        settings.setVisibility(which == 5 ? VISIBLE : GONE);
+        for (int p = P_CLIP; p <= P_SETTINGS; p++) panelOf(p).setVisibility(which == p ? VISIBLE : GONE);
         for (int i = 0; i < icons.length; i++) icons[i].setActive(i == which);
         abc.setActive(which < 0);
         resize.setVisibility(which < 0 ? VISIBLE : INVISIBLE);
-        if (which == 0) clip.refresh();
-        if (which == 1) emoji.refresh();
-        if (which == 2) translate.refresh();
+        icons[P_SEARCH].setVisibility(Config.isKbSearchAny(getContext()) ? VISIBLE : GONE);
+        if (which == P_CLIP) clip.refresh();
+        if (which == P_EMOJI) emoji.refresh();
+        if (which == P_TRANSLATE) translate.refresh();
         else translate.release();
-        if (which == 3) ink.refresh();
+        if (which == P_INK) ink.refresh();
         else ink.release();
-        if (which != 0) clip.release();
-        if (which != 4) scan.release();
-        if (which != 1) emoji.release();
-        if (which == 5) settings.refresh();
+        if (which != P_CLIP) clip.release();
+        if (which != P_SCAN) scan.release();
+        if (which != P_EMOJI) emoji.release();
+        if (which == P_SEARCH) search.refresh();
+        else search.release();
+        if (which == P_SETTINGS) settings.refresh();
     }
 }

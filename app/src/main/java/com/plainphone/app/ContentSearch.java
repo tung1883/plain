@@ -1,6 +1,7 @@
 package com.plainphone.app;
 
 import android.app.Activity;
+import android.content.Context;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -26,7 +27,7 @@ final class ContentSearch {
     }
 
     /** Up to {@code maxFiles} files whose text matches, best first. Call from a background thread. */
-    static List<SearchResult> search(Activity host, ParsedQuery query, int maxFiles) {
+    static List<SearchResult> search(Context host, ParsedQuery query, int maxFiles) {
         List<SearchResult> results = new ArrayList<>();
         String fts = FtsQuery.build(query);
         if (fts == null) return results;
@@ -88,7 +89,7 @@ final class ContentSearch {
             ContentHit hit = new ContentHit(file, g.best.locator, snippet, g.count,
                     DeviceSearch.describeLocation(file.getParentFile()));
             results.add(new SearchResult(SearchResult.Kind.CONTENT, file.getName(), sub.toString(), score,
-                    () -> DeviceSearch.open(host, file, false), hit).styled(SearchResult.Style.CONTENT));
+                    () -> { if (host instanceof Activity) DeviceSearch.open((Activity) host, file, false); }, hit).styled(SearchResult.Style.CONTENT));
         }
         android.util.Log.d(TAG, "query " + fts + " -> " + results.size() + " files in "
                 + (System.currentTimeMillis() - t0) + " ms");

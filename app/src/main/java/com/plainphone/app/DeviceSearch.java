@@ -47,6 +47,11 @@ class DeviceSearch {
     static final int REQUEST_FILES = 2001;
     static final int REQUEST_CONTACTS = 2002;
 
+    /** Result actions need an Activity to launch from; the keyboard builds results without one and never runs them. */
+    private static void inActivity(Context host, java.util.function.Consumer<Activity> run) {
+        if (host instanceof Activity) run.accept((Activity) host);
+    }
+
     static void requestFullFileAccess(Activity host) {
         if (Build.VERSION.SDK_INT >= 30) {
             requestAllFilesAccess(host);
@@ -95,12 +100,12 @@ class DeviceSearch {
                 == PackageManager.PERMISSION_GRANTED;
     }
 
-    static List<SearchResult> files(Activity host, TextMatch.Query query) {
+    static List<SearchResult> files(Context host, TextMatch.Query query) {
         return files(host, QueryParser.parse(query.raw));
     }
 
     /** File name matches for a typed search, honouring its extension, date and exclusion operators. */
-    static List<SearchResult> files(Activity host, ParsedQuery parsed) {
+    static List<SearchResult> files(Context host, ParsedQuery parsed) {
         TextMatch.Query query = parsed.core;
         if (query.empty && parsed.exts.isEmpty()) return new ArrayList<>();
         if (FileIndex.canWalk(host)) return indexedFiles(host, parsed);
@@ -112,7 +117,7 @@ class DeviceSearch {
         return out;
     }
 
-    private static List<SearchResult> indexedFiles(Activity host, ParsedQuery parsed) {
+    private static List<SearchResult> indexedFiles(Context host, ParsedQuery parsed) {
         TextMatch.Query query = parsed.core;
         List<SearchResult> results = new ArrayList<>();
         for (FileIndex.Scored hit : FileIndex.search(host, query, MAX_FILES, entry ->
@@ -123,12 +128,12 @@ class DeviceSearch {
             String subtitle = (entry.directory ? "Folder · " : "File · ")
                     + describeLocation(entry.file.getParentFile());
             results.add(new SearchResult(SearchResult.Kind.FILE, entry.name, subtitle,
-                    hit.score, () -> open(host, entry.file, entry.directory), entry));
+                    hit.score, () -> inActivity(host, a -> open(a, entry.file, entry.directory)), entry));
         }
         return results;
     }
 
-    private static List<SearchResult> mediaStoreFiles(Activity host, TextMatch.Query query) {
+    private static List<SearchResult> mediaStoreFiles(Context host, TextMatch.Query query) {
         String needle = query.raw;
         List<SearchResult> results = new ArrayList<>();
         String[] projection = {
@@ -164,7 +169,7 @@ class DeviceSearch {
                     Uri fileUri = ContentUris.withAppendedId(collection, id);
 
                     results.add(new SearchResult(SearchResult.Kind.FILE, name, describe(mime),
-                            TextMatch.score(name, query), () -> openFile(host, fileUri, mime),
+                            TextMatch.score(name, query), () -> inActivity(host, a -> openFile(a, fileUri, mime)),
                             new MediaFile(fileUri, mime)));
                 }
             } catch (Exception ignored) {
@@ -176,7 +181,7 @@ class DeviceSearch {
         return results;
     }
 
-    private static List<String> mediaStoreVolumes(Activity host) {
+    private static List<String> mediaStoreVolumes(Context host) {
         List<String> volumes = new ArrayList<>();
         if (Build.VERSION.SDK_INT >= 29) {
             try {
@@ -189,7 +194,7 @@ class DeviceSearch {
         return volumes;
     }
 
-    static List<SearchResult> contacts(Activity host, TextMatch.Query query) {
+    static List<SearchResult> contacts(Context host, TextMatch.Query query) {
         List<SearchResult> results = new ArrayList<>();
         if (query.empty || !canSearchContacts(host)) return results;
 
@@ -227,7 +232,7 @@ class DeviceSearch {
                 results.add(new SearchResult(SearchResult.Kind.CONTACT, name,
                         hasPhone ? "Contact · has a phone number" : "Contact",
                         TextMatch.score(name, query),
-                        () -> openContact(host, contactUri), new Contact(id, name)));
+                        () -> inActivity(host, a -> openContact(a, contactUri)), new Contact(id, name)));
             }
         } catch (Exception ignored) {
 

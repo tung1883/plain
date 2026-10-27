@@ -39,6 +39,16 @@ final class KeyboardSettingsPanel extends LinearLayout {
         boolean pair = Config.isKbAutoPair(ctx);
         addRow(ctx, "Auto-close", "( [ { \" ' type their pair", pair ? 0 : 1,
                 i -> Config.setKbAutoPair(ctx, i == 0));
+
+        TextView label = PanelKit.caption(ctx, "SEARCH");
+        label.setPadding(PanelKit.dp(ctx, 4), PanelKit.dp(ctx, 12), 0, PanelKit.dp(ctx, 2));
+        list.addView(label);
+        addRow(ctx, "Device", "files, text in documents, contacts", Config.isKbSearchDevice(ctx) ? 0 : 1,
+                i -> Config.setKbSearchScope(ctx, "device", i == 0));
+        addRow(ctx, "Notes", "notes and to-dos", Config.isKbSearchNotes(ctx) ? 0 : 1,
+                i -> Config.setKbSearchScope(ctx, "notes", i == 0));
+        addRow(ctx, "Web", "needs web search on in Plain", Config.isKbSearchWeb(ctx) ? 0 : 1,
+                i -> Config.setKbSearchScope(ctx, "web", i == 0));
     }
 
     /** One setting: label and hint on the left, an On/Off control on the right. */

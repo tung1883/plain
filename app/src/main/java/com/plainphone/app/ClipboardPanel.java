@@ -74,9 +74,15 @@ final class ClipboardPanel extends FrameLayout {
     private EntityExtractor extractor;
     private boolean modelReady;
 
-    ClipboardPanel(Context ctx, KeyboardRoot.Host host) {
+    private final ComposeSession.Starter composer;
+    private final TextView searchBar;
+    private String query = "";     // non-empty: only text clips containing it are shown
+    private boolean secure;        // password field: no search
+
+    ClipboardPanel(Context ctx, KeyboardRoot.Host host, ComposeSession.Starter composer) {
         super(ctx);
         this.host = host;
+        this.composer = composer;
 
         main = new LinearLayout(ctx);
         main.setOrientation(LinearLayout.VERTICAL);
@@ -97,6 +103,19 @@ final class ClipboardPanel extends FrameLayout {
         head.addView(clearBtn);
         main.addView(head, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        searchBar = new TextView(ctx);
+        searchBar.setTextSize(12);
+        searchBar.setTypeface(Fonts.cascadiaMono(ctx));
+        searchBar.setSingleLine(true);
+        searchBar.setGravity(Gravity.CENTER_VERTICAL);
+        searchBar.setPadding(PanelKit.dp(ctx, 12), 0, PanelKit.dp(ctx, 12), 0);
+        searchBar.setBackground(UiKit.rounded(ctx, PanelKit.KEY, PanelKit.LINE, 1f, 9));
+        searchBar.setOnClickListener(v -> composer.start(typing, query));
+        LinearLayout.LayoutParams sLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, PanelKit.dp(ctx, 32));
+        sLp.bottomMargin = PanelKit.dp(ctx, 4);
+        main.addView(searchBar, sLp);
 
         ScrollView scroll = new ScrollView(ctx);
         scroll.setVerticalScrollBarEnabled(false);
@@ -190,7 +209,53 @@ final class ClipboardPanel extends FrameLayout {
         return t;
     }
 
+    /** Typing the search: the list follows each key, behind the keys, and shows when typing ends. */
+    private final ComposeSession typing = new ComposeSession() {
+        @Override
+        public String hint() {
+            return "Search clipboard history";
+        }
+
+        @Override
+        public void onChange(String text) {
+            query = text;
+        }
+
+        @Override
+        public void onDone(String text) {
+            query = text.trim();
+            refresh();
+        }
+    };
+
+    void setSecure(boolean secure) {
+        this.secure = secure;
+    }
+
+    /** The items whose text contains {@code query} (case and accent blind); images drop out. Pure. */
+    static List<ClipboardHistory.Item> filter(List<ClipboardHistory.Item> items, String query) {
+        String needle = TextMatch.fold(query);
+        if (needle.isEmpty()) return items;
+        List<ClipboardHistory.Item> out = new ArrayList<>();
+        for (ClipboardHistory.Item i : items) {
+            if (!i.isImage() && TextMatch.fold(i.text).contains(needle)) out.add(i);
+        }
+        return out;
+    }
+
+    private void drawSearchBar() {
+        searchBar.setVisibility(secure || selecting ? GONE : VISIBLE);
+        if (query.isEmpty()) {
+            searchBar.setText("Search clipboard history");
+            searchBar.setTextColor(PanelKit.DIM);
+        } else {
+            searchBar.setText(query);
+            searchBar.setTextColor(Color.WHITE);
+        }
+    }
+
     void release() {
+        query = "";
         if (extractor != null) {
             extractor.close();
             extractor = null;
@@ -263,8 +328,12 @@ final class ClipboardPanel extends FrameLayout {
     void refresh() {
         ensureExtractor();
         Context ctx = getContext();
-        List<ClipboardHistory.Item> items = ClipboardHistory.load(ctx);
+        List<ClipboardHistory.Item> all = ClipboardHistory.load(ctx);
+        if (secure) query = "";
+        boolean searching = !query.isEmpty();
+        List<ClipboardHistory.Item> items = filter(all, query);
         shown = items;
+        drawSearchBar();
         if (selecting) {   // drop selections of clips that are gone
             java.util.Set<String> have = new java.util.HashSet<>();
             for (ClipboardHistory.Item i : items) have.add(key(i));
@@ -272,6 +341,7 @@ final class ClipboardPanel extends FrameLayout {
         }
         title.setText(selecting
                 ? selected.size() + " SELECTED"
+                : searching ? "CLIPBOARD · " + items.size() + " OF " + all.size()
                 : "LAST " + items.size() + " COPIES · HOLD TO SELECT");
         clearBtn.setText(selecting ? "Done" : "Clear");
         clearBtn.setOnClickListener(v -> {
@@ -334,7 +404,7 @@ final class ClipboardPanel extends FrameLayout {
             card.addView(iv, new LinearLayout.LayoutParams(PanelKit.dp(ctx, 52), h));
         } else {
             TextView t = new TextView(ctx);
-            t.setText(item.text);
+            t.setText(query.isEmpty() ? item.text : Highlight.apply(item.text, TextMatch.prepare(query)));
             t.setTextSize(12);
             t.setTextColor(PanelKit.FG);
             t.setTypeface(Fonts.cascadiaMono(ctx));

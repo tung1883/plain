@@ -1,6 +1,7 @@
 package com.plainphone.app;
 
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
@@ -69,7 +70,7 @@ class WebSearch {
         return view;
     }
 
-    private static void open(Activity host, String browser, Intent target) {
+    static void open(Activity host, String browser, Intent target) {
         TimeBlock blockingBlock = TimeBlockRules.getBlockingBlock(host, browser);
         if (blockingBlock != null) {
             Intent gate = new Intent(host, TimeBlockGateActivity.class);
@@ -127,7 +128,7 @@ class WebSearch {
                 : "https://" + typed;
     }
 
-    static String defaultBrowser(Activity host) {
+    static String defaultBrowser(Context host) {
         Intent probe = new Intent(Intent.ACTION_VIEW, Uri.parse("https://example.com"));
         ResolveInfo resolved = host.getPackageManager()
                 .resolveActivity(probe, PackageManager.MATCH_DEFAULT_ONLY);

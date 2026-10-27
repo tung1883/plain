@@ -23,6 +23,18 @@ public class PlainFileProvider extends ContentProvider {
                 .build();
     }
 
+    /** Folder (under the app cache) of files copied for sharing; served by plain name, see {@link #attachUri}. */
+    static final String ATTACH_DIR = "attach";
+
+    /**
+     * A short Uri, authority/attach/name, for a file copied into the cache. Some apps (Messenger) build
+     * their own temp file from the Uri's path, which breaks on the absolute-path form of {@link #uriFor}.
+     */
+    static Uri attachUri(String authority, String name) {
+        return new Uri.Builder().scheme("content").authority(authority)
+                .appendPath(ATTACH_DIR).appendPath(name).build();
+    }
+
     @Override
     public boolean onCreate() {
         return true;
@@ -33,6 +45,9 @@ public class PlainFileProvider extends ContentProvider {
         if (TextUtils.isEmpty(path)) throw new FileNotFoundException("No path in " + uri);
 
         File file = new File(path);
+        if (path.startsWith("/" + ATTACH_DIR + "/") && getContext() != null) {
+            file = new File(new File(getContext().getCacheDir(), ATTACH_DIR), new File(path).getName());
+        }
         if (!file.isFile()) throw new FileNotFoundException("Not a file: " + path);
         return file;
     }

@@ -14,7 +14,8 @@ final class KeyIcons {
             /** Drawn as Cascadia Mono text by {@link PanelKit.IconView}, not as a path. */
             KEYS = 17,
             RESIZE = 18, SLIDERS = 19, IMAGE = 20, CLOCK = 21, PEOPLE = 22, LEAF = 23, CUP = 24, BOX = 25,
-            HASH = 26, FACE = 27, SCISSORS = 28;
+            HASH = 26, FACE = 27, SCISSORS = 28,
+            SEARCH = 29, PAPERCLIP = 30, FILE = 31, LINES = 32, CHECKLIST = 33, NOTE = 34, GLOBE = 35;
 
     private static final Paint PAINT = new Paint(Paint.ANTI_ALIAS_FLAG);
     private static final Path PATH = new Path();
@@ -297,6 +298,63 @@ final class KeyIcons {
                 c.drawCircle(cx - s * 0.55f, cy + s * 0.6f, s * 0.3f, p);
                 c.drawLine(cx - s * 0.3f, cy - s * 0.4f, cx + s * 0.95f, cy + s * 0.7f, p);
                 c.drawLine(cx - s * 0.3f, cy + s * 0.4f, cx + s * 0.95f, cy - s * 0.7f, p);
+                return;
+            case SEARCH:
+                c.drawCircle(cx - s * 0.08f, cy - s * 0.08f, s * 0.54f, p);
+                c.drawLine(cx + s * 0.34f, cy + s * 0.34f, cx + s * 0.88f, cy + s * 0.88f, p);
+                return;
+            case PAPERCLIP: {
+                // 24x24 mockup path, scaled around the centre
+                float k = s / 12f, ox = cx - 12 * k, oy = cy - 12 * k;
+                path.moveTo(ox + 15.5f * k, oy + 7 * k);
+                path.lineTo(ox + 15.5f * k, oy + 17 * k);
+                RECT.set(ox + 8.5f * k, oy + 13.5f * k, ox + 15.5f * k, oy + 20.5f * k);
+                path.arcTo(RECT, 0f, 180f, false);
+                path.lineTo(ox + 8.5f * k, oy + 6 * k);
+                RECT.set(ox + 8.5f * k, oy + 3.5f * k, ox + 13.5f * k, oy + 8.5f * k);
+                path.arcTo(RECT, 180f, 180f, false);
+                path.lineTo(ox + 13.5f * k, oy + 16 * k);
+                RECT.set(ox + 11.5f * k, oy + 15f * k, ox + 13.5f * k, oy + 17f * k);
+                path.arcTo(RECT, 0f, 180f, false);
+                path.lineTo(ox + 11.5f * k, oy + 8.5f * k);
+                c.drawPath(path, p);
+                return;
+            }
+            case FILE:
+                path.moveTo(cx - s * 0.58f, cy - s * 0.75f);
+                path.lineTo(cx + s * 0.1f, cy - s * 0.75f);
+                path.lineTo(cx + s * 0.58f, cy - s * 0.25f);
+                path.lineTo(cx + s * 0.58f, cy + s * 0.75f);
+                path.lineTo(cx - s * 0.58f, cy + s * 0.75f);
+                path.close();
+                path.moveTo(cx + s * 0.1f, cy - s * 0.75f);
+                path.lineTo(cx + s * 0.1f, cy - s * 0.25f);
+                path.lineTo(cx + s * 0.58f, cy - s * 0.25f);
+                c.drawPath(path, p);
+                return;
+            case LINES:
+                c.drawLine(cx - s * 0.58f, cy - s * 0.5f, cx + s * 0.58f, cy - s * 0.5f, p);
+                c.drawLine(cx - s * 0.58f, cy - s * 0.04f, cx + s * 0.58f, cy - s * 0.04f, p);
+                c.drawLine(cx - s * 0.58f, cy + s * 0.42f, cx + s * 0.16f, cy + s * 0.42f, p);
+                return;
+            case CHECKLIST:
+                RECT.set(cx - s * 0.67f, cy - s * 0.58f, cx + s * 0.67f, cy + s * 0.58f);
+                c.drawRoundRect(RECT, s * 0.1f, s * 0.1f, p);
+                c.drawLine(cx - s * 0.33f, cy - s * 0.17f, cx + s * 0.33f, cy - s * 0.17f, p);
+                c.drawLine(cx - s * 0.33f, cy + s * 0.17f, cx + s * 0.08f, cy + s * 0.17f, p);
+                return;
+            case NOTE:
+                RECT.set(cx - s * 0.5f, cy - s * 0.75f, cx + s * 0.5f, cy + s * 0.75f);
+                c.drawRoundRect(RECT, s * 0.1f, s * 0.1f, p);
+                for (int i = -1; i <= 1; i++) {
+                    c.drawLine(cx - s * 0.25f, cy + i * s * 0.33f, cx + s * 0.25f, cy + i * s * 0.33f, p);
+                }
+                return;
+            case GLOBE:
+                c.drawCircle(cx, cy, s * 0.8f, p);
+                c.drawLine(cx - s * 0.8f, cy, cx + s * 0.8f, cy, p);
+                RECT.set(cx - s * 0.36f, cy - s * 0.8f, cx + s * 0.36f, cy + s * 0.8f);
+                c.drawOval(RECT, p);
                 return;
             case FACE:
                 p.setStyle(Paint.Style.FILL);

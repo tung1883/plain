@@ -44,7 +44,11 @@ public class PlainKeyboardService extends InputMethodService
     public void onStartInputView(EditorInfo info, boolean restarting) {
         super.onStartInputView(info, restarting);
         recordClip();   // a copy made while another keyboard was active
-        if (root != null) root.refresh();
+        if (root != null) {
+            root.setField(InputKinds.isSecure(info.inputType, info.imeOptions),
+                    InputKinds.noLearning(info.imeOptions));
+            root.refresh();
+        }
         if (StickerStore.justAdded && root != null) {
             StickerStore.justAdded = false;
             root.showImages();
@@ -229,18 +233,9 @@ public class PlainKeyboardService extends InputMethodService
 
     @Override
     public void sendSticker(java.io.File image) {
-        InputConnection ic = getCurrentInputConnection();
-        if (ic == null) return;
-        android.net.Uri uri = PlainFileProvider.uriFor("com.plainphone.app.files", image);
-        boolean sent = false;
         String mime = StickerStore.isGifFile(image) ? "image/gif" : "image/png";
-        try {
-            android.view.inputmethod.InputContentInfo info = new android.view.inputmethod.InputContentInfo(
-                    uri, new ClipDescription("image", new String[]{mime}));
-            sent = ic.commitContent(info, InputConnection.INPUT_CONTENT_GRANT_READ_URI_PERMISSION, null);
-        } catch (RuntimeException e) {
-            android.util.Log.w("PlainKb", "commitContent failed", e);
-        }
+        android.net.Uri uri = PlainFileProvider.uriFor("com.plainphone.app.files", image);
+        boolean sent = commitFile(image, mime);
         java.util.List<String> accepted = fieldMimeTypes();
         android.util.Log.i("PlainKb", "sent " + mime + " to " + (getCurrentInputEditorInfo() == null ? "?"
                 : getCurrentInputEditorInfo().packageName) + ": " + sent + "; the field lists " + accepted);
@@ -255,6 +250,80 @@ public class PlainKeyboardService extends InputMethodService
                             : "This field cannot take images. Copied, paste it elsewhere.",
                     android.widget.Toast.LENGTH_SHORT).show();
         }
+    }
+
+    /** Hand a file to the focused field with commitContent; false if the field refused it. */
+    private boolean commitFile(java.io.File file, String mime) {
+        InputConnection ic = getCurrentInputConnection();
+        if (ic == null) return false;
+        try {
+            boolean copied = file.getParentFile() != null
+                    && file.getParentFile().equals(new java.io.File(getCacheDir(), PlainFileProvider.ATTACH_DIR));
+            android.net.Uri uri = copied
+                    ? PlainFileProvider.attachUri("com.plainphone.app.files", file.getName())
+                    : PlainFileProvider.uriFor("com.plainphone.app.files", file);
+            android.view.inputmethod.InputContentInfo info = new android.view.inputmethod.InputContentInfo(
+                    uri, new ClipDescription(file.getName(), new String[]{mime}));
+            return ic.commitContent(info, InputConnection.INPUT_CONTENT_GRANT_READ_URI_PERMISSION, null);
+        } catch (RuntimeException e) {
+            android.util.Log.w("PlainKb", "commitContent failed", e);
+            return false;
+        }
+    }
+
+    @Override
+    public void attachFile(java.io.File file) {
+        String ext = android.webkit.MimeTypeMap.getFileExtensionFromUrl(android.net.Uri.fromFile(file).toString());
+        String mime = ext == null || ext.isEmpty() ? null
+                : android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext.toLowerCase());
+        String type = mime == null ? "application/octet-stream" : mime;
+        // Apps like Messenger accept any commit but treat it as a photo, so only offer what a field
+        // declares, or else images and video; everything else falls back to the name.
+        java.util.List<String> declared = fieldMimeTypes();
+        boolean offer = declared.isEmpty() ? type.startsWith("image/") || type.startsWith("video/")
+                : mimeAccepted(declared, type);
+        java.io.File copy = offer ? shareCopy(file) : null;
+        boolean sent = offer && commitFile(copy != null ? copy : file, type);
+        android.util.Log.i("PlainKb", "attach " + type + " to " + (getCurrentInputEditorInfo() == null ? "?"
+                : getCurrentInputEditorInfo().packageName) + ": " + sent + "; the field lists " + fieldMimeTypes());
+        if (sent) return;
+        if (!offer) {   // not something this field takes: the share sheet reaches apps that accept any file
+            startActivity(KeyboardOpenActivity.forShare(this, file));
+            return;
+        }
+        insertText(file.getName());
+        android.widget.Toast.makeText(this, "This field does not take this file. Inserted the name.",
+                android.widget.Toast.LENGTH_SHORT).show();
+    }
+
+    /** A copy under the app's cache with a plain name: some apps cannot fetch a file from its original path. */
+    private java.io.File shareCopy(java.io.File file) {
+        try {
+            java.io.File dir = new java.io.File(getCacheDir(), PlainFileProvider.ATTACH_DIR);
+            java.io.File[] old = dir.listFiles();
+            if (old != null) for (java.io.File f : old) f.delete();
+            if (!dir.isDirectory() && !dir.mkdirs()) return null;
+            java.io.File out = new java.io.File(dir, file.getName().replaceAll("[^A-Za-z0-9._-]", "_"));
+            try (java.io.InputStream in = new java.io.FileInputStream(file);
+                 java.io.OutputStream os = new java.io.FileOutputStream(out)) {
+                byte[] buf = new byte[65536];
+                for (int n; (n = in.read(buf)) > 0; ) os.write(buf, 0, n);
+            }
+            return out;
+        } catch (java.io.IOException e) {
+            return null;
+        }
+    }
+
+    @Override
+    public void openHit(KbHit hit) {
+        android.content.Intent go = KeyboardOpenActivity.forHit(this, hit);
+        if (go != null) startActivity(go);
+    }
+
+    @Override
+    public void requestAccess(String access) {
+        startActivity(KeyboardOpenActivity.forAccess(this, access));
     }
 
     /** The content types the focused field says it can receive from a keyboard (may be empty). */

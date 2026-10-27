@@ -919,6 +919,36 @@ class Config {
         prefs(context).edit().putBoolean("kb_auto_pair", on).apply();
     }
 
+    // keyboard search scopes; Web also needs the home screen's web search switched on
+    static boolean isKbSearchDevice(Context context) {
+        return prefs(context).getBoolean("kb_search_device", true);
+    }
+
+    static boolean isKbSearchNotes(Context context) {
+        return prefs(context).getBoolean("kb_search_notes", true);
+    }
+
+    static boolean isKbSearchWeb(Context context) {
+        return prefs(context).getBoolean("kb_search_web", true) && isWebSearchEnabled(context);
+    }
+
+    static void setKbSearchScope(Context context, String scope, boolean on) {
+        prefs(context).edit().putBoolean("kb_search_" + scope, on).apply();
+    }
+
+    static boolean isKbSearchAny(Context context) {
+        return isKbSearchDevice(context) || isKbSearchNotes(context) || isKbSearchWeb(context);
+    }
+
+    /** The scope the keyboard's search panel was last on: device, notes or web. */
+    static String getKbSearchScope(Context context) {
+        return prefs(context).getString("kb_search_scope", "device");
+    }
+
+    static void setKbSearchLastScope(Context context, String scope) {
+        prefs(context).edit().putString("kb_search_scope", scope).apply();
+    }
+
     // ---- content search (see ContentIndexer)
 
     /** Stored in the folder set to mean "all of shared storage". */

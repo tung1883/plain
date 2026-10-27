@@ -31,7 +31,7 @@ final class TranslatePanel extends FrameLayout {
     private static final String FROM_KEY = "tr_from", TO_KEY = "tr_to", DETECT_KEY = "tr_detect";
 
     private final KeyboardRoot.Host host;
-    private final java.util.function.Consumer<String> composer;
+    private final ComposeSession.Starter composer;
     private final LinearLayout main;
     private final ScrollView picker;
     private final LinearLayout pickerList;
@@ -45,7 +45,7 @@ final class TranslatePanel extends FrameLayout {
     private Translator translator;
     private int generation;     // drops results of a request that a newer one replaced
 
-    TranslatePanel(Context ctx, KeyboardRoot.Host host, java.util.function.Consumer<String> composer) {
+    TranslatePanel(Context ctx, KeyboardRoot.Host host, ComposeSession.Starter composer) {
         super(ctx);
         this.host = host;
         this.composer = composer;
@@ -84,7 +84,7 @@ final class TranslatePanel extends FrameLayout {
         sourceCaption.setPadding(PanelKit.dp(ctx, 12), PanelKit.dp(ctx, 6), PanelKit.dp(ctx, 12), 0);
         card.addView(sourceCaption);
         source = box(ctx, false);
-        source.setOnClickListener(v -> composer.accept(override != null ? override : host.fieldText()));
+        source.setOnClickListener(v -> composer.start(typing, override != null ? override : host.fieldText()));
         card.addView(source, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
         LinearLayout divider = new LinearLayout(ctx);
         divider.setGravity(Gravity.CENTER_VERTICAL);
@@ -156,6 +156,23 @@ final class TranslatePanel extends FrameLayout {
         t.setMovementMethod(new android.text.method.ScrollingMovementMethod());
         return t;
     }
+
+    /** Typing the text to translate: nothing happens until Done. */
+    private final ComposeSession typing = new ComposeSession() {
+        @Override
+        public String hint() {
+            return "type the text to translate";
+        }
+
+        @Override
+        public void onChange(String text) { }
+
+        @Override
+        public void onDone(String text) {
+            setOverride(text.isEmpty() ? null : text);
+            refresh();
+        }
+    };
 
     // --------------------------------------------------------------- lifecycle
 
