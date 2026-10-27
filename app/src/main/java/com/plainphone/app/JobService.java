@@ -674,6 +674,17 @@ public class JobService extends Service {
             return;
         }
 
+        if (DevHost.find(app, pair.hostId) == null) {      // the PC was removed or paired again: nothing to connect to
+            pair.lastRunAt = System.currentTimeMillis();
+            pair.lastFailed = 1;
+            pair.lastError = "PC not found, pair it again";
+            pair.save(app);
+            DevSyncJobs.finish(app, job);
+            running = false;
+            main.post(this::maybeStart);
+            return;
+        }
+
         DevService.connect(app, pair.hostId);
         long deadline = android.os.SystemClock.uptimeMillis() + DEV_SYNC_CONNECT_TIMEOUT_MS;
         while (!DevService.isConnected(pair.hostId) && android.os.SystemClock.uptimeMillis() < deadline) {

@@ -212,7 +212,12 @@ public class DevService extends Service {
         if (ACTION_CONNECT.equals(action)) {
             DevHost host = DevHost.find(this, id);
             if (host == null) {
-                if (links.isEmpty()) stopSelf();
+                // startForegroundService() was called, so startForeground() must follow even with nothing to do
+                goForeground();
+                if (links.isEmpty()) {
+                    stopForeground(STOP_FOREGROUND_REMOVE);
+                    stopSelf();
+                }
                 return START_NOT_STICKY;
             }
             Link existing = links.get(host.id);
