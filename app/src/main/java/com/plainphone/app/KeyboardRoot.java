@@ -387,6 +387,7 @@ final class KeyboardRoot extends LinearLayout {
     private void updateStrip() {
         boolean show = open < 0 && !composing && typing.wantsStrip();
         stripWrap.setVisibility(show ? VISIBLE : GONE);
+        applyBodyHeight();
         if (show) strip.set(typing.candidates(), typing.tags(), typing.note(), stripHint);
         // auto-capital: arm Shift once the key that caused this change has finished (it clears Shift itself)
         post(this::armShiftNow);
@@ -517,7 +518,11 @@ final class KeyboardRoot extends LinearLayout {
     }
 
     private void applyBodyHeight() {
-        body.getLayoutParams().height = keys.heightPx() + body.getPaddingTop() + body.getPaddingBottom();
+        // under a panel the suggestion row is gone: the panel grows into its room, so the keyboard keeps one height
+        int extra = open >= 0 && !composing && typing.wantsStrip() ? PanelKit.dp(getContext(), CandidateBar.HEIGHT_DP) + 1 : 0;
+        int h = keys.heightPx() + body.getPaddingTop() + body.getPaddingBottom() + extra;
+        if (body.getLayoutParams().height == h) return;
+        body.getLayoutParams().height = h;
         body.requestLayout();
     }
 

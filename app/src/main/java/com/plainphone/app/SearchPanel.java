@@ -18,8 +18,9 @@ import java.util.List;
  */
 final class SearchPanel extends LinearLayout {
 
-    /** How many results the strip above the keys shows while typing. */
-    static final int LIVE_ROWS = 2;
+    /** How many results the strip above the keys shows at once while typing; more scroll. */
+    static final float LIVE_ROWS = 2.5f;   // the half row shows there is more to scroll to
+    private static final int ROW_DP = 46;
 
     private static final KeyboardSearch.Scope[] SCOPES = KeyboardSearch.Scope.values();
     private static final String[] NAMES = {"Device", "Notes", "Web"};
@@ -33,6 +34,7 @@ final class SearchPanel extends LinearLayout {
     private final ScrollView scroll;
     private final TextView off;
     private final LinearLayout strip;
+    private final ScrollView stripScroll;
 
     private KeyboardSearch.Scope scope = KeyboardSearch.Scope.DEVICE;
     private String query = "";
@@ -84,7 +86,13 @@ final class SearchPanel extends LinearLayout {
 
         strip = new LinearLayout(ctx);
         strip.setOrientation(VERTICAL);
-        strip.setPadding(PanelKit.dp(ctx, 6), 0, PanelKit.dp(ctx, 6), PanelKit.dp(ctx, 2));
+        strip.setPadding(PanelKit.dp(ctx, 6), 0, PanelKit.dp(ctx, 6), 0);
+        stripScroll = new ScrollView(ctx);   // always LIVE_ROWS tall, so the keyboard does not change height while typing
+        stripScroll.setVerticalScrollBarEnabled(false);
+        stripScroll.addView(strip, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        stripScroll.setLayoutParams(new android.widget.FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, Math.round(PanelKit.dp(ctx, ROW_DP) * LIVE_ROWS)));
     }
 
     /** The kind of field the keyboard is in; search does nothing in a password field. */
@@ -201,7 +209,7 @@ final class SearchPanel extends LinearLayout {
 
         @Override
         public View strip() {
-            return strip;
+            return stripScroll;
         }
     };
 
@@ -251,12 +259,12 @@ final class SearchPanel extends LinearLayout {
         if (!any) list.addView(note(ctx, emptyText()));
         int shown = 0;
         for (KbHit h : hits) {
-            if (shown >= LIVE_ROWS) break;
             if (!counted(h)) continue;
             strip.addView(row(ctx, h, q));
             shown++;
         }
-        if (shown == 0 && !query.isEmpty()) strip.addView(note(ctx, indexing ? "Indexing files..." : "Nothing found"));
+        if (shown == 0) strip.addView(note(ctx, query.isEmpty() ? emptyText() : indexing ? "Indexing files..." : "Nothing found"));
+        stripScroll.scrollTo(0, 0);
     }
 
     private String emptyText() {
@@ -299,7 +307,7 @@ final class SearchPanel extends LinearLayout {
         LinearLayout row = new LinearLayout(ctx);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(PanelKit.dp(ctx, 6), PanelKit.dp(ctx, 3), PanelKit.dp(ctx, 2), PanelKit.dp(ctx, 3));
-        row.setMinimumHeight(PanelKit.dp(ctx, 44));
+        row.setMinimumHeight(PanelKit.dp(ctx, ROW_DP));
         row.setBackground(UiKit.pressable(ctx, 0x00000000, PanelKit.DOWN, 0x00000000, 0f, 9));
         row.setOnClickListener(v -> tap(h));
 
