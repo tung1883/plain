@@ -86,6 +86,25 @@ public class TypingControllerTest {
     }
 
     @Test
+    public void vietnameseKeepsMarkingTheWordBeforeTheCursor() {
+        Field f = new Field();
+        TypingController c = new TypingController(f);
+        c.configure("vi", "Telex", false, false, null);
+        type(c, "e");
+        type(c, " ");
+        type(c, "i");
+        backspace(c);                 // the i
+        backspace(c);                 // the space: the e is a plain word again
+        type(c, "e");
+        assertEquals("\u00ea", f.text.toString());     // ê, not "ee"
+        type(c, "e");                 // a second e undoes the mark
+        assertEquals("ee", f.text.toString());
+        c.reset();
+        type(c, "t");                 // "eet" is not a word to rebuild: starts from what is there
+        assertEquals("eet", f.text.toString());
+    }
+
+    @Test
     public void passesEverythingThroughWhenThereIsNothingToDo() {
         Field f = new Field();
         TypingController c = new TypingController(f);

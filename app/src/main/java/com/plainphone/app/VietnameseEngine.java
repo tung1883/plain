@@ -36,6 +36,67 @@ final class VietnameseEngine {
         return -1;
     }
 
+    /**
+     * The vowels the w (Telex) and 7 (VNI) keys act on: the last run of vowels in the word, which may
+     * be followed by a final consonant (c ch g gh h m n ng nh p t), so "duongw" reaches back over ng.
+     * Returns {first, last, number of letters after the run}; null when there is no such run. The u of
+     * "qu" and the i of "gi" belong to the consonant, not the run.
+     */
+    private static int[] vowelRun(List<Ch> ch) {
+        int e = ch.size() - 1;
+        int trail = 0;
+        while (e >= 0 && !isV(ch.get(e))) {
+            if (++trail > 3 || "cghmnpt".indexOf(ch.get(e).b) < 0 || ch.get(e).m != 0) return null;
+            e--;
+        }
+        if (e < 0) return null;
+        int s = e;
+        while (s > 0 && isV(ch.get(s - 1))) s--;
+        if (s < e && s > 0 && ch.get(s - 1).b == 'q' && ch.get(s).b == 'u') s++;
+        if (s < e && s > 0 && ch.get(s - 1).b == 'g' && ch.get(s).b == 'i') s++;
+        return new int[]{s, e, trail};
+    }
+
+    /**
+     * Put the horn (ư ơ) or, for Telex w, the breve (ă) on the right vowel of the run: ư-ơ together in
+     * "uo" (ươ), the a of "oa" or of "ua" before a final consonant (ă), a lone o (ơ), the first u (ư:
+     * "ui" gives ưi, "uu" gives ưu, "ua" gives ưa) and a lone a. Pressed again it takes the mark off.
+     * Returns 1 when a mark was put on, 0 when one was taken off, -1 when no vowel can take it.
+     */
+    private static int applyHorn(List<Ch> ch, int s, int e, int trail, boolean breve) {
+        for (int i = s; i < e; i++) {
+            Ch u = ch.get(i), o = ch.get(i + 1);
+            if (u.b == 'u' && o.b == 'o' && u.m != '^' && o.m != '^') {
+                if (u.m == '+' && o.m == '+') {
+                    u.m = 0;
+                    o.m = 0;
+                    return 0;
+                }
+                u.m = '+';
+                o.m = '+';
+                return 1;
+            }
+        }
+        if (breve) {
+            for (int i = s; i < e; i++) {
+                Ch p = ch.get(i), a = ch.get(i + 1);
+                if (a.b == 'a' && a.m != '^' && (p.b == 'o' || (p.b == 'u' && trail > 0))) {
+                    return mark(ch, i + 1, '(') ? 1 : 0;
+                }
+            }
+        }
+        for (int i = s; i <= e; i++) {
+            Ch c = ch.get(i);
+            if (c.b == 'o' && c.m != '^') return mark(ch, i, '+') ? 1 : 0;
+        }
+        for (int i = s; i <= e; i++) {
+            Ch c = ch.get(i);
+            if (c.b == 'u' && c.m != '^' && !(i < e && ch.get(i + 1).b == 'y')) return mark(ch, i, '+') ? 1 : 0;
+        }
+        if (breve && s == e && ch.get(s).b == 'a' && ch.get(s).m != '^') return mark(ch, s, '(') ? 1 : 0;
+        return -1;
+    }
+
     private static char toneKey(char c) {
         switch (c) {
             case '1': return 's';
@@ -78,6 +139,50 @@ final class VietnameseEngine {
         return true;
     }
 
+    /**
+     * The keystrokes that make {@code word}, so a word already in the field can be typed on: "việt" is
+     * "vieetj" in Telex. Null when the word is not one this engine would write that way (old-style
+     * tones such as "hòa", or letters it does not know), in which case it is better left alone.
+     */
+    static String raw(String word, boolean vni) {
+        StringBuilder out = new StringBuilder();
+        char tone = 0;
+        String nfd = Normalizer.normalize(word, Normalizer.Form.NFD);
+        for (int i = 0; i < nfd.length(); i++) {
+            char c = nfd.charAt(i);
+            if (Character.getType(c) == Character.NON_SPACING_MARK) return null;   // a mark with no letter
+            if (c == '\u0111' || c == '\u0110') {          // đ Đ
+                out.append(c == '\u0111' ? 'd' : 'D').append(vni ? "9" : (c == '\u0111' ? "d" : "D"));
+                continue;
+            }
+            if (c > 'z' || !Character.isLetter(c)) return null;
+            out.append(c);
+            while (i + 1 < nfd.length() && Character.getType(nfd.charAt(i + 1)) == Character.NON_SPACING_MARK) {
+                char mk = nfd.charAt(++i);
+                char lc = Character.toLowerCase(c);
+                if (mk == '\u0302' && "aeo".indexOf(lc) >= 0) out.append(vni ? "6" : String.valueOf(c));
+                else if (mk == '\u0306' && lc == 'a') out.append(vni ? "8" : "w");
+                else if (mk == '\u031B' && "ou".indexOf(lc) >= 0) out.append(vni ? "7" : "w");
+                else if (tone == 0 && toneOf(mk, vni) != 0) tone = toneOf(mk, vni);
+                else return null;
+            }
+        }
+        if (tone != 0) out.append(tone);
+        String r = out.toString();
+        return compose(r, vni).equals(Normalizer.normalize(word, Normalizer.Form.NFC)) ? r : null;
+    }
+
+    private static char toneOf(char mark, boolean vni) {
+        switch (mark) {
+            case '\u0301': return vni ? '1' : 's';
+            case '\u0300': return vni ? '2' : 'f';
+            case '\u0309': return vni ? '3' : 'r';
+            case '\u0303': return vni ? '4' : 'x';
+            case '\u0323': return vni ? '5' : 'j';
+            default: return 0;
+        }
+    }
+
     /** The word typed as {@code raw}, in Telex or (when {@code vni}) VNI. */
     static String compose(String raw, boolean vni) {
         List<Ch> ch = new ArrayList<>();
@@ -117,19 +222,8 @@ final class VietnameseEngine {
                     continue;
                 }
                 if (c == '7') {
-                    int n = ch.size();
-                    if (n >= 2 && ch.get(n - 2).b == 'u' && ch.get(n - 1).b == 'o'
-                            && ch.get(n - 2).m == 0 && ch.get(n - 1).m == 0) {
-                        ch.get(n - 2).m = '+';
-                        ch.get(n - 1).m = '+';
-                    } else {
-                        int v = lastV(ch);
-                        if (v >= 0 && "ou".indexOf(ch.get(v).b) >= 0 && ch.get(v).m != '^') {
-                            if (!mark(ch, v, '+')) ch.add(new Ch(c, false));
-                        } else {
-                            ch.add(new Ch(c, false));
-                        }
-                    }
+                    int[] run = vowelRun(ch);
+                    if (run == null || applyHorn(ch, run[0], run[1], run[2], false) != 1) ch.add(new Ch(c, false));
                     continue;
                 }
                 if (c == '8') {
@@ -201,16 +295,11 @@ final class VietnameseEngine {
                     ch.set(n - 1, new Ch('w', l.up));
                     continue;
                 }
-                if (n >= 2 && ch.get(n - 2).b == 'u' && ch.get(n - 1).b == 'o'
-                        && ch.get(n - 2).m == 0 && ch.get(n - 1).m == 0) {
-                    ch.get(n - 2).m = '+';
-                    ch.get(n - 1).m = '+';
-                    continue;
-                }
-                int v = lastV(ch);
-                if (v >= 0 && v == n - 1 && "aou".indexOf(ch.get(v).b) >= 0 && ch.get(v).m != '^') {
-                    char m = ch.get(v).b == 'a' ? '(' : '+';
-                    if (!mark(ch, v, m)) ch.add(new Ch('w', up));
+                int[] run = vowelRun(ch);
+                int done = run == null ? -1 : applyHorn(ch, run[0], run[1], run[2], true);
+                if (done == 1) continue;
+                if (done == 0) {
+                    ch.add(new Ch('w', up));
                     continue;
                 }
                 Ch u = new Ch('u', up);

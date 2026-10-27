@@ -87,7 +87,7 @@ final class DevKeyboardView extends View {
 
     private static final String[][] SYM_ROWS = {{"@", "#", "$", "%", "&", "*", "-", "+", "=", "/"},
             {"(", ")", "[", "]", "{", "}", "<", ">", "\\", "|"}};
-    private static final String SYM_ROW4 = "`~^_'\"?";
+    private static final String SYM_ROW4 = "`~^_';:\"?";
 
     private static final long DOUBLE_TAP_MS = 350, LONG_PRESS_MS = 350, REPEAT_FIRST_MS = 400, REPEAT_MS = 45;
     private static final int SHIFT = 0, CTRL = 1, ALT = 2;
@@ -257,7 +257,7 @@ final class DevKeyboardView extends View {
             }
             List<Key> l = new ArrayList<>();
             for (int i = 0; i < SYM_ROW4.length(); i++) l.add(k(SYM_ROW4.substring(i, i + 1)));
-            l.add(k("Bksp", 3f, null));
+            l.add(k("Bksp", 1f, null));
             r.add(l);
             kinds.add(ROW_KEYS);
         }

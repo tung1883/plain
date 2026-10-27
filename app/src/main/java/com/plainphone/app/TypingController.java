@@ -152,6 +152,7 @@ final class TypingController {
         }
         char c = s.charAt(0);
         if (composes()) {
+            if (raw.length() == 0 && lang.equals("vi") && (Character.isLetter(c) || (vni && c >= '0' && c <= '9'))) adoptWord();
             if (isComposeKey(c)) {
                 raw.append(c);
                 showComposing();
@@ -252,6 +253,24 @@ final class TypingController {
     }
 
     // ----------------------------------------------------------------- internals
+
+    /**
+     * Take the word right before the cursor back into the composition, so the next key can still mark
+     * it: after a backspace over the space that followed "e", typing e again gives ê. A word that cannot
+     * be rebuilt from keystrokes is left alone.
+     */
+    private void adoptWord() {
+        String before = sink.textBefore(32);
+        if (before == null || before.isEmpty() || !Character.isLetter(before.charAt(before.length() - 1))) return;
+        int start = before.length();
+        while (start > 0 && Character.isLetter(before.charAt(start - 1))) start--;
+        if (start == 0 && before.length() >= 32) return;      // the word is longer than what was read
+        String word = before.substring(start);
+        String keys = VietnameseEngine.raw(word, vni);
+        if (keys == null) return;
+        sink.deleteBefore(word.length());
+        raw.append(keys);
+    }
 
     private boolean isComposeKey(char c) {
         boolean letter = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');

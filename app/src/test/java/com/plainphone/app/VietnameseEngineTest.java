@@ -27,6 +27,49 @@ public class VietnameseEngineTest {
     }
 
     @Test
+    public void wReachesBackOverTheVowelsAtTheEnd() {
+        assertEquals("ưi", t("uiw"));       // w marks the u, not a new ư after the i
+        assertEquals("ưu", t("uuw"));
+        assertEquals("lưu", t("luuw"));
+        assertEquals("hơi", t("hoiw"));
+        assertEquals("ưa", t("uaw"));
+        assertEquals("mưa", t("muaw"));
+        assertEquals("ưi", v("ui7"));
+        assertEquals("ưu", v("uu7"));
+        assertEquals("uiw", t("uiww"));     // a second w undoes it
+        assertEquals("uuw", t("uuww"));
+    }
+
+    @Test
+    public void wReachesBackOverAFinalConsonant() {
+        assertEquals("dương", t("duongw"));
+        assertEquals("dương", v("duong7"));
+        assertEquals("nước", t("nuocws"));
+        assertEquals("hương", t("huongw"));
+        assertEquals("người", t("nguoiwf"));
+        assertEquals("rượu", t("ruouwj"));
+        assertEquals("lưng", t("lungw"));
+        assertEquals("trưng", t("trungw"));
+        assertEquals("nhăn", t("nhanw"));
+        assertEquals("xoăn", t("xoanw"));
+        assertEquals("hoặc", t("hoawcj"));
+        assertEquals("quăn", t("quanw"));
+        assertEquals("duongw", t("duongww"));      // a second w undoes it
+        assertEquals("trư", t("trw"));             // no vowel to mark: a new ư
+    }
+
+    @Test
+    public void rawRebuildsTheKeystrokesOfAWord() {
+        assertEquals("vieetj", VietnameseEngine.raw("việt", false));
+        assertEquals("dduwowcj", VietnameseEngine.raw("được", false));
+        assertEquals("Nguyeenx", VietnameseEngine.raw("Nguyễn", false));
+        assertEquals("hello", VietnameseEngine.raw("hello", false));
+        assertEquals("vie6t5", VietnameseEngine.raw("việt", true));
+        assertEquals(null, VietnameseEngine.raw("hòa", false));      // old-style tone: not what this engine writes
+        assertEquals(null, VietnameseEngine.raw("café", false));     // é is not a Telex letter here
+    }
+
+    @Test
     public void tonePlacementFollowsTheRules() {
         assertEquals("hoà", t("hoaf"));
         assertEquals("quá", t("quas"));
