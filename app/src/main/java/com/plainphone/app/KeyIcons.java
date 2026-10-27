@@ -14,8 +14,8 @@ final class KeyIcons {
             /** Drawn as Cascadia Mono text by {@link PanelKit.IconView}, not as a path. */
             KEYS = 17,
             RESIZE = 18, SLIDERS = 19, IMAGE = 20, CLOCK = 21, PEOPLE = 22, LEAF = 23, CUP = 24, BOX = 25,
-            HASH = 26, FACE = 27, SCISSORS = 28,
-            SEARCH = 29, PAPERCLIP = 30, FILE = 31, LINES = 32, CHECKLIST = 33, NOTE = 34, GLOBE = 35;
+            HASH = 26, FACE = 27, SCISSORS = 28, GLOBE = 29,
+            SEARCH = 30, PAPERCLIP = 31, FILE = 32, LINES = 33, CHECKLIST = 34, NOTE = 35;
 
     private static final Paint PAINT = new Paint(Paint.ANTI_ALIAS_FLAG);
     private static final Path PATH = new Path();
@@ -101,6 +101,12 @@ final class KeyIcons {
                 p.setStyle(Paint.Style.FILL);
                 float r = Math.max(1f, s * 0.1f);
                 for (int i = -1; i <= 1; i++) c.drawCircle(cx + i * s * 0.5f, cy - s * 0.2f, r, p);
+                return;
+            case GLOBE:
+                c.drawCircle(cx, cy, s * 0.95f, p);
+                c.drawLine(cx - s * 0.95f, cy, cx + s * 0.95f, cy, p);
+                RECT.set(cx - s * 0.42f, cy - s * 0.95f, cx + s * 0.42f, cy + s * 0.95f);
+                c.drawOval(RECT, p);
                 return;
             case CLIPBOARD:
                 RECT.set(cx - s * 0.7f, cy - s * 0.8f, cx + s * 0.7f, cy + s);
@@ -349,12 +355,6 @@ final class KeyIcons {
                 for (int i = -1; i <= 1; i++) {
                     c.drawLine(cx - s * 0.25f, cy + i * s * 0.33f, cx + s * 0.25f, cy + i * s * 0.33f, p);
                 }
-                return;
-            case GLOBE:
-                c.drawCircle(cx, cy, s * 0.8f, p);
-                c.drawLine(cx - s * 0.8f, cy, cx + s * 0.8f, cy, p);
-                RECT.set(cx - s * 0.36f, cy - s * 0.8f, cx + s * 0.36f, cy + s * 0.8f);
-                c.drawOval(RECT, p);
                 return;
             case FACE:
                 p.setStyle(Paint.Style.FILL);

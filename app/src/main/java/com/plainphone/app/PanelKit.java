@@ -113,6 +113,32 @@ final class PanelKit {
         return row;
     }
 
+    /** An on/off pill switch; white when on. {@code change} gets the new state. */
+    static View toggle(Context c, boolean on, java.util.function.Consumer<Boolean> change) {
+        final boolean[] state = {on};
+        View v = new View(c) {
+            private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+            @Override
+            protected void onDraw(Canvas canvas) {
+                float w = getWidth(), h = getHeight(), r = h / 2f;
+                p.setColor(state[0] ? Color.WHITE : 0xFF2A2A2A);
+                canvas.drawRoundRect(0, 0, w, h, r, r, p);
+                p.setColor(state[0] ? Color.BLACK : 0xFF777777);
+                float cx = state[0] ? w - r : r;
+                canvas.drawCircle(cx, r, r - dp(getContext(), 3), p);
+            }
+        };
+        v.setMinimumWidth(dp(c, 34));
+        v.setOnClickListener(x -> {
+            state[0] = !state[0];
+            x.invalidate();
+            change.accept(state[0]);
+        });
+        v.setLayoutParams(new android.widget.LinearLayout.LayoutParams(dp(c, 34), dp(c, 20)));
+        return v;
+    }
+
     /** A dim, letter-spaced caption. */
     static TextView caption(Context c, String text) {
         TextView t = new TextView(c);

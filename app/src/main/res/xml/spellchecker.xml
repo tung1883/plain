@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<spell-checker xmlns:android="http://schemas.android.com/apk/res/android"
+    android:label="@string/spell_checker_name">
+    <subtype android:label="@string/spell_en" android:subtypeLocale="en" />
+    <subtype android:label="@string/spell_de" android:subtypeLocale="de" />
+    <subtype android:label="@string/spell_fr" android:subtypeLocale="fr" />
+    <subtype android:label="@string/spell_es" android:subtypeLocale="es" />
+    <subtype android:label="@string/spell_ru" android:subtypeLocale="ru" />
+    <subtype android:label="@string/spell_vi" android:subtypeLocale="vi" />
+</spell-checker>

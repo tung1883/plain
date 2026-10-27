@@ -60,6 +60,21 @@ final class KeyboardRoot extends LinearLayout {
 
         /** Ask for a permission search needs: "files" or "contacts". */
         void requestAccess(String access);
+
+        /** Show {@code s} underlined at the cursor as text still being composed; "" removes it. */
+        void setComposing(String s);
+
+        /** Keep the composing text as typed. */
+        void finishComposing();
+
+        /** Up to {@code n} characters before the cursor ("" when there is no field). */
+        String textBefore(int n);
+
+        /** Delete {@code n} characters before the cursor. */
+        void deleteBefore(int n);
+
+        /** The cursor's cap mode (TextUtils.CAP_MODE_*): non-zero when the next letter should be a capital. */
+        int capsMode();
     }
 
     // panels, in the order of the toolbar icons
@@ -89,17 +104,75 @@ final class KeyboardRoot extends LinearLayout {
     private ComposeSession composeSession;
     private int open = P_KEYS;
     private boolean secure;        // password field: search is off
+    private final DevKeyboardView.Listener keyListener;
+    private java.util.List<InputLang> langs = new java.util.ArrayList<>();
+    private int langIdx;
+    private View langSheet;      // the language picker, while open
+    private final TypingController typing;
+    private final CandidateBar strip;
+    private final View stripWrap;
+    private SpellChecker speller;
+    private final java.util.Map<String, NGramModel> models = new java.util.HashMap<>();
+    private String stripHint = "";
 
     KeyboardRoot(Context ctx, DevKeyboardView.Listener keyListener, Host host) {
         super(ctx);
+        this.keyListener = keyListener;
         setOrientation(VERTICAL);
         setBackgroundColor(0xFF0A0A0A);
+
+        typing = new TypingController(new TypingController.Sink() {
+            @Override
+            public void text(String s) {
+                keyListener.text(s);
+            }
+
+            @Override
+            public void key(int keyCode, int meta) {
+                keyListener.key(keyCode, meta);
+            }
+
+            @Override
+            public void enter() {
+                keyListener.enter();
+            }
+
+            @Override
+            public void setComposing(String s) {
+                host.setComposing(s);
+            }
+
+            @Override
+            public void finishComposing() {
+                host.finishComposing();
+            }
+
+            @Override
+            public String textBefore(int n) {
+                return host.textBefore(n);
+            }
+
+            @Override
+            public void deleteBefore(int n) {
+                host.deleteBefore(n);
+            }
+
+            @Override
+            public int capsMode() {
+                return host.capsMode();
+            }
+
+            @Override
+            public void changed() {
+                updateStrip();
+            }
+        });
 
         keys = new DevKeyboardView(ctx, new DevKeyboardView.Listener() {
             @Override
             public void text(String s) {
                 if (!composing) {
-                    keyListener.text(s);
+                    typing.onText(s);
                     return;
                 }
                 compose.append(s);
@@ -109,7 +182,7 @@ final class KeyboardRoot extends LinearLayout {
             @Override
             public void key(int keyCode, int meta) {
                 if (!composing) {
-                    keyListener.key(keyCode, meta);
+                    typing.onKey(keyCode, meta);
                 } else if (keyCode == android.view.KeyEvent.KEYCODE_DEL && compose.length() > 0) {
                     compose.setLength(compose.offsetByCodePoints(compose.length(), -1));
                     drawCompose();
@@ -119,12 +192,22 @@ final class KeyboardRoot extends LinearLayout {
             @Override
             public void enter() {
                 if (composing) finishCompose();
-                else keyListener.enter();
+                else typing.onEnter();
             }
 
             @Override
             public void switchKeyboard() {
                 keyListener.switchKeyboard();
+            }
+
+            @Override
+            public void nextLanguage() {
+                cycleLanguage();
+            }
+
+            @Override
+            public void languagePicker() {
+                showLanguagePicker();
             }
         });
         clip = new ClipboardPanel(ctx, host, this::startCompose);
@@ -190,6 +273,17 @@ final class KeyboardRoot extends LinearLayout {
         stripBox.setVisibility(GONE);
         addView(stripBox, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
+        strip = new CandidateBar(ctx, typing::pick);
+        LinearLayout stripCol = new LinearLayout(ctx);
+        stripCol.setOrientation(VERTICAL);
+        stripCol.addView(strip, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, PanelKit.dp(ctx, CandidateBar.HEIGHT_DP)));
+        View stripLine = new View(ctx);
+        stripLine.setBackgroundColor(PanelKit.LINE);
+        stripCol.addView(stripLine, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1));
+        stripCol.setVisibility(GONE);
+        stripWrap = stripCol;
+        addView(stripWrap, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
         body = new FrameLayout(ctx);
         body.setPadding(PanelKit.dp(ctx, 3), PanelKit.dp(ctx, 3), PanelKit.dp(ctx, 3), PanelKit.dp(ctx, 3));
         body.addView(keys, new FrameLayout.LayoutParams(
@@ -209,7 +303,7 @@ final class KeyboardRoot extends LinearLayout {
     }
 
     /** What kind of field the keyboard is in; call before {@link #refresh()}. */
-    void setField(boolean secure, boolean noLearning) {
+    void setFieldKind(boolean secure, boolean noLearning) {
         this.secure = secure;
         search.setField(secure, noLearning);
         emoji.setSecure(secure);
@@ -219,6 +313,7 @@ final class KeyboardRoot extends LinearLayout {
     /** Re-read settings and go back to the keys; call each time the keyboard is shown. */
     void refresh() {
         keys.refresh();
+        loadLanguages();
         show(P_KEYS);
         applyBodyHeight();
     }
@@ -227,7 +322,202 @@ final class KeyboardRoot extends LinearLayout {
     void applySettings() {
         keys.refresh();
         icons[P_SEARCH].setVisibility(Config.isKbSearchAny(getContext()) ? VISIBLE : GONE);
+        loadLanguages();
         applyBodyHeight();
+    }
+
+    // ------------------------------------------------------------------ languages
+
+    /** Read the enabled languages and the current one, and put the current layout on the keys. */
+    private void loadLanguages() {
+        Context ctx = getContext();
+        langs = InputLang.parse(Config.getKbLangs(ctx));
+        String cur = Config.getKbLangCur(ctx);
+        langIdx = 0;
+        for (int i = 0; i < langs.size(); i++) if (langs.get(i).id.equals(cur)) langIdx = i;
+        applyLanguage();
+    }
+
+    private InputLang currentLang() {
+        return langs.get(langIdx);
+    }
+
+    private String layoutOf(InputLang l) {
+        return l.layoutOrDefault(Config.getKbLayout(getContext(), l.id));
+    }
+
+    private void applyLanguage() {
+        InputLang l = currentLang();
+        String layout = layoutOf(l);
+        keys.setLetterLayout(Layouts.forLang(l.id, layout));
+        keys.setLanguage(l.tag, l.nativeName, langs.size() > 1);
+        keys.setLabelsAndNumRow(l.id.equals("ko"), l.id.equals("vi") && layout.equals("VNI"));
+        configureTyping(l, layout);
+        applyBodyHeight();
+    }
+
+    /** Tell the typing logic the language and which of spell check / auto-correct are on. */
+    private void configureTyping(InputLang l, String layout) {
+        Context ctx = getContext();
+        boolean spell = Config.isKbSpell(ctx) && !l.id.equals("ko");
+        SpellChecker sc = null;
+        NGramModel nm = null;
+        if (spell) {
+            nm = models.get(l.id);
+            if (nm == null) {
+                nm = new NGramModel(new AssetWords(ctx).lines(l.id));
+                models.put(l.id, nm);
+            }
+            if (nm.isEmpty()) nm = null;
+            if (speller == null) speller = new SpellChecker(new AssetWords(ctx));
+            java.util.List<String> mix = new java.util.ArrayList<>();
+            for (String id : Config.getKbMix(ctx).split(",")) {
+                InputLang m = InputLang.byId(id.trim());
+                if (m != null && !m.id.equals("ko") && !m.id.equals(l.id)) mix.add(m.id);
+            }
+            speller.setLanguages(l.id, mix);
+            sc = speller;
+        }
+        typing.configure(l.id, layout, spell, Config.isKbAutocorrect(ctx), sc, nm);
+        stripHint = l.id.equals("vi") ? layout : l.id.equals("ko") ? "한글" : "";
+        updateStrip();
+    }
+
+    /** The strip's contents or visibility changed. */
+    private void updateStrip() {
+        boolean show = open < 0 && !composing && typing.wantsStrip();
+        stripWrap.setVisibility(show ? VISIBLE : GONE);
+        if (show) strip.set(typing.candidates(), typing.tags(), typing.note(), stripHint);
+        // auto-capital: arm Shift once the key that caused this change has finished (it clears Shift itself)
+        post(this::armShiftNow);
+    }
+
+    private void armShiftNow() {
+        if (open < 0 && !composing && typing.wantsShift()) keys.armShift();
+    }
+
+    /** The field the keyboard serves changed: password, URL and similar fields are left untouched. */
+    void setField(boolean compose, boolean suggest) {
+        typing.setField(compose, suggest);
+    }
+
+    /** The editor reports a new cursor / composing region (see InputMethodService.onUpdateSelection). */
+    void selectionChanged(int selStart, int selEnd, int compStart, int compEnd) {
+        if (typing.isComposing()) {
+            boolean ours = compStart >= 0 && selStart == compEnd && selEnd == compEnd;
+            if (!ours) typing.reset();
+        } else {
+            typing.cursorMoved();
+        }
+    }
+
+    /** Globe tap: the next language in the cycle. */
+    private void cycleLanguage() {
+        pickLanguage((langIdx + 1) % langs.size());
+    }
+
+    private void pickLanguage(int idx) {
+        langIdx = idx;
+        Config.setKbLangCur(getContext(), currentLang().id);
+        applyLanguage();
+        flash(currentLang().tag + " / " + layoutOf(currentLang()));
+    }
+
+    /** Show a short message in the toolbar (where the height % shows). */
+    private void flash(String s) {
+        readout.setText(s);
+        removeCallbacks(hideReadout);
+        postDelayed(hideReadout, 900);
+    }
+
+    /** Globe long-press: a sheet over the keys listing the languages, with shortcuts to manage them. */
+    private void showLanguagePicker() {
+        dismissLanguagePicker();
+        Context ctx = getContext();
+        FrameLayout sheet = new FrameLayout(ctx);
+        View scrim = new View(ctx);
+        scrim.setBackgroundColor(0x99000000);
+        scrim.setOnClickListener(v -> dismissLanguagePicker());
+        sheet.addView(scrim, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        LinearLayout list = new LinearLayout(ctx);
+        list.setOrientation(VERTICAL);
+        list.setBackground(UiKit.rounded(ctx, 0xFF101010, 0xFF333333, 1f, 12));
+        list.setPadding(PanelKit.dp(ctx, 6), PanelKit.dp(ctx, 4), PanelKit.dp(ctx, 6), PanelKit.dp(ctx, 4));
+        for (int i = 0; i < langs.size(); i++) {
+            final int idx = i;
+            InputLang l = langs.get(i);
+            LinearLayout row = pickerRow(ctx, l.tag, l.nativeName, layoutOf(l), i == langIdx);
+            row.setOnClickListener(v -> {
+                dismissLanguagePicker();
+                pickLanguage(idx);
+            });
+            list.addView(row);
+        }
+        View line = new View(ctx);
+        line.setBackgroundColor(0xFF242424);
+        LayoutParams llp = new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1);
+        llp.topMargin = PanelKit.dp(ctx, 3);
+        llp.bottomMargin = PanelKit.dp(ctx, 3);
+        list.addView(line, llp);
+        LinearLayout manage = pickerRow(ctx, "", "Languages", "manage", false);
+        manage.setOnClickListener(v -> {
+            dismissLanguagePicker();
+            show(5);
+            settings.openLanguages();
+        });
+        list.addView(manage);
+        LinearLayout other = pickerRow(ctx, "", "Other keyboards", "system", false);
+        other.setOnClickListener(v -> {
+            dismissLanguagePicker();
+            keyListener.switchKeyboard();
+        });
+        list.addView(other);
+
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM);
+        lp.setMargins(PanelKit.dp(ctx, 4), 0, PanelKit.dp(ctx, 4), PanelKit.dp(ctx, 4));
+        sheet.addView(list, lp);
+        langSheet = sheet;
+        body.addView(sheet, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+    }
+
+    private LinearLayout pickerRow(Context ctx, String tag, String name, String right, boolean current) {
+        LinearLayout row = new LinearLayout(ctx);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(PanelKit.dp(ctx, 8), 0, PanelKit.dp(ctx, 8), 0);
+        row.setBackground(current ? UiKit.rounded(ctx, 0xFF1B1B1B, 0xFF1B1B1B, 0f, 8) : null);
+        TextView t = new TextView(ctx);
+        t.setText(tag);
+        t.setTextSize(9);
+        t.setTextColor(0xFF888888);
+        t.setTypeface(Fonts.cascadiaMono(ctx));
+        t.setGravity(Gravity.CENTER);
+        row.addView(t, new LayoutParams(PanelKit.dp(ctx, 28), ViewGroup.LayoutParams.WRAP_CONTENT));
+        TextView n = new TextView(ctx);
+        n.setText(name);
+        n.setTextSize(14);
+        n.setTextColor(current ? Color.WHITE : PanelKit.FG);
+        n.setTypeface(Fonts.cascadiaMono(ctx));
+        n.setPadding(PanelKit.dp(ctx, 8), 0, 0, 0);
+        row.addView(n, new LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        TextView r = new TextView(ctx);
+        r.setText(right);
+        r.setTextSize(10.5f);
+        r.setTextColor(PanelKit.DIM);
+        r.setTypeface(Fonts.cascadiaMono(ctx));
+        row.addView(r);
+        row.setMinimumHeight(PanelKit.dp(ctx, 40));
+        return row;
+    }
+
+    private void dismissLanguagePicker() {
+        if (langSheet != null) {
+            body.removeView(langSheet);
+            langSheet = null;
+        }
     }
 
     private void clearReadout() {
@@ -284,6 +574,7 @@ final class KeyboardRoot extends LinearLayout {
     private void startCompose(ComposeSession session, String initial) {
         composing = true;
         composeSession = session;
+        updateStrip();
         compose.setLength(0);
         if (initial != null) compose.append(initial);
         if (open == P_TRANSLATE) translate.release();
@@ -315,6 +606,7 @@ final class KeyboardRoot extends LinearLayout {
         ComposeSession session = composeSession;
         composing = false;
         composeSession = null;
+        updateStrip();
         composeBar.setVisibility(GONE);
         stripBox.setVisibility(GONE);
         stripBox.removeAllViews();
@@ -355,12 +647,13 @@ final class KeyboardRoot extends LinearLayout {
 
     /** True when Back has a step inside the open panel (end typing, close a viewer, leave select mode ...). */
     boolean canGoBack() {
-        if (composing) return true;
+        if (composing || langSheet != null) return true;
         switch (open) {
             case P_CLIP: return clip.canGoBack();
             case P_EMOJI: return emoji.canGoBack();
             case P_SCAN: return scan.canGoBack();
             case P_SEARCH: return search.canGoBack();
+            case P_SETTINGS: return settings.canGoBack();
             default: return false;
         }
     }
@@ -370,16 +663,23 @@ final class KeyboardRoot extends LinearLayout {
             finishCompose();
             return;
         }
+        if (langSheet != null) {
+            dismissLanguagePicker();
+            return;
+        }
         switch (open) {
             case P_CLIP: clip.goBack(); break;
             case P_EMOJI: emoji.goBack(); break;
             case P_SCAN: scan.goBack(); break;
             case P_SEARCH: search.goBack(); break;
+            case P_SETTINGS: settings.goBack(); break;
             default:
         }
     }
 
     void release() {
+        dismissLanguagePicker();
+        typing.reset();
         translate.release();
         ink.release();
         clip.release();
@@ -389,6 +689,8 @@ final class KeyboardRoot extends LinearLayout {
     }
 
     private void show(int which) {
+        dismissLanguagePicker();
+        typing.reset();
         open = which;
         composing = false;
         composeSession = null;
@@ -414,5 +716,6 @@ final class KeyboardRoot extends LinearLayout {
         if (which == P_SEARCH) search.refresh();
         else search.release();
         if (which == P_SETTINGS) settings.refresh();
+        updateStrip();
     }
 }

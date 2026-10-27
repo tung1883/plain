@@ -2,4 +2,11 @@
 <resources>
     <string name="app_name">Plain</string>
     <string name="accessibility_service_description">Watches for flagged apps, adds a wait before opening them, and closes them after a time budget.</string>
+    <string name="spell_checker_name">Plainphone spell checker</string>
+    <string name="spell_en">English</string>
+    <string name="spell_de">Deutsch</string>
+    <string name="spell_fr">Français</string>
+    <string name="spell_es">Español</string>
+    <string name="spell_ru">Русский</string>
+    <string name="spell_vi">Tiếng Việt</string>
 </resources>
