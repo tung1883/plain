@@ -105,6 +105,34 @@ public class TypingControllerTest {
     }
 
     @Test
+    public void vietnameseBackspaceTakesOffTheLastLetterShown() {
+        Field f = new Field();
+        TypingController c = new TypingController(f);
+        c.configure("vi", "Telex", false, false, null);
+        type(c, "eee");               // the third e undid the ^: "ee"
+        assertEquals("ee", f.text.toString());
+        backspace(c);
+        assertEquals("e", f.text.toString());      // not ê
+        backspace(c);
+        assertEquals("", f.text.toString());
+
+        type(c, "vieetj");
+        assertEquals("vi\u1ec7t", f.text.toString());
+        backspace(c);
+        assertEquals("vi\u1ec7", f.text.toString());   // the t goes, the ệ keeps its tone
+        backspace(c);
+        assertEquals("vi", f.text.toString());
+        backspace(c);
+        backspace(c);
+        assertEquals("", f.text.toString());
+
+        type(c, "duongw");
+        assertEquals("d\u01b0\u01a1ng", f.text.toString());
+        backspace(c);
+        assertEquals("d\u01b0\u01a1n", f.text.toString());
+    }
+
+    @Test
     public void passesEverythingThroughWhenThereIsNothingToDo() {
         Field f = new Field();
         TypingController c = new TypingController(f);

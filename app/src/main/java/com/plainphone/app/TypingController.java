@@ -194,7 +194,9 @@ final class TypingController {
 
     private void backspace() {
         if (raw.length() > 0) {
-            raw.setLength(raw.length() - 1);
+            String left = withoutLastLetter(raw.toString());
+            raw.setLength(0);
+            raw.append(left);
             if (raw.length() == 0) {
                 sink.setComposing("");
                 refresh();
@@ -217,6 +219,27 @@ final class TypingController {
         undo = null;
         sink.key(KEY_DEL, 0);
         refresh();
+    }
+
+    /**
+     * The keystrokes that remain after backspace takes the last letter off what is shown. Dropping the
+     * last key is wrong when that key was a mark or a tone: "eee" shows "ee" (the third e undid the ^),
+     * and one backspace should leave "e", not bring back "ê". So look for the keystrokes that show the
+     * word without its last letter: first with one key left out (the letter's own key, so a tone typed
+     * after it stays), then by cutting keys off the end. Falls back to dropping the last key.
+     */
+    private String withoutLastLetter(String keys) {
+        if (lang.equals("ko")) return keys.substring(0, keys.length() - 1);
+        String shown = VietnameseEngine.compose(keys, vni);
+        String target = shown.isEmpty() ? "" : shown.substring(0, shown.offsetByCodePoints(shown.length(), -1));
+        for (int i = keys.length() - 1; i >= 0; i--) {
+            String without = keys.substring(0, i) + keys.substring(i + 1);
+            if (VietnameseEngine.compose(without, vni).equals(target)) return without;
+        }
+        for (int n = keys.length() - 1; n >= 0; n--) {
+            if (VietnameseEngine.compose(keys.substring(0, n), vni).equals(target)) return keys.substring(0, n);
+        }
+        return keys.substring(0, keys.length() - 1);
     }
 
     /**
