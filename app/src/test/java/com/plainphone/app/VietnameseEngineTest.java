@@ -65,15 +65,50 @@ public class VietnameseEngineTest {
         assertEquals("Nguyeenx", VietnameseEngine.raw("Nguyễn", false));
         assertEquals("hello", VietnameseEngine.raw("hello", false));
         assertEquals("vie6t5", VietnameseEngine.raw("việt", true));
-        assertEquals(null, VietnameseEngine.raw("hòa", false));      // old-style tone: not what this engine writes
+        assertEquals("hoaf", VietnameseEngine.raw("hòa", false));
+        assertEquals(null, VietnameseEngine.raw("hoà", false));      // reform-style tone: not what this engine writes
         assertEquals(null, VietnameseEngine.raw("café", false));     // é is not a Telex letter here
     }
 
     @Test
     public void tonePlacementFollowsTheRules() {
-        assertEquals("hoà", t("hoaf"));
         assertEquals("quá", t("quas"));
         assertEquals("già", t("giaf"));
+    }
+
+    @Test
+    public void oaOeUyTakeTheToneOnTheFirstVowelLikeProductionKeyboards() {
+        // old style (hòa, khỏe, thủy): the spelling everyone actually types and that Samsung
+        // Keyboard, Gboard and Laban Key all default to -- not the reform spelling (hoà, khoẻ, thuỷ).
+        assertEquals("hòa", t("hoaf"));
+        assertEquals("khỏe", t("khoer"));
+        assertEquals("thủy", t("thuyr"));
+        assertEquals("xòe", t("xoef"));
+        assertEquals("Thúy", t("Thuys"));
+        // with a final consonant the tone still goes on the last vowel of the pair either way
+        assertEquals("hoàn", t("hoanf"));
+        assertEquals("ngoại", t("ngoaij"));
+    }
+
+    @Test
+    public void doubleKeyEscapeBreaksTheDoubleLetterMark() {
+        // "ff" escapes to a literal "f" (same double-tap convention as "ww" -> "w" below), and that
+        // literal "f" sits between the two "e"s: the second one must not reach back across it and
+        // turn the first, now-distant "e" into "ê".
+        assertEquals("refe", t("reffe"));
+        assertEquals("ref", t("reff"));
+    }
+
+    @Test
+    public void foreignWordsStopPickingUpDiacriticsOnceTheyDontParseAsVietnamese() {
+        // Not just "reff": any word whose consonants no longer fit a Vietnamese onset/coda shape is
+        // left alone from that point on, the way production Vietnamese keyboards fall back to the
+        // raw keys for a word that fails their own spelling check.
+        assertEquals("chill", t("chill"));         // "ll" is not a Vietnamese final
+        assertEquals("stress", t("stress"));       // "str" is not a Vietnamese onset
+        assertEquals("reflect", t("reflect"));     // "fl" breaks it right after the absorbed tone key
+        assertEquals("facebook", t("facebook"));
+        assertEquals("selfie", t("selfie"));
     }
 
     @Test

@@ -8,7 +8,8 @@ import java.util.Locale;
 /**
  * Unikey-style Vietnamese typing (Telex and VNI). The whole word is replayed from its raw
  * keystrokes every time, so tone and mark keys work anywhere in the word, pressing one twice undoes
- * it, and the tone lands on the right vowel (modern style: hoà, not hòa).
+ * it, and the tone lands on the right vowel (old style, as every production IME defaults to: hòa,
+ * khỏe, thủy — not the reform spelling hoà, khoẻ, thuỷ).
  */
 final class VietnameseEngine {
 
@@ -34,6 +35,41 @@ final class VietnameseEngine {
     private static int lastV(List<Ch> ch) {
         for (int i = ch.size() - 1; i >= 0; i--) if (isV(ch.get(i))) return i;
         return -1;
+    }
+
+    // Every consonant cluster Vietnamese allows to open a syllable, and to close one. Telex's s/f/r/x/j
+    // and w/d/a/e/o are applied as soon as there is a vowel for them to touch, with no care for whether
+    // the result is Vietnamese-*shaped*; that is fine for Vietnamese text, but it means a foreign word
+    // (English, say) that happens to pass through a vowel still picks up tones and marks it was never
+    // going to need. f, w, z and j are left out on purpose: they never appear in real Vietnamese text
+    // (this matches Vietnamese IMEs generally, which likewise default to rejecting them).
+    private static final String[] ONSETS = {
+            "ngh", "ng", "nh", "tr", "th", "ph", "kh", "gh", "ch",
+            "b", "c", "d", "g", "h", "k", "l", "m", "n", "p", "q", "r", "s", "t", "v", "x",
+    };
+    private static final String[] CODAS = {"ch", "ng", "nh", "c", "m", "n", "p", "t"};
+
+    private static boolean prefixOfOne(String[] options, String s) {
+        for (String o : options) if (o.startsWith(s)) return true;
+        return false;
+    }
+
+    /**
+     * Whether {@code ch}'s base letters, read as a plain onset-vowels-coda skeleton, already rule out
+     * every Vietnamese syllable shape -- typically because this is a foreign word. Once this is true
+     * for the word so far, the caller stops composing it any further Vietnamese and just lets the rest
+     * of it through as typed, the same way production Vietnamese keyboards fall back to the raw keys
+     * for a word that doesn't parse as Vietnamese.
+     */
+    private static boolean invalidShape(List<Ch> ch) {
+        int n = ch.size(), i = 0;
+        StringBuilder onset = new StringBuilder();
+        while (i < n && !isV(ch.get(i))) onset.append(ch.get(i++).b);
+        if (onset.length() > 0 && !prefixOfOne(ONSETS, onset.toString())) return true;
+        while (i < n && isV(ch.get(i))) i++;
+        StringBuilder coda = new StringBuilder();
+        while (i < n) coda.append(ch.get(i++).b);
+        return coda.length() > 0 && !prefixOfOne(CODAS, coda.toString());
     }
 
     /**
@@ -187,6 +223,8 @@ final class VietnameseEngine {
     static String compose(String raw, boolean vni) {
         List<Ch> ch = new ArrayList<>();
         char tone = 0;
+        int tonePos = 0;   // where tone's own key sits in ch if it turns out to not be a tone after all
+        boolean foreign = false;
         for (int p = 0; p < raw.length(); p++) {
             char c = raw.charAt(p);
             char lc = Character.toLowerCase(c);
@@ -254,12 +292,26 @@ final class VietnameseEngine {
             }
 
             // ---- Telex
+            if (!foreign && invalidShape(ch)) {
+                foreign = true;
+                // a tone key pending from before the word turned out not to be Vietnamese was never
+                // a tone after all: put its own key back where it was typed, not at the end.
+                if (tone != 0) {
+                    ch.add(tonePos, new Ch(tone, false));
+                    tone = 0;
+                }
+            }
+            if (foreign) {
+                ch.add(new Ch(lc, up));
+                continue;
+            }
             if ("sfrxj".indexOf(lc) >= 0 && hasV) {
                 if (tone == lc) {
                     tone = 0;
                     ch.add(new Ch(lc, up));
                 } else {
                     tone = lc;
+                    tonePos = ch.size();
                 }
                 continue;
             }
@@ -280,7 +332,11 @@ final class VietnameseEngine {
                 continue;
             }
             if (lc == 'a' || lc == 'e' || lc == 'o') {
-                int v = lastV(ch);
+                // The circumflex only forms when this key is pressed right after itself with
+                // nothing in between -- not "the last vowel typed so far" (lastV), which would
+                // reach back across other letters: a foreign word like "reff" (escapes to the
+                // literal "f") followed by "e" must not turn the earlier "e" into "ê".
+                int v = ch.size() - 1;
                 if (v >= 0 && ch.get(v).b == lc && (ch.get(v).m == 0 || ch.get(v).m == '^')) {
                     if (!mark(ch, v, '^')) ch.add(new Ch(lc, up));
                 } else {
@@ -327,13 +383,7 @@ final class VietnameseEngine {
                 tp = vs.get(0);
             } else {
                 boolean fin = ch.size() - 1 > vs.get(vs.size() - 1);
-                if (vs.size() == 2) {
-                    String pr = "" + ch.get(vs.get(0)).b + ch.get(vs.get(1)).b;
-                    boolean modern = pr.equals("oa") || pr.equals("oe") || pr.equals("uy");
-                    tp = (!fin && !modern) ? vs.get(0) : vs.get(1);
-                } else {
-                    tp = vs.get(1);
-                }
+                tp = (vs.size() == 2 && !fin) ? vs.get(0) : vs.get(1);
             }
         }
 
