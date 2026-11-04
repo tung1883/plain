@@ -96,6 +96,7 @@
         <activity
             android:name=".FlaggedAppChangeActivity"
             android:exported="false"
+            android:screenOrientation="portrait"
             android:theme="@style/Theme.PlainPhone" />
 
         <activity
@@ -106,6 +107,7 @@
         <activity
             android:name=".HiddenAppChangeActivity"
             android:exported="false"
+            android:screenOrientation="portrait"
             android:theme="@style/Theme.PlainPhone" />
 
         <activity
@@ -149,18 +151,26 @@
             android:theme="@style/Theme.PlainPhone" />
 
         <activity
+            android:name=".PinPreviewActivity"
+            android:exported="true"
+            android:theme="@style/Theme.PlainPhone" />
+
+        <activity
             android:name=".PinSetupActivity"
             android:exported="false"
+            android:screenOrientation="portrait"
             android:theme="@style/Theme.PlainPhone" />
 
         <activity
             android:name=".LockedAppChangeActivity"
             android:exported="false"
+            android:screenOrientation="portrait"
             android:theme="@style/Theme.PlainPhone" />
 
         <activity
             android:name=".PinGateActivity"
             android:exported="false"
+            android:screenOrientation="portrait"
             android:theme="@style/Theme.PlainPhone" />
 
         <activity
@@ -171,6 +181,7 @@
         <activity
             android:name=".SettingsPinGateActivity"
             android:exported="false"
+            android:screenOrientation="portrait"
             android:theme="@style/Theme.PlainPhone" />
 
         <activity
@@ -257,11 +268,13 @@
         <activity
             android:name=".LockPinGateActivity"
             android:exported="false"
+            android:screenOrientation="portrait"
             android:theme="@style/Theme.PlainPhone" />
 
         <activity
             android:name=".LockChangeActivity"
             android:exported="false"
+            android:screenOrientation="portrait"
             android:theme="@style/Theme.PlainPhone" />
 
         <activity
@@ -341,11 +354,13 @@
         <activity
             android:name=".TimeBlockDeleteActivity"
             android:exported="false"
+            android:screenOrientation="portrait"
             android:theme="@style/Theme.PlainPhone" />
 
         <activity
             android:name=".TimeBlockDisableActivity"
             android:exported="false"
+            android:screenOrientation="portrait"
             android:theme="@style/Theme.PlainPhone" />
 
         <activity
@@ -361,11 +376,13 @@
         <activity
             android:name=".TimeBlockOverridePinActivity"
             android:exported="false"
+            android:screenOrientation="portrait"
             android:theme="@style/Theme.PlainPhone" />
 
         <activity
             android:name=".TimeBlockOverrideActivity"
             android:exported="false"
+            android:screenOrientation="portrait"
             android:theme="@style/Theme.PlainPhone" />
 
         <activity
