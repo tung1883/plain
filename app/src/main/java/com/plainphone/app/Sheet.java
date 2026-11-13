@@ -24,7 +24,7 @@ import java.util.WeakHashMap;
 import java.util.function.IntConsumer;
 
 /**
- * A bottom sheet: a panel that slides up over a dimmed screen, for pick-lists and confirmations. It is
+ * A centered popup: a panel that fades in over a dimmed screen, for pick-lists and confirmations. It is
  * an overlay inside the Activity's content, not a dialog window; tapping outside closes it, and so does
  * Back when the Activity calls {@link #dismissTop}. One sheet per Activity: opening another replaces it.
  */
@@ -56,9 +56,10 @@ final class Sheet {
 
         panel = new LinearLayout(activity);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setBackground(panelBackground(activity));
+        panel.setBackground(UiKit.dialogBackground(activity));
+        UiKit.clipRounded(activity, panel, UiKit.R_MD);            // rows must not paint over the rounded border
         panel.setClickable(true);                                  // taps on the panel must not reach the scrim
-        panel.setPadding(0, UiKit.dp(activity, 8), 0, UiKit.dp(activity, 24));
+        panel.setPadding(2, UiKit.dp(activity, 20), 2, UiKit.dp(activity, 16));
 
         View grab = new View(activity);
         GradientDrawable grabDrawable = new GradientDrawable();
@@ -68,7 +69,7 @@ final class Sheet {
         LinearLayout.LayoutParams gp = new LinearLayout.LayoutParams(UiKit.dp(activity, 36), UiKit.dp(activity, 4));
         gp.gravity = Gravity.CENTER_HORIZONTAL;
         gp.bottomMargin = UiKit.dp(activity, 12);
-        panel.addView(grab, gp);
+        // centered popup: no grab handle
 
         if (title != null && !title.isEmpty()) {
             TextView t = text(title, 18, Color.WHITE);
@@ -94,7 +95,8 @@ final class Sheet {
         panel.addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM);
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER);
+        lp.leftMargin = lp.rightMargin = UiKit.dp(activity, 24);
         overlay.addView(panel, lp);
     }
 
@@ -108,9 +110,10 @@ final class Sheet {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         sheet.panel.setAlpha(0f);
         sheet.panel.post(() -> {
-            sheet.panel.setTranslationY(sheet.panel.getHeight());
-            sheet.panel.setAlpha(1f);
-            sheet.panel.animate().translationY(0).setDuration(180).start();
+            sheet.panel.setScaleX(0.92f);
+            sheet.panel.setScaleY(0.92f);
+            sheet.panel.setAlpha(0f);
+            sheet.panel.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(160).start();
         });
         return sheet;
     }
@@ -141,7 +144,7 @@ final class Sheet {
     void dismiss() {
         if (closing) return;
         closing = true;
-        panel.animate().translationY(panel.getHeight()).setDuration(140).withEndAction(this::remove).start();
+        panel.animate().alpha(0f).scaleX(0.92f).scaleY(0.92f).setDuration(120).withEndAction(this::remove).start();
     }
 
     private void remove() {
@@ -171,7 +174,7 @@ final class Sheet {
         box.setColor(PANEL);
         box.setStroke(1, EDGE);
         float r = UiKit.dp(c, UiKit.R_LG);
-        box.setCornerRadii(new float[]{r, r, r, r, 0, 0, 0, 0});
+        box.setCornerRadius(r);
         return box;
     }
 
