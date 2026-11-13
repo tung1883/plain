@@ -213,7 +213,7 @@ final class KeyboardRoot extends LinearLayout {
         clip = new ClipboardPanel(ctx, host, this::startCompose);
         emoji = new EmojiPanel(ctx, host, this::startCompose);
         translate = new TranslatePanel(ctx, host, this::startCompose);
-        search = new SearchPanel(ctx, host, this::startCompose);
+        search = new SearchPanel(ctx, host, this::startCompose, this::finishCompose);
         ink = new InkPanel(ctx, host);
         scan = new ScanPanel(ctx, host);
         settings = new KeyboardSettingsPanel(ctx, host);

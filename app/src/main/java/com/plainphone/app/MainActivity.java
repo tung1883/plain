@@ -188,6 +188,8 @@ public class MainActivity extends Activity implements SelectionHost {
     private Runnable afterVaultUnlock;
     private FrameLayout artFrame;
     private boolean showingHomeReminder = false;
+    /** Set by the keyboard's search to open a plugin (a {@link HomeMode} name) once Plain is up. */
+    static final String EXTRA_OPEN_MODE = "open_mode";
     private boolean homeUiBuilt = false;
     // Home-list settings groups — collapsed on every entry, never persisted.
     private boolean notesSettingsOpen, todoSettingsOpen, vaultSettingsOpen, recorderSettingsOpen;
@@ -221,6 +223,19 @@ public class MainActivity extends Activity implements SelectionHost {
         }
         if (selectMode != null) exitSelection();
         clearSearchAndFocus();
+        openModeFromIntent(intent);
+    }
+
+    /** Jump to the plugin tab the keyboard asked for. The extra is consumed so a later Home press does not repeat it. */
+    private void openModeFromIntent(Intent intent) {
+        String name = intent == null ? null : intent.getStringExtra(EXTRA_OPEN_MODE);
+        if (name == null) return;
+        intent.removeExtra(EXTRA_OPEN_MODE);
+        try {
+            HomeMode target = HomeMode.valueOf(name);
+            if (modeOrder.contains(target)) switchMode(target);
+        } catch (IllegalArgumentException ignored) {
+        }
     }
 
     @Override
@@ -778,6 +793,15 @@ public class MainActivity extends Activity implements SelectionHost {
         collapsedSections = Config.getCollapsedSections(this);
         homeMode = Config.getHomeMode(this);
         modeOrder = Config.getHomeModeOrder(this);
+        String wanted = getIntent() == null ? null : getIntent().getStringExtra(EXTRA_OPEN_MODE);
+        if (wanted != null) {                    // a cold start from the keyboard: land on that plugin
+            getIntent().removeExtra(EXTRA_OPEN_MODE);
+            try {
+                HomeMode target = HomeMode.valueOf(wanted);
+                if (modeOrder.contains(target)) homeMode = target;
+            } catch (IllegalArgumentException ignored) {
+            }
+        }
         homeUiBuilt = true;
         builtWithFont = Config.getFontChoice(this);
 

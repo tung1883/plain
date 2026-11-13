@@ -942,7 +942,7 @@ class Config {
 
     /** The scope the keyboard's search panel was last on: device, notes or web. */
     static String getKbSearchScope(Context context) {
-        return prefs(context).getString("kb_search_scope", "device");
+        return prefs(context).getString("kb_search_scope", "all");
     }
 
     static void setKbSearchLastScope(Context context, String scope) {

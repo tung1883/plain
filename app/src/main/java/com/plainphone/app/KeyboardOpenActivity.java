@@ -30,6 +30,7 @@ public class KeyboardOpenActivity extends Activity {
             case RECENT:
                 return hit.open == null ? null : go.putExtra(EXTRA_INTENT, hit.open).putExtra(EXTRA_WEB, true);
             case LOCKED:
+            case PLUGIN:
             case NOTE:
             case TODO:
                 return hit.open == null ? null : new Intent(hit.open).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);

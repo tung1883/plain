@@ -21,7 +21,7 @@ import java.util.concurrent.Executors;
  */
 final class KeyboardSearch {
 
-    enum Scope { DEVICE, NOTES, WEB }
+    enum Scope { ALL, DEVICE, NOTES, WEB }
 
     interface Callback {
         void done(List<KbHit> hits, boolean indexing);
@@ -73,10 +73,70 @@ final class KeyboardSearch {
 
     private static List<KbHit> run(Context ctx, Scope scope, String q, boolean[] indexing) {
         switch (scope) {
+            case ALL: return all(ctx, q, indexing);
             case DEVICE: return device(ctx, q, indexing);
             case NOTES: return notes(ctx, q);
             default: return web(ctx, q);
         }
+    }
+
+    /** Everything the keyboard can search without leaving the field: notes and to-dos first (few, and the
+     *  most likely to be wanted), then files, text inside documents and contacts. Web has its own scope. */
+    private static List<KbHit> all(Context ctx, String q, boolean[] indexing) {
+        List<KbHit> out = new ArrayList<>(plugins(ctx, q));
+        if (Config.isKbSearchNotes(ctx)) out.addAll(notes(ctx, q));
+        if (Config.isKbSearchDevice(ctx)) out.addAll(device(ctx, q, indexing));
+        return out;
+    }
+
+    // ----------------------------------------------------------------- plugins
+
+    /** The plugins that open from the keyboard, with the section lock (if any) that guards each. */
+    private static final HomeMode[] PLUGINS = {HomeMode.NOTES, HomeMode.TODOS, HomeMode.RECORDER,
+            HomeMode.VAULT, HomeMode.DEV, HomeMode.STATS};
+
+    private static Lock lockOf(HomeMode mode) {
+        switch (mode) {
+            case NOTES: return Lock.NOTES;
+            case TODOS: return Lock.TODOS;
+            case RECORDER: return Lock.RECORDER;
+            case DEV: return Lock.DEV;
+            default: return null;        // the vault asks for its passphrase inside Plain
+        }
+    }
+
+    /** Extra words a plugin also answers to, besides its label. */
+    private static String aliases(HomeMode mode) {
+        switch (mode) {
+            case TODOS: return "todo todos tasks checklist";
+            case RECORDER: return "recorder recording record audio voice";
+            case VAULT: return "vault safe private secret";
+            case DEV: return "dev developer shell terminal ssh";
+            case STATS: return "stats statistics usage screen time";
+            default: return "";
+        }
+    }
+
+    private static List<KbHit> plugins(Context ctx, String raw) {
+        List<KbHit> out = new ArrayList<>();
+        List<HomeMode> shown = Config.getHomeModeOrder(ctx);          // hidden plugins stay hidden
+        String q = TextMatch.fold(raw.trim());
+        if (q.isEmpty()) return out;
+        for (HomeMode mode : PLUGINS) {
+            if (!shown.contains(mode)) continue;
+            String hay = TextMatch.fold(mode.label + " " + aliases(mode));
+            boolean hit = false;
+            for (String word : hay.split(" ")) if (!word.isEmpty() && word.startsWith(q)) hit = true;
+            if (!hit) continue;
+            Lock lock = lockOf(mode);
+            boolean closed = lock != null && lock.gateActive(ctx);
+            Intent open = new Intent(ctx, MainActivity.class).putExtra(MainActivity.EXTRA_OPEN_MODE, mode.name());
+            out.add(KbHit.plugin(mode.label,
+                    closed ? (Config.isPinSet(ctx, lock.area) ? "Locked. Tap to unlock with PIN" : "Locked. Opens in Plain")
+                            : mode == HomeMode.VAULT ? "Opens in Plain, asks for the passphrase" : "Plugin. Tap to open",
+                    closed && Config.isPinSet(ctx, lock.area) ? lock : null, open));
+        }
+        return out;
     }
 
     // ------------------------------------------------------------------ device
@@ -128,7 +188,7 @@ final class KeyboardSearch {
         Intent home = new Intent(ctx, MainActivity.class);
         TextMatch.Query q = TextMatch.prepare(raw);
         if (Lock.NOTES.gateActive(ctx)) {
-            out.add(KbHit.locked("Notes are locked", home));
+            out.add(KbHit.locked("Notes are locked", Config.isPinSet(ctx, Lock.NOTES.area) ? Lock.NOTES : null, home));
         } else {
             List<Note> found = new ArrayList<>();
             List<Integer> scores = new ArrayList<>();
@@ -148,7 +208,7 @@ final class KeyboardSearch {
             }
         }
         if (Lock.TODOS.gateActive(ctx)) {
-            out.add(KbHit.locked("To-do is locked", home));
+            out.add(KbHit.locked("To-do is locked", Config.isPinSet(ctx, Lock.TODOS.area) ? Lock.TODOS : null, home));
         } else {
             boolean showDone = Config.isTodosShowCompleted(ctx);
             int added = 0;

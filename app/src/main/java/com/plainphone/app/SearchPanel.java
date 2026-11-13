@@ -23,10 +23,18 @@ final class SearchPanel extends LinearLayout {
     private static final int ROW_DP = 46;
 
     private static final KeyboardSearch.Scope[] SCOPES = KeyboardSearch.Scope.values();
-    private static final String[] NAMES = {"Device", "Notes", "Web"};
+    private static final String[] NAMES = {"All", "Device", "Notes", "Web"};
 
     private final KeyboardRoot.Host host;
     private final ComposeSession.Starter composer;
+    private final Runnable endCompose;
+    private final LinearLayout pinBox;
+    private final TextView pinTitle, pinDots;
+    private Lock pinFor;
+    private Runnable pinThen;
+    private final StringBuilder pin = new StringBuilder();
+    private int pinFails;
+    private long pinBlockedUntil;
     private final KeyboardSearch engine = new KeyboardSearch();
     private final TextView queryBar;
     private final LinearLayout chips;
@@ -36,16 +44,17 @@ final class SearchPanel extends LinearLayout {
     private final LinearLayout strip;
     private final ScrollView stripScroll;
 
-    private KeyboardSearch.Scope scope = KeyboardSearch.Scope.DEVICE;
+    private KeyboardSearch.Scope scope = KeyboardSearch.Scope.ALL;
     private String query = "";
     private List<KbHit> hits = new ArrayList<>();
     private boolean indexing, secure, noLearning;
     private final Runnable rerun = this::run;
 
-    SearchPanel(Context ctx, KeyboardRoot.Host host, ComposeSession.Starter composer) {
+    SearchPanel(Context ctx, KeyboardRoot.Host host, ComposeSession.Starter composer, Runnable endCompose) {
         super(ctx);
         this.host = host;
         this.composer = composer;
+        this.endCompose = endCompose;
         setOrientation(VERTICAL);
 
         queryBar = new TextView(ctx);
@@ -74,6 +83,37 @@ final class SearchPanel extends LinearLayout {
         scroll.addView(list, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         addView(scroll, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+
+        pinBox = new LinearLayout(ctx);
+        pinBox.setOrientation(VERTICAL);
+        pinBox.setVisibility(GONE);
+        pinTitle = new TextView(ctx);
+        pinTitle.setTextSize(12);
+        pinTitle.setGravity(Gravity.CENTER);
+        pinTitle.setTextColor(PanelKit.DIM);
+        pinTitle.setTypeface(Fonts.cascadiaMono(ctx));
+        pinBox.addView(pinTitle, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        pinDots = new TextView(ctx);
+        pinDots.setTextSize(20);
+        pinDots.setGravity(Gravity.CENTER);
+        pinDots.setTextColor(android.graphics.Color.WHITE);
+        pinDots.setTypeface(Fonts.cascadiaMono(ctx));
+        pinDots.setPadding(0, PanelKit.dp(ctx, 4), 0, PanelKit.dp(ctx, 4));
+        pinBox.addView(pinDots, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        String[][] pad = {{"1", "2", "3"}, {"4", "5", "6"}, {"7", "8", "9"}, {"x", "0", "ok"}};
+        for (String[] keys : pad) {
+            LinearLayout r = new LinearLayout(ctx);
+            for (String k : keys) {
+                TextView key = PanelKit.chip(ctx, k.equals("x") ? "\u2190" : k.equals("ok") ? "OK" : k, k.equals("ok"), v -> pinKey(k));
+                key.setTextSize(16);
+                key.setGravity(Gravity.CENTER);
+                LayoutParams kp = new LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
+                kp.setMargins(PanelKit.dp(ctx, 3), PanelKit.dp(ctx, 3), PanelKit.dp(ctx, 3), PanelKit.dp(ctx, 3));
+                r.addView(key, kp);
+            }
+            pinBox.addView(r, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        }
+        addView(pinBox, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
         off = new TextView(ctx);
         off.setText("Search is off in password fields");
@@ -107,6 +147,7 @@ final class SearchPanel extends LinearLayout {
         query = "";
         hits = new ArrayList<>();
         scope = lastScope(ctx);
+        hidePin();
         boolean blocked = secure;
         queryBar.setVisibility(blocked ? GONE : VISIBLE);
         chips.setVisibility(blocked ? GONE : VISIBLE);
@@ -119,15 +160,20 @@ final class SearchPanel extends LinearLayout {
     }
 
     void release() {
+        hidePin();
         engine.cancel();
         removeCallbacks(rerun);
     }
 
     boolean canGoBack() {
-        return !query.isEmpty() && !secure;
+        return pinFor != null || (!query.isEmpty() && !secure);
     }
 
     void goBack() {
+        if (pinFor != null) {
+            hidePin();
+            return;
+        }
         query = "";
         drawQuery();
         run();
@@ -137,6 +183,8 @@ final class SearchPanel extends LinearLayout {
 
     private static boolean enabled(Context ctx, KeyboardSearch.Scope s) {
         switch (s) {
+            case ALL: return (Config.isKbSearchDevice(ctx) ? 1 : 0) + (Config.isKbSearchNotes(ctx) ? 1 : 0)
+                    + (Config.isKbSearchWeb(ctx) ? 1 : 0) >= 2;
             case DEVICE: return Config.isKbSearchDevice(ctx);
             case NOTES: return Config.isKbSearchNotes(ctx);
             default: return Config.isKbSearchWeb(ctx);
@@ -270,6 +318,7 @@ final class SearchPanel extends LinearLayout {
     private String emptyText() {
         if (query.isEmpty()) {
             switch (scope) {
+                case ALL: return "Type to search notes, files and contacts";
                 case DEVICE: return "Type to search files, text inside documents and contacts";
                 case NOTES: return "Type to search notes and to-dos";
                 default: return "Type to search the web";
@@ -294,6 +343,7 @@ final class SearchPanel extends LinearLayout {
             case FILE: return KeyIcons.FILE;
             case CONTENT: return KeyIcons.LINES;
             case CONTACT: return KeyIcons.PEOPLE;
+            case PLUGIN: return KeyIcons.SLIDERS;
             case NOTE: return KeyIcons.NOTE;
             case TODO: return KeyIcons.CHECKLIST;
             case RECENT: return KeyIcons.CLOCK;
@@ -365,12 +415,87 @@ final class SearchPanel extends LinearLayout {
     // -------------------------------------------------------------- actions
 
     private void tap(KbHit h) {
-        if (h.kind == KbHit.Kind.PERMISSION) {
+        if (h.kind == KbHit.Kind.LOCKED && h.lock != null) {
+            showPin(h.lock, this::run);
+        } else if (h.kind == KbHit.Kind.PLUGIN && h.lock != null) {
+            showPin(h.lock, () -> host.openHit(h));
+        } else if (h.kind == KbHit.Kind.PERMISSION) {
             host.requestAccess(h.access);
         } else if (h.insert != null) {
             host.insertText(h.insert);
         } else {
             openHit(h);
+        }
+    }
+
+    // ------------------------------------------------------------- unlock from the keyboard
+
+    /** Ask for the PIN of a locked section on the keyboard's own pad, so it never reaches the app's field. */
+    private void showPin(Lock lock, Runnable then) {
+        endCompose.run();                       // leave the typing view; the pad takes the panel
+        pinFor = lock;
+        pinThen = then;
+        pin.setLength(0);
+        pinTitle.setText(lock.frictionLabel + " (Back to cancel)");
+        drawPin();
+        queryBar.setVisibility(GONE);
+        chips.setVisibility(GONE);
+        scroll.setVisibility(GONE);
+        pinBox.setVisibility(VISIBLE);
+    }
+
+    private void hidePin() {
+        pinFor = null;
+        pinThen = null;
+        pin.setLength(0);
+        pinBox.setVisibility(GONE);
+        if (secure) return;
+        queryBar.setVisibility(VISIBLE);
+        chips.setVisibility(VISIBLE);
+        scroll.setVisibility(VISIBLE);
+    }
+
+    private void drawPin() {
+        StringBuilder dots = new StringBuilder();
+        for (int i = 0; i < pin.length(); i++) dots.append("\u25CF ");
+        pinDots.setText(pin.length() == 0 ? "\u2013" : dots.toString().trim());
+    }
+
+    private void pinKey(String k) {
+        if (pinFor == null) return;
+        if (System.currentTimeMillis() < pinBlockedUntil) return;
+        if (k.equals("x")) {
+            if (pin.length() > 0) pin.setLength(pin.length() - 1);
+        } else if (k.equals("ok")) {
+            submitPin();
+            return;
+        } else if (pin.length() < 8) {
+            pin.append(k);
+        }
+        drawPin();
+    }
+
+    private void submitPin() {
+        Context ctx = getContext();
+        Lock lock = pinFor;
+        if (lock == null || pin.length() < 4) return;
+        if (Config.checkPin(ctx, lock.area, pin.toString())) {
+            pinFails = 0;
+            lock.keepUnlocked(ctx);
+            Runnable then = pinThen;
+            hidePin();
+            if (then != null) then.run();       // reopen the results, or open the plugin
+            return;
+        }
+        pin.setLength(0);
+        if (++pinFails >= 5) {                  // slow down guessing on a pad anyone holding the phone can reach
+            pinFails = 0;
+            pinBlockedUntil = System.currentTimeMillis() + 30_000L;
+            pinTitle.setText("Too many tries. Wait 30 s");
+            pinDots.setText("\u2013");
+        } else {
+            pinTitle.setText("Wrong PIN. " + lock.frictionLabel);
+            drawPin();
         }
     }
 
