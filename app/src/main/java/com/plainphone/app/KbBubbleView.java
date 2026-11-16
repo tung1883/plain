@@ -31,6 +31,74 @@ final class KbBubbleView extends View {
     private float downX, downY;
     private int left0, top0;
     private boolean moved;
+    private Runnable onDismiss = () -> { };
+    private DismissTargetView target;
+    private WindowManager.LayoutParams targetLp;
+    private View scrim;
+
+    /** Runs after the bubble was dropped on the X and removed. */
+    void setOnDismiss(Runnable r) {
+        onDismiss = r;
+    }
+
+    private void showTarget(DisplayMetrics dm) {
+        if (target != null) return;
+        // the soft dark gradient first, so the button and the bubble sit on top of it
+        scrim = DismissTargetView.newScrim(getContext());
+        scrim.setAlpha(0f);
+        WindowManager.LayoutParams sp = new WindowManager.LayoutParams(dm.widthPixels, Math.round(dm.heightPixels * 0.38f),
+                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                        | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                        | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                        | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                PixelFormat.TRANSLUCENT);
+        sp.gravity = Gravity.TOP | Gravity.START;
+        sp.y = dm.heightPixels - sp.height;
+        try {
+            wm.addView(scrim, sp);
+            scrim.animate().alpha(1f).setDuration(200).start();
+        } catch (RuntimeException e) {
+            scrim = null;
+        }
+        int size = Math.round(DismissTargetView.SIZE_DP * dp);
+        target = new DismissTargetView(getContext());
+        targetLp = new WindowManager.LayoutParams(size, size,
+                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                        | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                        | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                        | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                PixelFormat.TRANSLUCENT);
+        targetLp.gravity = Gravity.TOP | Gravity.START;
+        targetLp.x = (dm.widthPixels - size) / 2;
+        targetLp.y = dm.heightPixels - size - Math.round(DismissTargetView.BOTTOM_DP * dp);
+        try {
+            wm.addView(target, targetLp);
+        } catch (RuntimeException e) {
+            target = null;
+        }
+    }
+
+    private void hideTarget() {
+        setScaleX(1f);
+        setScaleY(1f);
+        if (scrim != null) {
+            try {
+                wm.removeView(scrim);
+            } catch (RuntimeException ignored) {
+                // already gone
+            }
+            scrim = null;
+        }
+        if (target == null) return;
+        try {
+            wm.removeView(target);
+        } catch (RuntimeException ignored) {
+            // already gone
+        }
+        target = null;
+    }
 
     KbBubbleView(Context ctx, WindowManager wm, Runnable onTap) {
         super(ctx);
@@ -94,10 +162,26 @@ final class KbBubbleView extends View {
 
     @Override
     protected void onDraw(Canvas c) {
-        paint.setStyle(Paint.Style.FILL);
-        paint.setColor(Color.WHITE);
-        c.drawCircle(getWidth() / 2f, getHeight() / 2f, getWidth() / 2f, paint);
-        KeyIcons.draw(c, KeyIcons.KEYBOARD, getWidth() / 2f, getHeight() / 2f, getWidth() * 0.27f, Color.BLACK, false);
+        paintGlass(c, getWidth(), getHeight(), dp, paint);
+    }
+
+    /**
+     * The glass bubble: a translucent white disc over a faint dark one (so it reads on a light
+     * screen too), a thin even light edge, and a white keyboard icon.
+     * Android overlay windows cannot blur what is behind them, so this is the flat version of the look.
+     */
+    static void paintGlass(Canvas c, int w, int h, float dp, Paint p) {
+        float cx = w / 2f, cy = h / 2f, r = w / 2f;
+        p.setStyle(Paint.Style.FILL);
+        p.setColor(0x59000000);
+        c.drawCircle(cx, cy, r, p);
+        p.setColor(0x33FFFFFF);
+        c.drawCircle(cx, cy, r, p);
+        p.setStyle(Paint.Style.STROKE);
+        p.setStrokeWidth(dp);
+        p.setColor(0x66FFFFFF);
+        c.drawCircle(cx, cy, r - dp / 2f, p);
+        KeyIcons.draw(c, KeyIcons.KEYBOARD, cx, cy, w * 0.27f, Color.WHITE, false);
     }
 
     @Override
@@ -117,10 +201,34 @@ final class KbBubbleView extends View {
                 if (!moved) return true;
                 lp.x = Math.round(FloatGeometry.keepInside(left0 + dx, 0, dm.widthPixels, lp.width, 0));
                 lp.y = Math.round(FloatGeometry.keepInside(top0 + dy, topBound(), dm.heightPixels, lp.height, EDGE_DP * dp));
+                showTarget(dm);
+                if (target != null) {
+                    float tx = targetLp.x + targetLp.width / 2f, ty = targetLp.y + targetLp.height / 2f;
+                    boolean over = FloatGeometry.overTarget(lp.x + lp.width / 2f, lp.y + lp.height / 2f, tx, ty,
+                            DismissTargetView.REACH_DP * dp);
+                    target.setHot(over);
+                    setScaleX(over ? 0.78f : 1f);   // it shrinks into the button
+                    setScaleY(over ? 0.78f : 1f);
+                    if (over) {   // pulled onto the X
+                        lp.x = Math.round(tx - lp.width / 2f);
+                        lp.y = Math.round(ty - lp.height / 2f);
+                    }
+                }
                 wm.updateViewLayout(this, lp);
                 return true;
             }
+            case MotionEvent.ACTION_CANCEL:
+                hideTarget();
+                return true;
             case MotionEvent.ACTION_UP: {
+                boolean dropped = target != null && target.isHot();
+                if (dropped) setVisibility(INVISIBLE);   // gone at once, before anything else changes
+                hideTarget();
+                if (dropped) {
+                    remove();
+                    onDismiss.run();
+                    return true;
+                }
                 if (!moved) {
                     onTap.run();
                     return true;

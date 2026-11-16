@@ -75,6 +75,7 @@ public class AppMonitorService extends AccessibilityService implements GateEngin
     private boolean addKeyboardBubble(Runnable onTap) {
         removeKeyboardBubble();
         KbBubbleView bubble = new KbBubbleView(this, (WindowManager) getSystemService(WINDOW_SERVICE), onTap);
+        bubble.setOnDismiss(() -> keyboardBubble = null);   // dropped on the X: it removed itself
         if (!bubble.show()) return false;
         keyboardBubble = bubble;
         return true;

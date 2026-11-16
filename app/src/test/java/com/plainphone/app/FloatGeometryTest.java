@@ -60,6 +60,14 @@ public class FloatGeometryTest {
     }
 
     @Test
+    public void aBubbleIsDroppedOnTheTargetOnlyWithinReach() {
+        assertTrue(FloatGeometry.overTarget(180f, 900f, 180f, 900f, 80f));
+        assertTrue(FloatGeometry.overTarget(220f, 930f, 180f, 900f, 80f));
+        assertFalse(FloatGeometry.overTarget(300f, 900f, 180f, 900f, 80f));
+        assertFalse(FloatGeometry.overTarget(180f, 600f, 180f, 900f, 80f));
+    }
+
+    @Test
     public void theBubbleSnapsToTheNearerEdge() {
         assertTrue(FloatGeometry.bubbleOnRight(250f, 360f));
         assertFalse(FloatGeometry.bubbleOnRight(100f, 360f));

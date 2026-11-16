@@ -21,6 +21,8 @@ public class PlainKeyboardService extends InputMethodService
 
     private KeyboardRoot root;
     private FloatingHost host;
+    /** The bubble was just dropped on the X: the keyboard hides without leaving a bubble. */
+    private boolean suppressBubble;
     private ClipboardManager clipboard;
     private final ClipboardManager.OnPrimaryClipChangedListener clipListener = this::recordClip;
 
@@ -45,7 +47,11 @@ public class PlainKeyboardService extends InputMethodService
     @Override
     public void onWindowHidden() {
         super.onWindowHidden();
-        if (host != null) host.onShown();   // so it is solid the next time it shows, however it was last left
+        if (host != null) host.onHidden();   // so it is solid the next time it shows, however it was last left
+        if (suppressBubble) {
+            suppressBubble = false;
+            return;
+        }
         if (host == null || !host.isFloatingOrBubble() || !Config.isKbHideBubble(this)) return;
         android.app.KeyguardManager km = (android.app.KeyguardManager) getSystemService(KEYGUARD_SERVICE);
         android.os.PowerManager pm = (android.os.PowerManager) getSystemService(POWER_SERVICE);
@@ -65,6 +71,11 @@ public class PlainKeyboardService extends InputMethodService
         root = new KeyboardRoot(this, this, this);
         root.refresh();
         host = new FloatingHost(this, root);
+        // the bubble was dropped on the X: hide the keyboard, and leave no overlay bubble behind
+        host.setDismissHandler(() -> {
+            suppressBubble = true;
+            requestHideSelf(0);
+        });
         return host;
     }
 

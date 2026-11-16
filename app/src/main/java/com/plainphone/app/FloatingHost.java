@@ -37,6 +37,9 @@ final class FloatingHost extends FrameLayout {
     private final Grip grip;
     private final Corner corner;
     private final Bubble bubble;
+    private final DismissTargetView dismiss;
+    private final View scrim;
+    private Runnable dismissHandler;
     private final float dp;
 
     private Mode mode = Mode.DOCKED;
@@ -78,6 +81,16 @@ final class FloatingHost extends FrameLayout {
         box.addView(corner, new FrameLayout.LayoutParams(px(28), px(28), Gravity.BOTTOM | Gravity.START));
         addView(box, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM));
+
+        scrim = DismissTargetView.newScrim(ctx);
+        addView(scrim, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                ctx.getResources().getDisplayMetrics().heightPixels * 38 / 100, Gravity.BOTTOM));
+        scrim.setVisibility(GONE);
+
+        dismiss = new DismissTargetView(ctx);
+        addView(dismiss, new FrameLayout.LayoutParams(px(DismissTargetView.SIZE_DP), px(DismissTargetView.SIZE_DP),
+                Gravity.TOP | Gravity.START));
+        dismiss.setVisibility(GONE);
 
         bubble = new Bubble(ctx);
         addView(bubble, new FrameLayout.LayoutParams(px(BUBBLE_DP), px(BUBBLE_DP), Gravity.TOP | Gravity.START));
@@ -286,6 +299,15 @@ final class FloatingHost extends FrameLayout {
 
     /** The keyboard window was shown again (a bubble tap, a field tap): it comes back solid, not faded. */
     void onShown() {
+        if (mode == Mode.BUBBLE && bubble.getVisibility() == INVISIBLE) {   // it was dropped on the X
+            bubble.setVisibility(VISIBLE);
+            placeBubble();
+        }
+        wake();
+    }
+
+    /** The keyboard window was hidden: make it solid for the next time, and touch nothing else. */
+    void onHidden() {
         wake();
     }
 
@@ -465,10 +487,7 @@ final class FloatingHost extends FrameLayout {
 
         @Override
         protected void onDraw(Canvas c) {
-            paint.setColor(Color.WHITE);
-            paint.setStyle(Paint.Style.FILL);
-            c.drawCircle(getWidth() / 2f, getHeight() / 2f, getWidth() / 2f, paint);
-            KeyIcons.draw(c, KeyIcons.KEYBOARD, getWidth() / 2f, getHeight() / 2f, getWidth() * 0.27f, Color.BLACK, false);
+            KbBubbleView.paintGlass(c, getWidth(), getHeight(), dp, paint);
         }
 
         @Override
@@ -490,10 +509,33 @@ final class FloatingHost extends FrameLayout {
                     int w = FloatingHost.this.getWidth(), h = FloatingHost.this.getHeight();
                     lp.leftMargin = Math.round(FloatGeometry.keepInside(left0 + dx, 0, w, px(BUBBLE_DP), 0));
                     lp.topMargin = Math.round(FloatGeometry.keepInside(top0 + dy, topBound(), h, px(BUBBLE_DP), px(EDGE_DP)));
+                    showDismissTarget(w, h);
+                    float tx = dismiss.getX() + dismiss.getWidth() / 2f, ty = dismiss.getY() + dismiss.getHeight() / 2f;
+                    boolean over = FloatGeometry.overTarget(lp.leftMargin + px(BUBBLE_DP) / 2f,
+                            lp.topMargin + px(BUBBLE_DP) / 2f, tx, ty, px(DismissTargetView.REACH_DP));
+                    dismiss.setHot(over);
+                    setScaleX(over ? 0.78f : 1f);   // it shrinks into the button
+                    setScaleY(over ? 0.78f : 1f);
+                    if (over) {   // pulled onto the X
+                        lp.leftMargin = Math.round(tx - px(BUBBLE_DP) / 2f);
+                        lp.topMargin = Math.round(ty - px(BUBBLE_DP) / 2f);
+                    }
                     setLayoutParams(lp);
                     return true;
                 }
+                case MotionEvent.ACTION_CANCEL:
+                    hideDismissUi();
+                    return true;
                 case MotionEvent.ACTION_UP:
+                    if (dismiss.isHot() && dismiss.getVisibility() == VISIBLE) {
+                        // gone at once: Android takes a moment to hide the keyboard window, and the
+                        // bubble must not show up at its old spot meanwhile
+                        setVisibility(INVISIBLE);
+                        hideDismissUi();
+                        if (dismissHandler != null) dismissHandler.run();   // the keyboard goes away
+                        return true;
+                    }
+                    hideDismissUi();
                     if (!moved) {
                         mode = Mode.FLOAT;
                         apply();
@@ -509,6 +551,35 @@ final class FloatingHost extends FrameLayout {
                     return true;
             }
         }
+    }
+
+    /** Show the round X near the bottom while the bubble is dragged. */
+    private void showDismissTarget(int w, int h) {
+        if (dismiss.getVisibility() == VISIBLE) return;
+        FrameLayout.LayoutParams tp = (FrameLayout.LayoutParams) dismiss.getLayoutParams();
+        tp.leftMargin = (w - px(DismissTargetView.SIZE_DP)) / 2;
+        tp.topMargin = h - px(DismissTargetView.SIZE_DP) - px(DismissTargetView.BOTTOM_DP);
+        dismiss.setLayoutParams(tp);
+        scrim.setAlpha(0f);
+        scrim.setVisibility(VISIBLE);
+        scrim.animate().alpha(1f).setDuration(200).start();
+        dismiss.setVisibility(VISIBLE);
+        scrim.bringToFront();
+        dismiss.bringToFront();
+        bubble.bringToFront();
+    }
+
+    private void hideDismissUi() {
+        dismiss.setHot(false);
+        dismiss.setVisibility(GONE);
+        scrim.setVisibility(GONE);
+        bubble.setScaleX(1f);
+        bubble.setScaleY(1f);
+    }
+
+    /** What happens when the bubble is dropped on the X (the service hides the keyboard). */
+    void setDismissHandler(Runnable r) {
+        dismissHandler = r;
     }
 
     private int getWidthOfHost() {

@@ -49,6 +49,11 @@ final class FloatGeometry {
         return centreX > areaW / 2f;
     }
 
+    /** Whether a dragged bubble's centre is close enough to the dismiss target's centre to be dropped on it. */
+    static boolean overTarget(float bx, float by, float tx, float ty, float reach) {
+        return Math.hypot(bx - tx, by - ty) <= reach;
+    }
+
     /** The left edge of a bubble snapped to the right or left edge. */
     static float bubbleLeft(boolean right, float areaW, float size, float margin) {
         return right ? areaW - size - margin : margin;
