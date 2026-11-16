@@ -903,6 +903,73 @@ class Config {
         prefs(context).edit().putInt("kb_height_pct", Math.max(75, Math.min(130, pct))).apply();
     }
 
+    // --- floating keyboard ---------------------------------------------
+
+    /** Whether the keyboard floats (true) or sits docked at the bottom (false); kept across fields and apps. */
+    static boolean isKbFloating(Context context) {
+        return prefs(context).getBoolean("kb_floating", false);
+    }
+
+    static void setKbFloating(Context context, boolean on) {
+        prefs(context).edit().putBoolean("kb_floating", on).apply();
+    }
+
+    /** Floating size, 0.55..1 of its normal size. */
+    static float getKbFloatScale(Context context) {
+        return Math.max(0.55f, Math.min(1f, prefs(context).getFloat("kb_float_scale", 0.8f)));
+    }
+
+    static void setKbFloatScale(Context context, float scale) {
+        prefs(context).edit().putFloat("kb_float_scale", scale).apply();
+    }
+
+    /** Where the floating keyboard sits, as 0..1 of the room it has to move in (0.5, 1 = centred, at the bottom). */
+    static float getKbFloatX(Context context) {
+        return prefs(context).getFloat("kb_float_x", 0.5f);
+    }
+
+    static float getKbFloatY(Context context) {
+        return prefs(context).getFloat("kb_float_y", 1f);
+    }
+
+    static void setKbFloatPos(Context context, float x, float y) {
+        prefs(context).edit().putFloat("kb_float_x", x).putFloat("kb_float_y", y).apply();
+    }
+
+    /** The minimized bubble: on the right edge (true) or the left, and its height as 0..1 of the screen. */
+    static boolean isKbBubbleRight(Context context) {
+        return prefs(context).getBoolean("kb_bubble_right", true);
+    }
+
+    static float getKbBubbleY(Context context) {
+        return prefs(context).getFloat("kb_bubble_y", 0.6f);
+    }
+
+    static void setKbBubble(Context context, boolean right, float y) {
+        prefs(context).edit().putBoolean("kb_bubble_right", right).putFloat("kb_bubble_y", y).apply();
+    }
+
+    /**
+     * Whether a floating keyboard that Android hides (its field lost focus) leaves a bubble on
+     * screen (true) or just hides (false). The bubble needs the accessibility service.
+     */
+    static boolean isKbHideBubble(Context context) {
+        return prefs(context).getBoolean("kb_hide_bubble", true);
+    }
+
+    static void setKbHideBubble(Context context, boolean on) {
+        prefs(context).edit().putBoolean("kb_hide_bubble", on).apply();
+    }
+
+    /** Whether the floating keyboard turns see-through after a moment without touch. */
+    static boolean isKbGhost(Context context) {
+        return prefs(context).getBoolean("kb_ghost", true);
+    }
+
+    static void setKbGhost(Context context, boolean on) {
+        prefs(context).edit().putBoolean("kb_ghost", on).apply();
+    }
+
     static boolean isKbDevRow(Context context) {
         return prefs(context).getBoolean("kb_dev_row", true);
     }

@@ -167,6 +167,13 @@ final class PanelKit {
             invalidate();
         }
 
+        /** Draw a different {@link KeyIcons} icon. */
+        void setKind(int kind) {
+            if (this.kind == kind) return;
+            this.kind = kind;
+            invalidate();
+        }
+
         /** Tab look: dim icon; the selected tab is white on a key fill with a white underline. */
         void setTab(boolean on) {
             tab = true;

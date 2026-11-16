@@ -67,6 +67,10 @@ final class KeyboardSettingsPanel extends LinearLayout {
 
         addSwitch(ctx, "Number row", "On layouts with room for it. Vietnamese VNI always has one.",
                 Config.isKbNumRow(ctx), on -> Config.setKbNumRow(ctx, on), true);
+        addSwitch(ctx, "Bubble when hidden", "A floating keyboard that Android hides leaves a bubble: tap it to bring the keyboard back. Needs the Plain accessibility service; off = it just hides.",
+                Config.isKbHideBubble(ctx), on -> Config.setKbHideBubble(ctx, on), true);
+        addSwitch(ctx, "Fade when floating", "A floating keyboard turns see-through after 2 seconds untouched; touch it to bring it back.",
+                Config.isKbGhost(ctx), on -> Config.setKbGhost(ctx, on), true);
         boolean spell = Config.isKbSpell(ctx);
         addSwitch(ctx, "Suggestions", "Next words and phrases, fixes with accents restored (uber to über), auto-capital.",
                 spell, on -> Config.setKbSpell(ctx, on), true);

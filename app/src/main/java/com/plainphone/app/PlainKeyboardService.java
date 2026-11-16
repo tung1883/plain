@@ -20,6 +20,7 @@ public class PlainKeyboardService extends InputMethodService
         implements DevKeyboardView.Listener, KeyboardRoot.Host {
 
     private KeyboardRoot root;
+    private FloatingHost host;
     private ClipboardManager clipboard;
     private final ClipboardManager.OnPrimaryClipChangedListener clipListener = this::recordClip;
 
@@ -33,20 +34,67 @@ public class PlainKeyboardService extends InputMethodService
     @Override
     public void onDestroy() {
         if (clipboard != null) clipboard.removePrimaryClipChangedListener(clipListener);
+        AppMonitorService.hideKeyboardBubble();
         super.onDestroy();
+    }
+
+    /**
+     * Android hid the keyboard (the field lost focus, Back, a tap elsewhere). A floating keyboard
+     * leaves a bubble in its place, unless that is switched off or the screen is off or locked.
+     */
+    @Override
+    public void onWindowHidden() {
+        super.onWindowHidden();
+        if (host != null) host.onShown();   // so it is solid the next time it shows, however it was last left
+        if (host == null || !host.isFloatingOrBubble() || !Config.isKbHideBubble(this)) return;
+        android.app.KeyguardManager km = (android.app.KeyguardManager) getSystemService(KEYGUARD_SERVICE);
+        android.os.PowerManager pm = (android.os.PowerManager) getSystemService(POWER_SERVICE);
+        if ((km != null && km.isKeyguardLocked()) || (pm != null && !pm.isInteractive())) return;
+        AppMonitorService.showKeyboardBubble(() -> requestShowSelf(0));
+    }
+
+    @Override
+    public void onWindowShown() {
+        super.onWindowShown();
+        AppMonitorService.hideKeyboardBubble();
+        if (host != null) host.onShown();
     }
 
     @Override
     public View onCreateInputView() {
         root = new KeyboardRoot(this, this, this);
         root.refresh();
-        return root;
+        host = new FloatingHost(this, root);
+        return host;
+    }
+
+    /**
+     * The app asks for the keyboard: a new field starting, or a tap on the field that already has the
+     * cursor. A keyboard collapsed to a bubble comes back floating either way (a tap on the focused
+     * field starts no new input, so onStartInputView alone would never hear of it).
+     */
+    @Override
+    public boolean onShowInputRequested(int flags, boolean configChange) {
+        boolean show = super.onShowInputRequested(flags, configChange);
+        if (host != null) host.onNewField();
+        return show;
+    }
+
+    /**
+     * Docked, the default insets stand (apps make room for the keyboard). Floating or minimized, the
+     * keyboard takes no room and only its own rectangle takes touches, so the app below is untouched.
+     */
+    @Override
+    public void onComputeInsets(Insets outInsets) {
+        super.onComputeInsets(outInsets);
+        if (host != null) host.computeInsets(outInsets, getWindow().getWindow().getDecorView().getHeight());
     }
 
     @Override
     public void onStartInputView(EditorInfo info, boolean restarting) {
         super.onStartInputView(info, restarting);
         recordClip();   // a copy made while another keyboard was active
+        if (host != null) host.onNewField();   // a bubble comes back as a floating keyboard
         if (root != null) {
             root.setFieldKind(InputKinds.isSecure(info.inputType, info.imeOptions),
                     InputKinds.noLearning(info.imeOptions));
@@ -433,6 +481,7 @@ public class PlainKeyboardService extends InputMethodService
     @Override
     public void settingsChanged() {
         if (root != null) root.applySettings();
+        if (host != null) host.refreshSettings();
     }
 
     @Override

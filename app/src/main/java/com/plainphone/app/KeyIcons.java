@@ -2,6 +2,7 @@ package com.plainphone.app;
 
 import android.graphics.Canvas;
 import android.graphics.CornerPathEffect;
+import android.graphics.DashPathEffect;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.RectF;
@@ -15,7 +16,12 @@ final class KeyIcons {
             KEYS = 17,
             RESIZE = 18, SLIDERS = 19, IMAGE = 20, CLOCK = 21, PEOPLE = 22, LEAF = 23, CUP = 24, BOX = 25,
             HASH = 26, FACE = 27, SCISSORS = 28, GLOBE = 29,
-            SEARCH = 30, PAPERCLIP = 31, FILE = 32, LINES = 33, CHECKLIST = 34, NOTE = 35;
+            SEARCH = 30, PAPERCLIP = 31, FILE = 32, LINES = 33, CHECKLIST = 34, NOTE = 35,
+            /** A keyboard lifted off a dashed ground line: make it float. */
+            FLOAT = 36,
+            /** A keyboard on the bottom edge with a down arrow above it: put it back. */
+            DOCK = 37,
+            MINUS = 38;
 
     private static final Paint PAINT = new Paint(Paint.ANTI_ALIAS_FLAG);
     private static final Path PATH = new Path();
@@ -212,6 +218,34 @@ final class KeyIcons {
                 path.lineTo(cx - s * 0.9f, cy + s * 0.4f);
                 path.lineTo(cx - s * 0.4f, cy + s * 0.85f);
                 c.drawPath(path, p);
+                return;
+            case FLOAT: {
+                RECT.set(cx - s, cy - s * 0.95f, cx + s, cy + s * 0.15f);
+                c.drawRoundRect(RECT, s * 0.28f, s * 0.28f, p);
+                c.drawPoint(cx - s * 0.5f, cy - s * 0.55f, p);
+                c.drawPoint(cx, cy - s * 0.55f, p);
+                c.drawPoint(cx + s * 0.5f, cy - s * 0.55f, p);
+                c.drawLine(cx - s * 0.5f, cy - s * 0.15f, cx + s * 0.5f, cy - s * 0.15f, p);
+                p.setPathEffect(new DashPathEffect(new float[]{s * 0.22f, s * 0.42f}, 0));
+                c.drawLine(cx - s, cy + s * 0.85f, cx + s, cy + s * 0.85f, p);
+                p.setPathEffect(null);
+                return;
+            }
+            case DOCK: {
+                c.drawLine(cx, cy - s * 0.95f, cx, cy - s * 0.3f, p);
+                path.moveTo(cx - s * 0.4f, cy - s * 0.65f);
+                path.lineTo(cx, cy - s * 0.25f);
+                path.lineTo(cx + s * 0.4f, cy - s * 0.65f);
+                c.drawPath(path, p);
+                RECT.set(cx - s, cy + s * 0.1f, cx + s, cy + s * 0.95f);
+                c.drawRoundRect(RECT, s * 0.28f, s * 0.28f, p);
+                c.drawPoint(cx - s * 0.5f, cy + s * 0.38f, p);
+                c.drawPoint(cx, cy + s * 0.38f, p);
+                c.drawPoint(cx + s * 0.5f, cy + s * 0.38f, p);
+                return;
+            }
+            case MINUS:
+                c.drawLine(cx - s * 0.8f, cy, cx + s * 0.8f, cy, p);
                 return;
             case RESIZE: {
                 c.drawLine(cx, cy - s * 0.9f, cx, cy + s * 0.9f, p);

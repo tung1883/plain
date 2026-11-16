@@ -91,7 +91,8 @@ final class KeyboardRoot extends LinearLayout {
     private final SearchPanel search;
     private final KeyboardSettingsPanel settings;
     private final PanelKit.IconView[] icons = new PanelKit.IconView[7];
-    private final PanelKit.IconView abc, resize;
+    private final PanelKit.IconView abc, resize, floatIcon;
+    private Runnable floatHandler;
     private final TextView readout;
     private final Runnable hideReadout = this::clearReadout;
     private float dragY0;
@@ -243,6 +244,11 @@ final class KeyboardRoot extends LinearLayout {
         resize = new PanelKit.IconView(ctx, KeyIcons.RESIZE);
         resize.setOnTouchListener(this::dragHeight);
         bar.addView(resize, iconLp(ctx));
+        floatIcon = new PanelKit.IconView(ctx, KeyIcons.FLOAT);
+        floatIcon.setOnClickListener(v -> {
+            if (floatHandler != null) floatHandler.run();
+        });
+        bar.addView(floatIcon, iconLp(ctx));
         bar.addView(icons[P_SETTINGS], iconLp(ctx));
         addView(bar, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
@@ -296,10 +302,26 @@ final class KeyboardRoot extends LinearLayout {
         addView(body, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
     }
 
+    // 30 dp wide (it was 34) so the float / dock icon fits on a 360 dp screen without squeezing the height readout
     private static LayoutParams iconLp(Context ctx) {
-        LayoutParams lp = new LayoutParams(PanelKit.dp(ctx, 34), PanelKit.dp(ctx, 30));
+        LayoutParams lp = new LayoutParams(PanelKit.dp(ctx, 30), PanelKit.dp(ctx, 30));
         lp.rightMargin = PanelKit.dp(ctx, 1);
         return lp;
+    }
+
+    /** What the float / dock icon does (the host switches between docked and floating). */
+    void setFloatHandler(Runnable handler) {
+        floatHandler = handler;
+    }
+
+    /** The float / dock icon shows what a tap will do: float when docked, dock when floating. */
+    void setFloating(boolean floating) {
+        floatIcon.setKind(floating ? KeyIcons.DOCK : KeyIcons.FLOAT);
+    }
+
+    /** True when a floating keyboard may fade: the keys are showing and nothing is being typed for a panel. */
+    boolean isIdleForGhost() {
+        return open == P_KEYS && !composing && langSheet == null;
     }
 
     /** What kind of field the keyboard is in; call before {@link #refresh()}. */

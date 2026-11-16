@@ -55,6 +55,38 @@ public class AppMonitorService extends AccessibilityService implements GateEngin
         return false;
     }
 
+    /**
+     * The keyboard's bubble, shown after Android hides a floating keyboard. Drawn here because this
+     * is the one service the app has that may draw over other apps without extra permission.
+     * False when the service is off: the keyboard then simply hides.
+     */
+    static boolean showKeyboardBubble(Runnable onTap) {
+        AppMonitorService service = instance;
+        return service != null && service.addKeyboardBubble(onTap);
+    }
+
+    static void hideKeyboardBubble() {
+        AppMonitorService service = instance;
+        if (service != null) service.removeKeyboardBubble();
+    }
+
+    private KbBubbleView keyboardBubble = null;
+
+    private boolean addKeyboardBubble(Runnable onTap) {
+        removeKeyboardBubble();
+        KbBubbleView bubble = new KbBubbleView(this, (WindowManager) getSystemService(WINDOW_SERVICE), onTap);
+        if (!bubble.show()) return false;
+        keyboardBubble = bubble;
+        return true;
+    }
+
+    private void removeKeyboardBubble() {
+        if (keyboardBubble != null) {
+            keyboardBubble.remove();
+            keyboardBubble = null;
+        }
+    }
+
     private View overlayRoot = null;
     private GateEngine engine = null;
 
@@ -75,6 +107,7 @@ public class AppMonitorService extends AccessibilityService implements GateEngin
     public boolean onUnbind(android.content.Intent intent) {
 
         instance = null;
+        removeKeyboardBubble();
         removeGateUi();
         engine = null;
         GateEngine.detachNerd();
