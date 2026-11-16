@@ -30,7 +30,7 @@ final class ScreenPanel implements PanelContent {
     @Override public String title() { return hostLabel + " · screen"; }
 
     @Override public View[] titleButtons(Context ctx) {
-        return new View[]{ surface.keyboardButton(ctx) };
+        return new View[]{ surface.mapButton(ctx), surface.keysButton(ctx), surface.keyboardButton(ctx) };
     }
 
     @Override public void onConnection(DevConnection conn) { surface.attach(conn); }

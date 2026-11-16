@@ -71,6 +71,7 @@ final class KeyBar extends LinearLayout {
     private final View fade;
 
     private int keyH;
+    private boolean fullHeight;
     private int rowsShown;           // 0 = all
     private int totalKeyRows;
     private final List<Integer> itemHeights = new ArrayList<>();   // dp, top to bottom: labels and rows
@@ -337,7 +338,13 @@ final class KeyBar extends LinearLayout {
     }
 
     private int initialCapPx() {
-        return rowsShown == 0 ? Integer.MAX_VALUE : heightForRowsPx(rowsShown);
+        return fullHeight || rowsShown == 0 ? Integer.MAX_VALUE : heightForRowsPx(rowsShown);
+    }
+
+    /** Fill all the height it is given (a side panel), instead of stopping at the rows-shown cap. */
+    void setFullHeight(boolean full) {
+        fullHeight = full;
+        scroller.setCapPx(initialCapPx());
     }
 
     /** Pixel height that shows {@code n} key rows (and any labels between them) plus a peek. */

@@ -86,6 +86,20 @@ final class RemoteScreenView extends View {
     private final float cursorMinPx;
     private final float cursorEdgePx;
 
+    // --- minimap: the whole desktop, tiny, with a white box for what the view shows ---
+    private static final long MAP_HOLD_MS = 1600, MAP_FADE_MS = 350;
+    private final float dp;
+    private final Paint mapBack = new Paint();
+    private final Paint mapBmp = new Paint(Paint.FILTER_BITMAP_FLAG);
+    private final Paint mapEdge = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint mapView = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint mapDot = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final RectF mapRect = new RectF();
+    private boolean mapEnabled = true;
+    private boolean onMap;
+    /** uptimeMillis until which the minimap stays fully visible. */
+    private long mapUntil;
+
     private float lastX, lastY, startX, startY, lastTapX, lastTapY;
     private boolean moved, dragging, twoFinger, armDrag;
     /** Taps waiting to fire; a press-drag that follows discards them all. */
@@ -131,6 +145,154 @@ final class RemoteScreenView extends View {
         cursorEdge.setStrokeJoin(Paint.Join.ROUND);
         cursorEdge.setStrokeCap(Paint.Cap.ROUND);
         buildCursorPath();
+
+        dp = context.getResources().getDisplayMetrics().density;
+        mapBack.setColor(Color.BLACK);
+        mapEdge.setStyle(Paint.Style.STROKE);
+        mapEdge.setStrokeWidth(dp);
+        mapEdge.setColor(Color.WHITE);
+        mapView.setStyle(Paint.Style.STROKE);
+        mapView.setStrokeWidth(dp * 1.5f);
+        mapView.setColor(Color.WHITE);
+        mapDot.setColor(0xFFFF5A5A);
+    }
+
+    /** Show the minimap (or never, when turned off). It hides itself a moment after the last use. */
+    void setMinimapEnabled(boolean on) {
+        mapEnabled = on;
+        if (on) touchMap(); else invalidate();
+    }
+
+    /** Start at this zoom (1 = the whole desktop fits) instead of fit-to-view. */
+    void setInitialZoom(float z) {
+        zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z));
+        lastNotifiedZoom = zoom;
+        panX = panY = 0f;
+        invalidate();
+    }
+
+    private void touchMap() {
+        if (!mapEnabled) return;
+        mapUntil = android.os.SystemClock.uptimeMillis() + MAP_HOLD_MS;
+        invalidate();
+    }
+
+    /** 0 = hidden, 1 = fully shown; fades out after the hold time. Needs a zoomed-in view. */
+    private float mapAlpha() {
+        if (!mapEnabled || frame == null || zoom <= 1.02f) return 0f;
+        if (onMap) return 1f;
+        long over = android.os.SystemClock.uptimeMillis() - mapUntil;
+        if (over <= 0) return 1f;
+        return over >= MAP_FADE_MS ? 0f : 1f - over / (float) MAP_FADE_MS;
+    }
+
+    /** Where the base (fit) rectangle sits in the view. */
+    private boolean layoutBase() {
+        if (frame == null || getWidth() == 0 || getHeight() == 0) return false;
+        float scale = Math.min((float) getWidth() / frame.getWidth(),
+                (float) getHeight() / frame.getHeight());
+        float w = frame.getWidth() * scale;
+        float h = frame.getHeight() * scale;
+        float left = (getWidth() - w) / 2f;
+        float top = (getHeight() - h) / 2f;
+        baseRect.set(left, top, left + w, top + h);
+        return true;
+    }
+
+    /** Pan just enough to keep the pointer inside the middle of the view. */
+    private void followCursor() {
+        if (zoom <= 1.001f || !layoutBase()) return;
+        float cx = getWidth() / 2f, cy = getHeight() / 2f;
+        float x = baseRect.left + curX * baseRect.width();
+        float y = baseRect.top + curY * baseRect.height();
+        float sx = cx + (x - cx) * zoom + panX;
+        float sy = cy + (y - cy) * zoom + panY;
+        float mx = getWidth() * 0.28f, my = getHeight() * 0.28f;
+        if (sx < mx) panX += mx - sx;
+        else if (sx > getWidth() - mx) panX -= sx - (getWidth() - mx);
+        if (sy < my) panY += my - sy;
+        else if (sy > getHeight() - my) panY -= sy - (getHeight() - my);
+        clampPan();
+    }
+
+    /** Centre the view on the spot of the desktop that a touch on the minimap points at. */
+    private void jumpFromMap(float tx, float ty) {
+        if (!layoutBase()) return;
+        float nx = clamp01((tx - mapRect.left) / mapRect.width());
+        float ny = clamp01((ty - mapRect.top) / mapRect.height());
+        float cx = getWidth() / 2f, cy = getHeight() / 2f;
+        float x = baseRect.left + nx * baseRect.width();
+        float y = baseRect.top + ny * baseRect.height();
+        panX = -(x - cx) * zoom;
+        panY = -(y - cy) * zoom;
+        clampPan();
+        // The pointer goes to the middle of the view as it ended up (not to the touch itself), so
+        // when the view stops at an edge of the desktop the pointer stops with it.
+        float bx = cx - panX / zoom, by = cy - panY / zoom;
+        curX = clamp01((bx - baseRect.left) / baseRect.width());
+        curY = clamp01((by - baseRect.top) / baseRect.height());
+        if (listener != null) listener.point(curX, curY);
+        touchMap();
+    }
+
+    /**
+     * Pan the view by (dx, dy) screen pixels, and move the pointer with it: it stays at the same
+     * spot of the screen, so it travels across the desktop as the view does.
+     */
+    private void panWithPointer(float dx, float dy) {
+        if (!layoutBase()) return;
+        float cx = getWidth() / 2f, cy = getHeight() / 2f;
+        float sx = cx + (baseRect.left + curX * baseRect.width() - cx) * zoom + panX;
+        float sy = cy + (baseRect.top + curY * baseRect.height() - cy) * zoom + panY;
+        panX += dx;
+        panY += dy;
+        clampPan();
+        float bx = cx + (sx - panX - cx) / zoom;
+        float by = cy + (sy - panY - cy) / zoom;
+        curX = clamp01((bx - baseRect.left) / baseRect.width());
+        curY = clamp01((by - baseRect.top) / baseRect.height());
+        if (listener != null) listener.point(curX, curY);
+    }
+
+    private void drawMinimap(Canvas canvas) {
+        float a = mapAlpha();
+        if (a <= 0f || !layoutBase()) return;
+        float w = dp * 96f, h = w * frame.getHeight() / frame.getWidth(), m = dp * 6f;
+        mapRect.set(getWidth() - w - m, m, getWidth() - m, m + h);
+
+        // the pointer would be under it: let it show through
+        float cx = getWidth() / 2f, cy = getHeight() / 2f;
+        float px = cx + (baseRect.left + curX * baseRect.width() - cx) * zoom + panX;
+        float py = cy + (baseRect.top + curY * baseRect.height() - cy) * zoom + panY;
+        float pad = dp * 18f;
+        if (px > mapRect.left - pad && px < mapRect.right + pad
+                && py > mapRect.top - pad && py < mapRect.bottom + pad) {
+            a *= 0.3f;
+        }
+        int al = (int) (255 * a);
+        mapBack.setAlpha(al);
+        mapBmp.setAlpha(al);
+        mapEdge.setAlpha(al);
+        mapView.setAlpha(al);
+        mapDot.setAlpha(al);
+
+        canvas.drawRect(mapRect, mapBack);
+        canvas.drawBitmap(frame, null, mapRect, mapBmp);
+        // the part of the desktop the view shows, as a white box
+        float x0 = (-panX - cx) / zoom + cx, y0 = (-panY - cy) / zoom + cy;
+        float x1 = (getWidth() - panX - cx) / zoom + cx, y1 = (getHeight() - panY - cy) / zoom + cy;
+        float l = mapRect.left + clamp01((x0 - baseRect.left) / baseRect.width()) * w;
+        float r = mapRect.left + clamp01((x1 - baseRect.left) / baseRect.width()) * w;
+        float t = mapRect.top + clamp01((y0 - baseRect.top) / baseRect.height()) * h;
+        float b = mapRect.top + clamp01((y1 - baseRect.top) / baseRect.height()) * h;
+        canvas.drawRect(l, t, r, b, mapView);
+        canvas.drawCircle(mapRect.left + curX * w, mapRect.top + curY * h, dp * 2f, mapDot);
+        canvas.drawRect(mapRect, mapEdge);
+
+        // keep drawing while it fades, and once more when the hold runs out
+        long now = android.os.SystemClock.uptimeMillis();
+        if (now > mapUntil && !onMap) postInvalidateOnAnimation();
+        else if (!onMap) postInvalidateDelayed(mapUntil - now + 16);
     }
 
     /** Unit pointer (1px tall); scaled to the real cursor's apparent size at draw. */
@@ -174,6 +336,7 @@ final class RemoteScreenView extends View {
             panX = panY = 0;
         }
         clampPan();
+        touchMap();
         invalidate();
         maybeNotifyZoom();
     }
@@ -194,14 +357,20 @@ final class RemoteScreenView extends View {
         curX = clamp01(nx);
         curY = clamp01(ny);
         if (listener != null) listener.point(curX, curY);
+        followCursor();
         invalidate();
     }
 
     /** Move the cursor by normalised deltas (from a trackpad drag). */
     void nudge(float dnx, float dny) {
-        curX = clamp01(curX + dnx);
-        curY = clamp01(curY + dny);
+        // With the view zoomed in, a swipe should move the pointer about as far as it moves on
+        // screen, not as far across the whole desktop.
+        float k = layout == Layout.PAD ? 1f / Math.max(1f, zoom) : 1f;
+        curX = clamp01(curX + dnx * k);
+        curY = clamp01(curY + dny * k);
         if (listener != null) listener.point(curX, curY);
+        followCursor();
+        touchMap();
         invalidate();
     }
 
@@ -411,15 +580,9 @@ final class RemoteScreenView extends View {
     protected void onDraw(Canvas canvas) {
         canvas.drawColor(Color.BLACK);
         if (frame == null) return;
-        // Fit (contain): the whole desktop is always visible; any leftover space
-        // is letterboxed. Pinch-zoom then fills it.
-        float scale = Math.min((float) getWidth() / frame.getWidth(),
-                (float) getHeight() / frame.getHeight());
-        float w = frame.getWidth() * scale;
-        float h = frame.getHeight() * scale;
-        float left = (getWidth() - w) / 2f;
-        float top = (getHeight() - h) / 2f;
-        baseRect.set(left, top, left + w, top + h);
+        // Fit (contain): the whole desktop is visible at zoom 1; any leftover space
+        // is letterboxed. Zooming in then fills the view.
+        layoutBase();
         clampPan(); // keep pan valid as the view resizes (e.g. keyboard opening)
 
         canvas.save();
@@ -449,6 +612,7 @@ final class RemoteScreenView extends View {
         canvas.drawPath(cursor, cursorFill);
         canvas.restore();
         canvas.restore();
+        drawMinimap(canvas);
     }
 
     /** View-space touch -> normalised frame coords (unclamped; may fall outside 0..1). */
@@ -473,6 +637,21 @@ final class RemoteScreenView extends View {
 
     @Override
     public boolean onTouchEvent(MotionEvent e) {
+        // A touch that starts on the minimap moves the view to where it points, and keeps doing
+        // so while the finger drags across it.
+        int act = e.getActionMasked();
+        if (onMap || (act == MotionEvent.ACTION_DOWN && mapAlpha() > 0f
+                && mapRect.contains(e.getX(), e.getY()))) {
+            if (act == MotionEvent.ACTION_UP || act == MotionEvent.ACTION_CANCEL) {
+                onMap = false;
+                touchMap();
+            } else {
+                onMap = true;
+                jumpFromMap(e.getX(), e.getY());
+                invalidate();
+            }
+            return true;
+        }
         switch (e.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
                 lastX = startX = e.getX();
@@ -535,6 +714,7 @@ final class RemoteScreenView extends View {
                             panX = panY = 0;
                         }
                         clampPan();
+                        touchMap();
                         invalidate();
                     } else if (twoMode == 2) { // two-finger drag = mouse wheel
                         scroll(-(my - lastMidY) / 3f);
@@ -566,9 +746,14 @@ final class RemoteScreenView extends View {
                 if (relativeMode()) {
                     nudge(dx * MOVE_GAIN / getWidth(), dy * MOVE_GAIN / getWidth());
                 } else {
-                    panX += dx;
-                    panY += dy;
-                    clampPan();
+                    if (layout == Layout.PAD) {
+                        panWithPointer(dx, dy);
+                    } else {
+                        panX += dx;
+                        panY += dy;
+                        clampPan();
+                    }
+                    touchMap();
                     invalidate();
                 }
                 return true;

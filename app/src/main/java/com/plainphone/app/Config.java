@@ -1124,6 +1124,24 @@ class Config {
         prefs(context).edit().putString("dev_trackpad_style", style).apply();
     }
 
+    /** Whether the Dev screen's minimap shows (auto-hiding) while you move or zoom; off = never. */
+    static boolean getDevMinimap(Context context) {
+        return prefs(context).getBoolean("dev_minimap", true);
+    }
+
+    static void setDevMinimap(Context context, boolean on) {
+        prefs(context).edit().putBoolean("dev_minimap", on).apply();
+    }
+
+    /** Whether the special keys (Esc, Tab, Ctrl, the arrows ...) show above the keyboard on the Dev screen. */
+    static boolean getDevSpecialKeys(Context context) {
+        return prefs(context).getBoolean("dev_special_keys", true);
+    }
+
+    static void setDevSpecialKeys(Context context, boolean on) {
+        prefs(context).edit().putBoolean("dev_special_keys", on).apply();
+    }
+
     /** The last host the Dev section connected to, so the service can rebuild after a kill. */
     static String getDevLastHostId(Context context) {
         return prefs(context).getString("dev_last_host", null);

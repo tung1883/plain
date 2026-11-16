@@ -46,6 +46,10 @@ public class DevScreenActivity extends Activity implements DevService.StateListe
         surface = new ScreenSurface(this);
 
         LinearLayout head = UiKit.header(this, host.label + " · screen");
+        head.addView(surface.mapButton(this), new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        head.addView(surface.keysButton(this), new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT));
         head.addView(surface.keyboardButton(this), new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
@@ -60,6 +64,11 @@ public class DevScreenActivity extends Activity implements DevService.StateListe
                 ViewGroup.LayoutParams.MATCH_PARENT, 1));
         root.addView(surface, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        // Landscape with the keyboard up: the screen gets all the height there is.
+        surface.setFocusListener(focus -> {
+            head.setVisibility(focus ? View.GONE : View.VISIBLE);
+            hair.setVisibility(focus ? View.GONE : View.VISIBLE);
+        });
         setContentView(root);
     }
 

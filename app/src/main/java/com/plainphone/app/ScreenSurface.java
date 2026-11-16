@@ -2,7 +2,9 @@ package com.plainphone.app;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Paint;
 import android.graphics.Rect;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Handler;
@@ -36,8 +38,24 @@ import java.util.Map;
 @SuppressLint("ViewConstructor")
 final class ScreenSurface extends LinearLayout {
 
+    /** How far the pad layout starts zoomed in (1 = the whole desktop fits the view). */
+    private static final float PAD_START_ZOOM = 2.5f;
+
     private final RemoteScreenView screen;
     private TrackpadView pad;
+    /** Holds the view and the pad; side by side in landscape. Null in the single-view layout. */
+    private LinearLayout content;
+    private boolean landscape;
+    /** Landscape with the keyboard up: see {@link #applyFocus}. */
+    private boolean focus;
+    /** The keyboard is open (the key bar is only shown while it is, and only when keysOn). */
+    private boolean kbOpen;
+    /** The special keys setting: whether the key bar shows above the keyboard. */
+    private boolean keysOn;
+    /** Whether the focus mode that is on replaced the pad with the key panel. */
+    private boolean focusKeys;
+    private LinearLayout keyCol;
+    private java.util.function.Consumer<Boolean> focusListener;
     private final EditText keyInput;
     private final KeyBar keyBar;
     private TextView chip;
@@ -64,7 +82,10 @@ final class ScreenSurface extends LinearLayout {
         screen.setFocusable(false);            // don't steal focus from keyInput on touch
         screen.setFocusableInTouchMode(false);
         screen.layout = padStyle ? RemoteScreenView.Layout.PAD : RemoteScreenView.Layout.WHOLE;
-        screen.aspectLock = padStyle;
+        screen.setMinimapEnabled(Config.getDevMinimap(ctx));
+        // In pad mode the view is a readable, zoomed window onto the desktop that follows the
+        // pointer, with the minimap showing where it is; the pad below is unchanged.
+        if (padStyle) screen.setInitialZoom(PAD_START_ZOOM);
         screen.listener = new RemoteScreenView.Listener() {
             @Override public void move(float dx, float dy, float scroll) {
                 send(DevProtocol.inputMove(dx, dy, scroll));
@@ -91,11 +112,13 @@ final class ScreenSurface extends LinearLayout {
         };
 
         if (padStyle) {
-            addView(screen, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT));
+            content = new LinearLayout(ctx);
+            content.setOrientation(VERTICAL);
             pad = new TrackpadView(ctx);
             pad.screen = screen;
-            addView(pad, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+            content.addView(screen, portraitViewParams());
+            content.addView(pad, portraitPadParams());
+            addView(content, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
         } else {
             FrameLayout stage = new FrameLayout(ctx);
             stage.addView(screen, new FrameLayout.LayoutParams(
@@ -174,6 +197,7 @@ final class ScreenSurface extends LinearLayout {
                 releaseKey();
             }
         });
+        keysOn = Config.getDevSpecialKeys(ctx);
         keyBar.setVisibility(GONE);
         addView(keyBar, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -186,11 +210,167 @@ final class ScreenSurface extends LinearLayout {
             rootView.getWindowVisibleDisplayFrame(r);
             int screenH = rootView.getHeight();
             boolean kbShown = screenH - r.bottom > screenH * 0.15f;
-            if (!kbShown && keyBar.getVisibility() == VISIBLE) {
+            if (!kbShown && kbOpen) {
+                kbOpen = false;
+                applyFocus(false);
                 keyBar.setVisibility(GONE);
                 keyInput.clearFocus();
             }
         });
+    }
+
+    private LayoutParams portraitViewParams() {
+        return new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.45f);
+    }
+
+    private LayoutParams portraitPadParams() {
+        return new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
+    }
+
+    /** Landscape: the view fills the left, the pad takes a column on the right. */
+    @Override
+    protected void onSizeChanged(int w, int h, int oldw, int oldh) {
+        super.onSizeChanged(w, h, oldw, oldh);
+        // The device's orientation, not this view's shape: with the keyboard up in portrait the
+        // view can be wider than it is tall.
+        boolean land = getResources().getConfiguration().orientation
+                == android.content.res.Configuration.ORIENTATION_LANDSCAPE;
+        if (content == null || land == landscape) return;
+        landscape = land;
+        post(() -> {
+            content.setOrientation(land ? HORIZONTAL : VERTICAL);
+            screen.setLayoutParams(land
+                    ? new LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f)
+                    : portraitViewParams());
+            pad.setLayoutParams(land
+                    ? new LayoutParams(dp(230), ViewGroup.LayoutParams.MATCH_PARENT)
+                    : portraitPadParams());
+            applyFocus(false);
+            applyFocus(kbOpen);
+        });
+    }
+
+    /**
+     * Focus mode: in landscape the keyboard leaves only about half the height, so while it is up
+     * the host's title bar and the pad go away. The view fills the width and all the height above
+     * the keyboard, and the key bar becomes a panel on the right (with L, R and a close button
+     * in place of the pad).
+     */
+    private void applyFocus(boolean on) {
+        // Landscape only: portrait is left exactly as it is.
+        if (content == null || on == focus || (on && !landscape)) return;
+        focus = on;
+        if (on) {
+            focusKeys = keysOn;   // remembered, so it is undone the way it was done
+            // With the special keys on, a key panel takes the pad's place. With them off the pad
+            // stays and only the title bar goes.
+            if (focusKeys) {
+                if (keyCol == null) keyCol = buildKeyColumn();
+                removeView(keyBar);
+                keyCol.addView(keyBar, 0, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+                keyBar.setFullHeight(true);
+                pad.setVisibility(GONE);
+                content.addView(keyCol, new LayoutParams(dp(300), ViewGroup.LayoutParams.MATCH_PARENT));
+            }
+        } else if (focusKeys) {
+            content.removeView(keyCol);
+            keyCol.removeView(keyBar);
+            keyBar.setFullHeight(false);
+            addView(keyBar, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT));
+            pad.setVisibility(VISIBLE);
+        }
+        if (focusListener != null) focusListener.accept(on);
+    }
+
+    /** Called with true when focus mode starts and false when it ends, so the host can hide its title bar. */
+    void setFocusListener(java.util.function.Consumer<Boolean> listener) {
+        focusListener = listener;
+    }
+
+    private LinearLayout buildKeyColumn() {
+        LinearLayout col = new LinearLayout(getContext());
+        col.setOrientation(VERTICAL);
+        col.setBackgroundColor(0xFF0A0A0A);
+        LinearLayout row = new LinearLayout(getContext());
+        row.setOrientation(HORIZONTAL);
+        row.addView(mouseKey("L", () -> screen.padClick("l")));
+        row.addView(divider());
+        row.addView(mouseKey("R", () -> screen.padClick("r")));
+        row.addView(divider());
+        row.addView(mouseKey("⌨", this::toggleKeyboard));
+        col.addView(row, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)));
+        return col;
+    }
+
+    private View divider() {
+        View v = new View(getContext());
+        v.setBackgroundColor(0xFF262626);
+        v.setLayoutParams(new LayoutParams(Math.max(1, dp(1)), ViewGroup.LayoutParams.MATCH_PARENT));
+        return v;
+    }
+
+    private TextView mouseKey(String label, Runnable action) {
+        TextView t = new TextView(getContext());
+        t.setText(label);
+        t.setTextSize(15);
+        t.setTextColor(0xFF8B8B8B);
+        t.setTypeface(Fonts.cascadiaMono(getContext()));
+        t.setGravity(Gravity.CENTER);
+        android.graphics.drawable.StateListDrawable bg = new android.graphics.drawable.StateListDrawable();
+        bg.addState(new int[]{android.R.attr.state_pressed}, new android.graphics.drawable.ColorDrawable(0xFF1E1E1E));
+        bg.addState(new int[]{}, new android.graphics.drawable.ColorDrawable(0xFF0D0D0D));
+        t.setBackground(bg);
+        t.setLayoutParams(new LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
+        t.setOnClickListener(v -> action.run());
+        return t;
+    }
+
+    /**
+     * An icon for the host's title bar, next to the keyboard: lit when the minimap shows while
+     * you move or zoom (and hides after a pause), dim when it is off.
+     */
+    View mapButton(Context ctx) {
+        MapIcon icon = new MapIcon(ctx);
+        icon.on = Config.getDevMinimap(ctx);
+        icon.setOnClickListener(v -> {
+            icon.on = !icon.on;
+            Config.setDevMinimap(ctx, icon.on);
+            screen.setMinimapEnabled(icon.on);
+            icon.invalidate();
+        });
+        return icon;
+    }
+
+    /** A small rectangle with a box inside it: a map of the desktop. */
+    private static final class MapIcon extends View {
+        boolean on;
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final float d;
+
+        MapIcon(Context ctx) {
+            super(ctx);
+            d = ctx.getResources().getDisplayMetrics().density;
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(d * 1.6f);
+            setPadding(Math.round(d * 14), 0, Math.round(d * 14), 0);
+        }
+
+        @Override
+        protected void onMeasure(int wSpec, int hSpec) {
+            setMeasuredDimension(
+                    resolveSize(Math.round(d * 22) + getPaddingLeft() + getPaddingRight(), wSpec),
+                    resolveSize(Math.round(d * 22), hSpec));
+        }
+
+        @Override
+        protected void onDraw(Canvas c) {
+            paint.setColor(on ? Color.WHITE : 0xFF5C5C5C);
+            float w = d * 22, h = d * 15;
+            float l = getPaddingLeft(), t = (getHeight() - h) / 2f;
+            c.drawRoundRect(l, t, l + w, t + h, d * 2.5f, d * 2.5f, paint);
+            c.drawRoundRect(l + w * 0.5f, t + h * 0.3f, l + w * 0.82f, t + h * 0.76f, d, d, paint);
+        }
     }
 
     /** A ⌨ button for a host's title bar / header. */
@@ -210,17 +390,77 @@ final class ScreenSurface extends LinearLayout {
         InputMethodManager imm = (InputMethodManager) getContext()
                 .getSystemService(Context.INPUT_METHOD_SERVICE);
         if (imm == null) return;
-        boolean showing = keyBar.getVisibility() == VISIBLE;
-        if (showing) {
+        if (kbOpen) {
+            kbOpen = false;
             imm.hideSoftInputFromWindow(keyInput.getWindowToken(), 0);
             keyInput.clearFocus();
+            applyFocus(false);
             keyBar.setVisibility(GONE);
             keyBarShownAt = 0;
         } else {
+            kbOpen = true;
             keyInput.requestFocus();
             imm.showSoftInput(keyInput, InputMethodManager.SHOW_IMPLICIT);
-            keyBar.setVisibility(VISIBLE);
+            keyBar.setVisibility(keysOn ? VISIBLE : GONE);
+            applyFocus(true);
             keyBarShownAt = System.currentTimeMillis();
+        }
+    }
+
+    /**
+     * An icon next to the keyboard button: lit when the special keys (Esc, Tab, Ctrl, the arrows
+     * ...) show with the keyboard, dim when they are off and only the keyboard itself shows.
+     */
+    View keysButton(Context ctx) {
+        KeysIcon icon = new KeysIcon(ctx);
+        icon.on = keysOn;
+        icon.setOnClickListener(v -> {
+            icon.on = !icon.on;
+            setSpecialKeys(icon.on);
+            icon.invalidate();
+        });
+        return icon;
+    }
+
+    private void setSpecialKeys(boolean on) {
+        keysOn = on;
+        Config.setDevSpecialKeys(getContext(), on);
+        // landscape: swap the key panel and the pad to match
+        if (focus) {
+            applyFocus(false);
+            applyFocus(true);
+        }
+        if (kbOpen) keyBar.setVisibility(on ? VISIBLE : GONE);
+    }
+
+    /** Three keycaps: two small ones over a wide one. */
+    private static final class KeysIcon extends View {
+        boolean on;
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final float d;
+
+        KeysIcon(Context ctx) {
+            super(ctx);
+            d = ctx.getResources().getDisplayMetrics().density;
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(d * 1.6f);
+            setPadding(Math.round(d * 14), 0, Math.round(d * 14), 0);
+        }
+
+        @Override
+        protected void onMeasure(int wSpec, int hSpec) {
+            setMeasuredDimension(
+                    resolveSize(Math.round(d * 22) + getPaddingLeft() + getPaddingRight(), wSpec),
+                    resolveSize(Math.round(d * 22), hSpec));
+        }
+
+        @Override
+        protected void onDraw(Canvas c) {
+            paint.setColor(on ? Color.WHITE : 0xFF5C5C5C);
+            float l = getPaddingLeft(), t = (getHeight() - d * 17) / 2f, k = d * 8, g = d * 3;
+            c.drawRoundRect(l, t, l + k, t + k, d * 2, d * 2, paint);
+            c.drawRoundRect(l + k + g, t, l + 2 * k + g, t + k, d * 2, d * 2, paint);
+            c.drawRoundRect(l, t + k + g, l + 2 * k + g, t + 2 * k + g - d, d * 2, d * 2, paint);
         }
     }
 

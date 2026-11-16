@@ -192,10 +192,39 @@ final class DevKeyboardView extends View {
     }
 
     private int rowDp(int kind, float pct) {
+        return Math.round(rawRowDp(kind, pct) * landscapeScale(pct));
+    }
+
+    private static float rawRowDp(int kind, float pct) {
         float base = 42f * pct / 100f;
-        if (kind == ROW_DEV) return Math.round(base * 0.76f);
-        if (kind == ROW_NUM) return Math.round(base * 0.9f);
-        return Math.round(base);
+        if (kind == ROW_DEV) return base * 0.76f;
+        if (kind == ROW_NUM) return base * 0.9f;
+        return base;
+    }
+
+    /** In landscape the whole keyboard may take about this share of the screen's height. */
+    private static final float LANDSCAPE_MAX_SHARE = 0.55f;
+    /** What shares the keyboard window with the keys (toolbar, suggestions, padding), in dp. */
+    private static final float LANDSCAPE_CHROME_DP = 56f;
+
+    /**
+     * 1 in portrait. In landscape the screen is short: the rows shrink together, as far as needed,
+     * so the keys and the toolbar stay within {@link #LANDSCAPE_MAX_SHARE} of the screen height
+     * and leave room for the app above.
+     */
+    private float landscapeScale(float pct) {
+        android.content.res.Resources res = getResources();
+        if (res.getConfiguration().orientation != android.content.res.Configuration.ORIENTATION_LANDSCAPE
+                || rowKinds.isEmpty()) {
+            return 1f;
+        }
+        android.util.DisplayMetrics dm = res.getDisplayMetrics();
+        float allowed = dm.heightPixels / dm.density * LANDSCAPE_MAX_SHARE - LANDSCAPE_CHROME_DP;
+        float gaps = 4f + 4f * rowKinds.size();    // the keyboard's own padding and each row's gap
+        float rows = 0f;
+        for (int kind : rowKinds) rows += rawRowDp(kind, pct);
+        if (rows <= 0f || rows + gaps <= allowed) return 1f;
+        return Math.max(0.45f, (allowed - gaps) / rows);
     }
 
     private static Key k(String id) {
