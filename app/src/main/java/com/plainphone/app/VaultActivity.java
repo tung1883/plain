@@ -587,7 +587,7 @@ public class VaultActivity extends Activity {
         } else if (looksTextual(mime, entry.name)) {
             viewer = VaultTextViewerActivity.class;           // large ones open truncated, read-only
         } else {
-            Toast.makeText(this, "No built-in viewer — long-press to Export",
+            Toast.makeText(this, "No built-in viewer - long-press to Export",
                     Toast.LENGTH_SHORT).show();
             return;
         }

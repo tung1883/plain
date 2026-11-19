@@ -498,7 +498,7 @@ public class RecorderService extends Service {
         public void run() {
             if (mode != Mode.PLAYING || player == null) return;
             if (playDocId != null && !vaultPausedByLock && !VaultSession.get().isUnlocked()) {
-                onVaultStateChanged();        // safety net — the listener didn't reach us
+                onVaultStateChanged();        // safety net - the listener didn't reach us
                 return;
             }
             updateSessionState();
@@ -781,7 +781,7 @@ public class RecorderService extends Service {
     private Notification playNotification() {
         if (vaultPausedByLock) {
             return new Notification.Builder(this, CHANNEL_ID)
-                    .setContentTitle("Paused — vault locked")
+                    .setContentTitle("Paused - vault locked")
                     .setContentText(safeName() + " · " + fmtTime(vaultResumePos)
                             + " / " + fmtTime(duration()))
                     .setSmallIcon(R.drawable.ic_stat_recorder)

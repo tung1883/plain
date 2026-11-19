@@ -66,7 +66,7 @@ final class CompassPanel implements SensorEventListener {
         reading.setTextSize(16);
         reading.setTypeface(Fonts.current(context));
         reading.setGravity(Gravity.CENTER);
-        reading.setText("—");
+        reading.setText("-");
         LinearLayout.LayoutParams readingLp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         readingLp.topMargin = UiKit.dp(context, 12);
@@ -165,10 +165,10 @@ final class CompassPanel implements SensorEventListener {
     public void onAccuracyChanged(Sensor sensor, int accuracy) {
         switch (accuracy) {
             case SensorManager.SENSOR_STATUS_UNRELIABLE:
-                accuracyLabel.setText("Unreliable — move away from metal and wave the phone in a figure-8");
+                accuracyLabel.setText("Unreliable - move away from metal and wave the phone in a figure-8");
                 break;
             case SensorManager.SENSOR_STATUS_ACCURACY_LOW:
-                accuracyLabel.setText("Low accuracy — calibrate with a figure-8 motion");
+                accuracyLabel.setText("Low accuracy - calibrate with a figure-8 motion");
                 break;
             case SensorManager.SENSOR_STATUS_ACCURACY_MEDIUM:
                 accuracyLabel.setText("Medium accuracy");

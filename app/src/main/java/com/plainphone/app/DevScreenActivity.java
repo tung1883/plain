@@ -91,7 +91,7 @@ public class DevScreenActivity extends Activity implements DevService.StateListe
         super.onStop();
         DevService.removeStateListener(this);
         surface.detach();
-        if (service != null) service.setActivityDetail(hostId, null);
+        if (service != null) service.clearActivities(this);
         try {
             unbindService(conn);
         } catch (IllegalArgumentException ignored) {
@@ -112,6 +112,15 @@ public class DevScreenActivity extends Activity implements DevService.StateListe
     private void pushConnection() {
         DevConnection live = (service != null && DevService.isConnected(hostId)) ? service.connection(hostId) : null;
         surface.attach(live);
-        if (live != null && service != null) service.setActivityDetail(hostId, "screen");
+        if (service != null) {
+            if (live != null) {
+                service.setActivities(this,
+                        new Intent(this, DevScreenActivity.class).putExtra(DevHostActivity.EXTRA_HOST_ID, hostId)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT),
+                        java.util.Collections.singletonList(new String[]{hostId, "screen"}));
+            } else {
+                service.clearActivities(this);
+            }
+        }
     }
 }

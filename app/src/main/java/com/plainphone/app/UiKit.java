@@ -232,7 +232,7 @@ class UiKit {
     static ProgressBar spinner(Context context) {
         ProgressBar bar = new ProgressBar(
                 new ContextThemeWrapper(context, android.R.style.Theme_Material),
-                null, android.R.attr.progressBarStyle);   // medium — not the oversized "large"
+                null, android.R.attr.progressBarStyle);   // medium - not the oversized "large"
         bar.setIndeterminate(true);
         bar.setIndeterminateTintList(ColorStateList.valueOf(Color.WHITE));
         int s = Math.round(24 * context.getResources().getDisplayMetrics().density);

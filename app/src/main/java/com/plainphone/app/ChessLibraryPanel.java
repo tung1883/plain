@@ -850,7 +850,7 @@ final class ChessLibraryPanel {
         box.addView(optionRow("Generate puzzles", Color.WHITE, v -> {
             dialog.dismiss();
             ChessPuzzleJobs.start(host, source);
-            android.widget.Toast.makeText(host, "Generating puzzles — " + source, android.widget.Toast.LENGTH_SHORT).show();
+            android.widget.Toast.makeText(host, "Generating puzzles - " + source, android.widget.Toast.LENGTH_SHORT).show();
         }));
         box.addView(optionRow("Delete this PGN", 0xFFE05C5C, v -> { dialog.dismiss(); confirmDeleteSource(source); }));
         box.addView(optionRow("Cancel", 0xFF8A8A8A, v -> dialog.dismiss()));

@@ -310,7 +310,7 @@ final class TerminalEmulator {
                 if (--utf8Remaining == 0) putCodePoint(utf8Value);
                 return;
             }
-            utf8Remaining = 0; // malformed — drop the partial char, handle b normally
+            utf8Remaining = 0; // malformed - drop the partial char, handle b normally
         }
         switch (parseState) {
             case GROUND: ground(b); break;
@@ -483,7 +483,7 @@ final class TerminalEmulator {
                             .getBytes(StandardCharsets.US_ASCII));
                 }
                 break;
-            default: // unhandled — ignore
+            default: // unhandled - ignore
         }
     }
 
@@ -495,7 +495,7 @@ final class TerminalEmulator {
                     case 25: cursorVisible = on; break;
                     case 7: autowrap = on; break;
                     case 1049: case 47: case 1047: switchAlt(on); break;
-                    default: // 1 (app cursor keys), 2004 (bracketed paste) — ignored
+                    default: // 1 (app cursor keys), 2004 (bracketed paste) - ignored
                 }
             }
         }

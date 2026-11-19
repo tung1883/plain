@@ -307,7 +307,7 @@ public class JobService extends Service {
                 pendingScannedIds.clear();
             }
             ChessPuzzleJobs.publish(snap);
-            String label = scoped ? ("Generating puzzles — " + scope) : "Generating chess puzzles";
+            String label = scoped ? ("Generating puzzles - " + scope) : "Generating chess puzzles";
             throttledNotif(notif(label,
                     snap.gamesScanned + " of " + snap.gamesTotal + " games · " + snap.puzzlesFound + " found",
                     pct(snap.gamesScanned, snap.gamesTotal)));

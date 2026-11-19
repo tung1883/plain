@@ -54,7 +54,7 @@ enum Lock {
      */
     static void lockAllSections(Context context) {
         for (Lock lock : values()) {
-            if (!lock.isLocked(context)) continue;   // locking turned off for this section — leave it off
+            if (!lock.isLocked(context)) continue;   // locking turned off for this section - leave it off
             if (lock.busy(context)) continue;   // a pending import / live recorder keeps its section unlocked
             Config.setUnlockUntil(context, lock.area, 0L);
         }

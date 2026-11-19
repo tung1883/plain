@@ -53,7 +53,7 @@ final class VaultLocation {
             return null;
         }
         String[] parts = docId.split(":", 2);
-        if (!"primary".equalsIgnoreCase(parts[0])) return null;   // SD card / USB — refuse
+        if (!"primary".equalsIgnoreCase(parts[0])) return null;   // SD card / USB - refuse
         String relative = parts.length > 1 ? parts[1] : "";
         File base = Environment.getExternalStorageDirectory();
         if (!base.isDirectory()) return null;
@@ -94,7 +94,7 @@ final class VaultLocation {
         copyDir(src, dst);
         if (!deleteDir(src)) {
             throw new IOException("vault copied to " + dst + " but the old copy at " + src
-                    + " couldn't be removed — delete it by hand");
+                    + " couldn't be removed - delete it by hand");
         }
     }
 

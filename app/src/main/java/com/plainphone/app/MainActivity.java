@@ -1235,7 +1235,7 @@ public class MainActivity extends Activity implements SelectionHost {
         int target = stageForOffset(bounded);
         if (velocityY < -dp(700)) target = Math.min(2, target + 1);
         else if (velocityY > dp(700)) target = Math.max(0, target - 1);
-        keepStage = target;               // deliberate choice — survives search / selection
+        keepStage = target;               // deliberate choice - survives search / selection
         animateHeaderToStage(target);
     }
 
@@ -1325,7 +1325,7 @@ public class MainActivity extends Activity implements SelectionHost {
             search.setText("");
             filter("");
             android.widget.Toast.makeText(this,
-                    Config.isPinSet(this) ? "Locked" : "Locked — set a master PIN to take effect",
+                    Config.isPinSet(this) ? "Locked" : "Locked - set a master PIN to take effect",
                     android.widget.Toast.LENGTH_SHORT).show();
         });
     }
@@ -3118,7 +3118,7 @@ public class MainActivity extends Activity implements SelectionHost {
 
         String title = created && !unlocked ? "Vault is locked" : "Vault";
         String state = !created ? "Tap to set up"
-                : unlocked ? "Unlocked — tap to browse" : "Tap to unlock";
+                : unlocked ? "Unlocked - tap to browse" : "Tap to unlock";
         rows.add(new SearchResult(SearchResult.Kind.PLAIN, title, state, -1,
                 () -> startActivity(new Intent(this, VaultActivity.class))));
         if (created && unlocked) {
@@ -3195,7 +3195,7 @@ public class MainActivity extends Activity implements SelectionHost {
         for (DevHost host : devHosts) {
             boolean live = DevService.isConnected(host.id);
             rows.add(new SearchResult(SearchResult.Kind.DEV, host.label,
-                    live ? "connected — tap to open" : host.address(), -1, () -> {
+                    live ? "connected - tap to open" : host.address(), -1, () -> {
                 DevService.connect(this, host.id);
                 startActivity(new Intent(this, DevHostActivity.class)
                         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

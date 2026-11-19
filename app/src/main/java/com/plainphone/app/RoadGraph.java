@@ -139,7 +139,7 @@ final class RoadGraph {
 
         for (MapArea area : areas) {
             Loaded one = loadOne(context, area);
-            if (one == null) continue; // missing/corrupt roads.json for this area — skip it,
+            if (one == null) continue; // missing/corrupt roads.json for this area - skip it,
                                         // don't fail the whole merge over one area.
             // Offset this area's edges by the node count accumulated so far, so every area's
             // node ids land in disjoint ranges of the merged arrays.

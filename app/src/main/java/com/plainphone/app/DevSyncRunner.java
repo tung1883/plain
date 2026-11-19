@@ -283,7 +283,7 @@ final class DevSyncRunner {
         DevSyncJobs.writeBaseline(context, pair.id, baseline);
         long transferMs = now() - planDone;
         android.util.Log.i(LatencyStats.TAG, String.format(java.util.Locale.US,
-                "sync %s: %d file(s), %.1f MB in %.1f s (%.2f MB/s) — listing+checks %.1f s, total %.1f s,"
+                "sync %s: %d file(s), %.1f MB in %.1f s (%.2f MB/s) - listing+checks %.1f s, total %.1f s,"
                         + " %d up / %d down / %d unchanged-by-check, %d failed",
                 pair.id, toPush.size() + toPull.size(), bytesMoved / 1e6, transferMs / 1000.0,
                 transferMs > 0 ? bytesMoved / 1e6 / (transferMs / 1000.0) : 0.0,
@@ -410,7 +410,7 @@ final class DevSyncRunner {
         while (remaining > 0) {
             long skipped = in.skip(remaining);
             if (skipped <= 0) {
-                if (in.read() < 0) break; // EOF — nothing more to skip
+                if (in.read() < 0) break; // EOF - nothing more to skip
                 remaining--;
             } else {
                 remaining -= skipped;

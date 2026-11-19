@@ -36,7 +36,7 @@ final class PluginTasks {
         }
 
         String line() {
-            return detail != null ? plugin.label + " — " + detail : plugin.label;
+            return detail != null ? plugin.label + " - " + detail : plugin.label;
         }
     }
 

@@ -79,7 +79,7 @@ class Todos {
         String text = toText(todos);
         String uri = Config.getTodoFileUri(context);
         if (uri != null && writeFile(context, Uri.parse(uri), text)) return;
-        if (uri != null) Config.setTodoFileUri(context, null); // write failed — fall back
+        if (uri != null) Config.setTodoFileUri(context, null); // write failed - fall back
         Config.setTodosText(context, text);
     }
 
@@ -253,11 +253,11 @@ class Todos {
 
         if (fileHasTasks) {
             return internalHasTasks
-                    ? "Linked — the file's tasks are now shown; your internal list is set aside"
+                    ? "Linked - the file's tasks are now shown; your internal list is set aside"
                     : "Linked";
         }
         writeFile(context, uri, Config.getTodosText(context));
-        return "Linked — your tasks were written to the file";
+        return "Linked - your tasks were written to the file";
     }
 
     /**

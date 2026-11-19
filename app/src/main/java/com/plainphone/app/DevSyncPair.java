@@ -36,7 +36,7 @@ final class DevSyncPair {
     String direction = DIR_PUSH;
     String deleteMode = DELETE_OFF; // only meaningful for DIR_MIRROR
     int scheduleMinutes = SCHEDULE_MANUAL;
-    int dailyMinuteOfDay = 120; // 2:00 AM — only meaningful when scheduleMinutes == 24*60
+    int dailyMinuteOfDay = 120; // 2:00 AM - only meaningful when scheduleMinutes == 24*60
 
     // Last-run summary, for the pair list row.
     long lastRunAt;

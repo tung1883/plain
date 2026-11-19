@@ -158,7 +158,7 @@ class StatsPanel {
     private void bind(LinearLayout content, Typeface georgia, StatsActivity.Range r, Snapshot snap) {
         String span = r.label;
 
-        addSectionTitle(content, georgia, "Flagged apps — " + span, 32);
+        addSectionTitle(content, georgia, "Flagged apps - " + span, 32);
         if (snap.flaggedApps.isEmpty() && !hasDailyUsage(snap.flaggedDaily)) {
             content.addView(emptyText(georgia, "(no usage)"));
         } else {
@@ -168,7 +168,7 @@ class StatsPanel {
             addUsageSection(content, georgia, snap.flaggedApps);
         }
 
-        addSectionTitle(content, georgia, "All apps — " + span, 48);
+        addSectionTitle(content, georgia, "All apps - " + span, 48);
         if (!snap.hasUsageAccess) {
             TextView notice = new TextView(host);
             notice.setTextColor(Color.WHITE);

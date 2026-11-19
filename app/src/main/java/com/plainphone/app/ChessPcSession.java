@@ -69,7 +69,7 @@ final class ChessPcSession {
             case DevProtocol.T_CHESS_RESULTS: onResults(msg); break;
             case DevProtocol.T_CHESS_PROGRESS: onProgress(msg); break;
             case DevProtocol.T_CHESS_ERROR: onError(msg); break;
-            default: break; // games.ack, job.removed, … — nothing to do
+            default: break; // games.ack, job.removed, … - nothing to do
         }
     }
 

@@ -237,7 +237,7 @@ public class DevAccountsActivity extends Activity {
         if (e instanceof Http.HttpException) {
             int s = ((Http.HttpException) e).status;
             if (s == 401 || s == 403) return "Token rejected (" + s + ").";
-            if (s == 429) return "Rate limited — try again shortly.";
+            if (s == 429) return "Rate limited - try again shortly.";
             return "Service error " + s + ".";
         }
         return "Network error.";

@@ -274,7 +274,7 @@ final class PuzzleGenerator {
             if (cancelled.getAsBoolean()) return Optional.empty();
             String san = ChessRules.normalizeSan(sans.get(i));
             int[] move = ChessRules.findMoveBySan(pos, san);
-            if (move == null) break; // corrupt/unsupported token — same bail-out as loadSanMoves
+            if (move == null) break; // corrupt/unsupported token - same bail-out as loadSanMoves
 
             boolean irreversible = ChessRules.isIrreversible(pos, move[0], move[1], move[2], move[3]);
             pos = ChessRules.apply(pos, move[0], move[1], move[2], move[3]);

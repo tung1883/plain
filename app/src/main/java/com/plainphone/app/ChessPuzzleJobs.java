@@ -81,7 +81,7 @@ final class ChessPuzzleJobs {
         cancelRequested = false;
         String scope = scopeSourceLabel == null ? Config.CHESS_PUZZLEGEN_SCOPE_ALL : scopeSourceLabel;
         String label = Config.CHESS_PUZZLEGEN_SCOPE_ALL.equals(scope)
-                ? "Generating chess puzzles" : "Generating puzzles — " + scope;
+                ? "Generating chess puzzles" : "Generating puzzles - " + scope;
         JobQueue.enqueue(context, new JobQueue.Spec(TYPE_PUZZLEGEN)
                 .label(label)
                 .put("scope", scope));
@@ -117,7 +117,7 @@ final class ChessPuzzleJobs {
         Snapshot s = snapshot;
         if (s == null || s.gamesTotal <= 0) return "generating puzzles";
         String scoped = Config.CHESS_PUZZLEGEN_SCOPE_ALL.equals(s.scope) ? "" : " (" + s.scope + ")";
-        return String.format(java.util.Locale.US, "generating puzzles%s — %,d of %,d games — %,d found",
+        return String.format(java.util.Locale.US, "generating puzzles%s - %,d of %,d games - %,d found",
                 scoped, s.gamesScanned, s.gamesTotal, s.puzzlesFound);
     }
 
@@ -125,7 +125,7 @@ final class ChessPuzzleJobs {
     static String doneLabel(Context context) {
         Snapshot s = snapshot;
         if (s == null) return "Done";
-        return String.format(java.util.Locale.US, "%,d games scanned — %,d found",
+        return String.format(java.util.Locale.US, "%,d games scanned - %,d found",
                 s.gamesScanned, s.puzzlesFound);
     }
 

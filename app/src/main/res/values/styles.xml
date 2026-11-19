@@ -21,7 +21,7 @@
          inherits Theme.PlainPhone's android:windowBackground = solid black square above.
          Overriding that at runtime via Window.setBackgroundDrawable (UiKit.clearDialogChrome)
          still leaves whatever frame/shadow drawable the OS ties to that inherited
-         windowBackground attribute — the square edge behind the rounded box. A dedicated
+         windowBackground attribute - the square edge behind the rounded box. A dedicated
          dialog theme with a transparent, frameless window from the start avoids that
          entirely instead of patching it after the fact. -->
     <style name="Theme.PlainPhone.RoundedDialog" parent="android:Theme.Black.NoTitleBar">

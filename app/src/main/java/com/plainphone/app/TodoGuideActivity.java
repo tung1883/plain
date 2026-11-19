@@ -14,7 +14,7 @@ public class TodoGuideActivity extends Activity {
 
     private static final String[][] SECTIONS = {
             {"The format",
-                    "Plain stores to-dos as todo.txt — one task per line, plain text, the same "
+                    "Plain stores to-dos as todo.txt - one task per line, plain text, the same "
                     + "format todo.sh and many other apps use.\n\n"
                     + "    (A) 2026-08-31 Call plumber +house @phone due:2026-09-02\n"
                     + "    x 2026-08-30 Buy milk +groceries\n\n"
@@ -24,7 +24,7 @@ public class TodoGuideActivity extends Activity {
             {"Where tasks live",
                     "By default the list is stored inside Plain. It is private to this app and "
                     + "included in nothing that leaves the phone.\n\n"
-                    + "\"Edit as text\" opens the whole list as raw todo.txt — the escape hatch "
+                    + "\"Edit as text\" opens the whole list as raw todo.txt - the escape hatch "
                     + "for bulk edits."},
             {"Linking a file",
                     "\"Todo file\" → Link file lets you point Plain at a todo.txt file on the "
@@ -35,8 +35,8 @@ public class TodoGuideActivity extends Activity {
                     + "it on every change. Unlink copies the file's tasks back inside Plain."},
             {"Syncing",
                     "Plain does not sync. It only reads and writes that one file.\n\n"
-                    + "To see the same list on a computer, use a separate sync tool — Syncthing, "
-                    + "a Dropbox/Nextcloud folder, etc. — to mirror the file. Plain is then just "
+                    + "To see the same list on a computer, use a separate sync tool - Syncthing, "
+                    + "a Dropbox/Nextcloud folder, etc. - to mirror the file. Plain is then just "
                     + "one editor of a shared file, like todo.sh is another.\n\n"
                     + "Changes made elsewhere show up the next time the To-do list is redrawn "
                     + "(reopen it, or swipe away and back)."},

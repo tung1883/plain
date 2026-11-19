@@ -208,7 +208,7 @@ final class MovesGrid extends LinearLayout {
      *  edit/remove-comment menu. */
     private View commentRow(Activity host, ChessBoardView.MoveNode node) {
         TextView t = new TextView(host);
-        t.setText(moveLabel(node) + " — " + node.comment);
+        t.setText(moveLabel(node) + " - " + node.comment);
         t.setTypeface(Fonts.current(host), android.graphics.Typeface.ITALIC);
         t.setTextSize(VARIATION_SP);
         t.setTextColor(0xFFB7B7B7);
@@ -304,7 +304,7 @@ final class MovesGrid extends LinearLayout {
         TextView text = new TextView(host);
         text.setText(formatVariation(line, currentNode));
         text.setMovementMethod(android.text.method.LinkMovementMethod.getInstance());
-        text.setHighlightColor(Color.TRANSPARENT); // no link-press flash — matches the plain cells
+        text.setHighlightColor(Color.TRANSPARENT); // no link-press flash - matches the plain cells
         text.setTypeface(Fonts.current(host));
         text.setTextSize(VARIATION_SP);
         text.setTextColor(0xFF4A4A4A);

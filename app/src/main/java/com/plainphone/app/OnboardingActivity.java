@@ -106,7 +106,7 @@ public class OnboardingActivity extends Activity {
             case 3:
                 title.setText("3. Everything else is optional");
                 body.setText("Plain works from here. Search on the home screen can also look through "
-                        + "your files, contacts, and the web — each of those asks for its own "
+                        + "your files, contacts, and the web - each of those asks for its own "
                         + "permission the first time you actually use it, not now.\n\n"
                         + "Settings → Permissions → App access lists everything Plain can see or "
                         + "control, and what each one is for, whenever you want to check.");

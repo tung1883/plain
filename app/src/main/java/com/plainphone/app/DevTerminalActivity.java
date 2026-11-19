@@ -61,11 +61,6 @@ public class DevTerminalActivity extends Activity implements DevService.StateLis
             @Override public void onReconnecting(boolean on) {
                 headerSpinner.setVisibility(on ? View.VISIBLE : View.GONE);
             }
-            @Override public void onTitle(String name) {
-                if (service != null) {
-                    service.setActivityDetail(hostId, "shell" + (name != null ? " · " + name : ""));
-                }
-            }
             @Override public void onExit(int code) {
                 Toast.makeText(DevTerminalActivity.this, "Shell exited (" + code + ")",
                         Toast.LENGTH_SHORT).show();
@@ -118,7 +113,7 @@ public class DevTerminalActivity extends Activity implements DevService.StateLis
         super.onStop();
         DevService.removeStateListener(this);
         surface.detachKeepAlive();
-        if (service != null) service.setActivityDetail(hostId, null);
+        if (service != null) service.clearActivities(this);
         try {
             unbindService(conn);
         } catch (IllegalArgumentException ignored) {
@@ -133,6 +128,16 @@ public class DevTerminalActivity extends Activity implements DevService.StateLis
     private void pushConnection() {
         DevConnection live = (service != null && DevService.isConnected(hostId)) ? service.connection(hostId) : null;
         surface.attach(live);
-        if (live != null && service != null) service.setActivityDetail(hostId, "shell");
+        if (service != null) {
+            if (live != null) {
+                service.setActivities(this,
+                        new Intent(this, DevTerminalActivity.class).putExtra(DevHostActivity.EXTRA_HOST_ID, hostId)
+                                .putExtra(EXTRA_SESSION_ID, surface.sessionId())
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT),
+                        java.util.Collections.singletonList(new String[]{hostId, "shell"}));
+            } else {
+                service.clearActivities(this);
+            }
+        }
     }
 }

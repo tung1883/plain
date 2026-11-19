@@ -178,7 +178,7 @@ abstract class ServicePanel implements PanelContent {
         if (a == null) {
             spinner.setVisibility(View.GONE);
             data = null;
-            showError("No account — open ▸ Settings");
+            showError("No account - open ▸ Settings");
             list.refresh();
             return;
         }
@@ -214,7 +214,7 @@ abstract class ServicePanel implements PanelContent {
         if (e instanceof Http.HttpException) {
             int s = ((Http.HttpException) e).status;
             if (s == 401 || s == 403) return "Token rejected (" + s + ").";
-            if (s == 429) return "Rate limited — try again shortly.";
+            if (s == 429) return "Rate limited - try again shortly.";
             return "Service error " + s + ".";
         }
         return "Network error.";

@@ -148,7 +148,7 @@ public class VaultUnlockService extends Service {
 
         return new Notification.Builder(this, CHANNEL_ID)
                 .setContentTitle("Vault unlocked")
-                .setContentText("Tap to open — files stay readable until you lock")
+                .setContentText("Tap to open - files stay readable until you lock")
                 .setSmallIcon(android.R.drawable.ic_lock_idle_lock)
                 .setOngoing(true)
                 .setContentIntent(open)

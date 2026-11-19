@@ -79,7 +79,7 @@ public class VaultTextViewerActivity extends Activity {
             int cap = 2 * 1024 * 1024;                      // read-only EditText tolerates ~this much
             if (plain.length > cap) {
                 editor.setText(new String(plain, 0, cap, StandardCharsets.UTF_8)
-                        + "\n\n… (truncated — file is too large to show in full)");
+                        + "\n\n… (truncated - file is too large to show in full)");
                 editor.setEnabled(false);                  // don't let a partial save corrupt it
                 saveButton.setVisibility(android.view.View.GONE);
             } else {

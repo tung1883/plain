@@ -95,13 +95,13 @@ final class ChessPcRunner {
     /** One line for the lock dialog, notification and job card. */
     static String label(Context context, ChessPcJobs.Record r) {
         String pc = r.hostLabel != null ? r.hostLabel : "PC";
-        if (ChessPcJobs.STATE_FAILED.equals(r.state)) return "puzzles on " + pc + " failed — " + r.error;
+        if (ChessPcJobs.STATE_FAILED.equals(r.state)) return "puzzles on " + pc + " failed - " + r.error;
         String progress = r.total > 0
-                ? String.format(java.util.Locale.US, "%,d of %,d games — %,d found", r.scanned, r.total, r.found)
+                ? String.format(java.util.Locale.US, "%,d of %,d games - %,d found", r.scanned, r.total, r.found)
                 : "starting";
-        String line = "generating puzzles on " + pc + " — " + progress;
-        if (r.cancelRequested) return line + " — stopping";
-        if (!DevService.isConnected(r.hostId)) line += " — keeps running on the PC; reconnect to sync";
+        String line = "generating puzzles on " + pc + " - " + progress;
+        if (r.cancelRequested) return line + " - stopping";
+        if (!DevService.isConnected(r.hostId)) line += " - keeps running on the PC; reconnect to sync";
         return line;
     }
 
@@ -152,7 +152,7 @@ final class ChessPcRunner {
                                     Map<String, Object> params, int workers, int hashMb, StartListener ui) {
         List<Object> caps = linkCaps.get(host.id);
         if (caps == null || !caps.contains(DevProtocol.CAP_CHESS)) {
-            ui.onFailed("plaind on " + host.label + " is too old for puzzle generation — update it");
+            ui.onFailed("plaind on " + host.label + " is too old for puzzle generation - update it");
             return;
         }
         ui.onProgress("Checking " + host.label + "…");
@@ -174,7 +174,7 @@ final class ChessPcRunner {
         ch[0] = conn.openChannel(msg -> {
             String t = DevProtocol.type(msg);
             if (DevProtocol.T_CHESS_INSTALL_PROGRESS.equals(t)) {
-                ui.onProgress("Installing Stockfish on " + host.label + " — " + DevProtocol.str(msg, "stage")
+                ui.onProgress("Installing Stockfish on " + host.label + " - " + DevProtocol.str(msg, "stage")
                         + " " + DevProtocol.num(msg, "pct", 0) + "%");
             } else if (DevProtocol.T_CHESS_INSTALL_DONE.equals(t) && !done[0]) {
                 done[0] = true;

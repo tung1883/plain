@@ -140,7 +140,6 @@ public class DevService extends Service {
         State state = State.CONNECTING;
         int backoff;
         boolean stopped;
-        String detail;
         Long clipCh;
         List<Object> caps;
 
@@ -178,12 +177,57 @@ public class DevService extends Service {
         return links.isEmpty() ? State.DISCONNECTED : State.CONNECTING;
     }
 
-    /** Label what a device's link is doing right now (for the notification). */
-    void setActivityDetail(String hostId, String what) {
-        Link l = links.get(hostId);
-        if (l == null) return;
-        l.detail = what;
+    /** One screen (or workspace) that is open on the PC link(s): what it shows and where a tap should go. */
+    private static final class ActGroup {
+        final Intent reopen;
+        final List<String[]> items; // {hostId, kind}
+        final long seq;
+        ActGroup(Intent reopen, List<String[]> items, long seq) {
+            this.reopen = reopen;
+            this.items = items;
+            this.seq = seq;
+        }
+    }
+
+    private final Map<Object, ActGroup> acts = new LinkedHashMap<>();
+    private final Map<Object, Long> actSeqs = new java.util.HashMap<>();
+    private long actSeq;
+
+    /**
+     * Declare what {@code owner} (an activity) currently has open, as {hostId, kind} pairs with kind one of
+     * "screen" / "perf" / "shell". Replaces the owner's previous declaration; a null or empty list clears it.
+     * {@code reopen} is what tapping the notification should launch.
+     */
+    void setActivities(Object owner, Intent reopen, List<String[]> items) {
+        synchronized (acts) {
+            if (items == null || items.isEmpty()) {
+                acts.remove(owner);
+                actSeqs.remove(owner);
+            } else {
+                Long seq = actSeqs.get(owner);
+                if (seq == null) { seq = ++actSeq; actSeqs.put(owner, seq); }
+                acts.put(owner, new ActGroup(reopen, items, seq));
+            }
+        }
         publish();
+    }
+
+    void clearActivities(Object owner) {
+        setActivities(owner, null, null);
+    }
+
+    private static final String[] ACT_KINDS = {"screen", "perf", "shell"};
+
+    /** "screen · perf · 2 shells" style summary of what is open on one host, or null. */
+    private static String summarize(Map<String, Integer> counts, String sep) {
+        StringBuilder sb = new StringBuilder();
+        for (String k : ACT_KINDS) {
+            Integer n = counts.get(k);
+            if (n == null || n == 0) continue;
+            if (sb.length() > 0) sb.append(sep);
+            sb.append(n > 1 ? n + " " + k + "s" : k);
+        }
+        return sb.length() > 0 ? sb.toString() : null;
     }
 
     @Override
@@ -238,7 +282,7 @@ public class DevService extends Service {
         if (link.stopped) return;
         String token = link.host.token(this);
         if (token == null) {
-            lastError = "no saved key for " + link.host.label + " — pair again";
+            lastError = "no saved key for " + link.host.label + " - pair again";
             links.remove(link.host.id);
             if (links.isEmpty()) { stopForeground(STOP_FOREGROUND_REMOVE); stopSelf(); }
             publish();
@@ -424,23 +468,46 @@ public class DevService extends Service {
         }
     }
 
+    private Intent reopenIntent;
+
     private void publish() {
         Map<String, Boolean> snap = new LinkedHashMap<>();
         String pId = null, pLabel = null;
         StringBuilder d = new StringBuilder();
+        Intent ro = null;
         for (Link l : links.values()) {
             boolean up = l.state == State.CONNECTED;
             snap.put(l.host.id, up);
             if (up && pId == null) { pId = l.host.id; pLabel = l.host.label; }
-            if (up && l.detail != null) {
+        }
+        synchronized (acts) {
+            long best = -1;
+            for (ActGroup g : acts.values()) {
+                boolean any = false;
+                for (String[] it : g.items) if (Boolean.TRUE.equals(snap.get(it[0]))) any = true;
+                if (any && g.seq > best) { best = g.seq; ro = g.reopen; }
+            }
+            boolean multi = links.size() > 1;
+            for (Link l : links.values()) {
+                if (!Boolean.TRUE.equals(snap.get(l.host.id))) continue;
+                Map<String, Integer> counts = new java.util.HashMap<>();
+                for (ActGroup g : acts.values()) {
+                    for (String[] it : g.items) {
+                        if (it[0].equals(l.host.id)) counts.merge(it[1], 1, Integer::sum);
+                    }
+                }
+                String sum = summarize(counts, multi ? ", " : " · ");
+                if (sum == null) continue;
                 if (d.length() > 0) d.append("  ·  ");
-                d.append(l.host.label).append(" — ").append(l.detail);
+                // With a single link the title already names the device.
+                d.append(multi ? l.host.label + " - " + sum : "Viewing " + sum);
             }
         }
         linkState = snap;
         primaryId = pId;
         primaryLabel = pLabel;
         detail = d.length() > 0 ? d.toString() : null;
+        reopenIntent = ro;
         updateNotification();
         main.post(() -> {
             for (StateListener l : listeners) l.onDevState();
@@ -491,7 +558,7 @@ public class DevService extends Service {
             title = up + " of " + total + " devices connected";
         }
         String text = detail != null ? detail : "Dev";
-        Intent open = new Intent(this, DevHostsActivity.class)
+        Intent open = reopenIntent != null ? reopenIntent : new Intent(this, DevHostsActivity.class)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         Notification.Builder b = new Notification.Builder(this, CHANNEL_ID)
                 .setContentTitle(title)

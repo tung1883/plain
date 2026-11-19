@@ -69,7 +69,7 @@ public class RecordingPlayerActivity extends Activity {
             total.setText(fmt(svc.duration()));
             playBtn.setText(svc.isPlayingNow() ? "❚❚" : "▶");
             meta.setText(svc.vaultPaused()
-                    ? "Vault locked — unlock to resume"
+                    ? "Vault locked - unlock to resume"
                     : metaLine());
             handler.postDelayed(this, 60);
         }

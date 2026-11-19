@@ -85,7 +85,7 @@ abstract class PluginPanel implements PanelContent, SelectionHost {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
         afterRoot();
-        list.setProvider(this::fill); // triggers the first fill() — bar/gate must exist by now
+        list.setProvider(this::fill); // triggers the first fill() - bar/gate must exist by now
         refreshGate();
         return root;
     }

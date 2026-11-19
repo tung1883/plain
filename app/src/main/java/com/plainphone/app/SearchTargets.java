@@ -144,7 +144,7 @@ class SearchTargets {
                     PluginLock.requestLockAll(host, () -> Lock.lockAllSections(host), () ->
                             android.widget.Toast.makeText(host,
                                     Config.isPinSet(host) ? "Locked"
-                                            : "Locked — set an App-lock PIN to take effect",
+                                            : "Locked - set an App-lock PIN to take effect",
                                     android.widget.Toast.LENGTH_SHORT).show())).guarded());
         }
 

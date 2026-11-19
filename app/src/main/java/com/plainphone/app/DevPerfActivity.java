@@ -62,7 +62,7 @@ public class DevPerfActivity extends Activity implements DevService.StateListene
         super.onStop();
         DevService.removeStateListener(this);
         panel.onLeave();   // pause polling; keep the channels for a quick resume
-        if (service != null) service.setActivityDetail(hostId, null);
+        if (service != null) service.clearActivities(this);
         try { unbindService(conn); } catch (IllegalArgumentException ignored) {}
     }
 
@@ -80,6 +80,15 @@ public class DevPerfActivity extends Activity implements DevService.StateListene
         if (panel == null) return;
         DevConnection live = (service != null && DevService.isConnected(hostId)) ? service.connection(hostId) : null;
         panel.onConnection(live);
-        if (live != null && service != null) service.setActivityDetail(hostId, "perf");
+        if (service != null) {
+            if (live != null) {
+                service.setActivities(this,
+                        new Intent(this, DevPerfActivity.class).putExtra(DevHostActivity.EXTRA_HOST_ID, hostId)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT),
+                        java.util.Collections.singletonList(new String[]{hostId, "perf"}));
+            } else {
+                service.clearActivities(this);
+            }
+        }
     }
 }

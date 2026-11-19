@@ -55,7 +55,7 @@ final class NetworkSurface extends MetricSurface {
                 if (!(o instanceof Map)) continue;
                 Map<String, Object> p = (Map<String, Object>) o;
                 List<Object> pids = DevProtocol.list(p, "pids");
-                String pid = pids != null && !pids.isEmpty() ? String.valueOf(pids.get(0)) : "—";
+                String pid = pids != null && !pids.isEmpty() ? String.valueOf(pids.get(0)) : "-";
                 body.addView(keyval(
                         str(p, "proto") + "  " + str(p, "addr") + ":" + DevProtocol.num(p, "port", 0),
                         "pid " + pid, 0xFF8B8B8B));

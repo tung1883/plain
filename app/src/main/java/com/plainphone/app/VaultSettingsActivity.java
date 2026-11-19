@@ -152,7 +152,7 @@ public class VaultSettingsActivity extends Activity {
         }
         File picked = VaultLocation.treeUriToDir(data.getData());
         if (picked == null) {
-            Toast.makeText(this, "Only folders on this phone's internal storage work — "
+            Toast.makeText(this, "Only folders on this phone's internal storage work - "
                     + "not SD cards or USB drives", Toast.LENGTH_LONG).show();
             return;
         }

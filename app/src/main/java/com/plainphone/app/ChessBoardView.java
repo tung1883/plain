@@ -719,7 +719,7 @@ final class ChessBoardView extends View {
             if (in(dragRow, dragCol) && selectedRow == dragRow && selectedCol == dragCol
                     && (Math.abs(event.getX() - downX) > UiKit.dp(host, 8)
                     || Math.abs(event.getY() - downY) > UiKit.dp(host, 8))) {
-                gestureHandler.removeCallbacks(armAnnotate); // a real, fast drag — not a long-press
+                gestureHandler.removeCallbacks(armAnnotate); // a real, fast drag - not a long-press
                 draggingPiece = true;
                 dragX = event.getX(); dragY = event.getY();
                 invalidate();
@@ -818,9 +818,9 @@ final class ChessBoardView extends View {
         if (hasAnyLegalMove(whiteTurn)) {
             gameOverText = null;
         } else if (isKingInCheck(whiteTurn)) {
-            gameOverText = "Checkmate — " + (whiteTurn ? "Black" : "White") + " wins";
+            gameOverText = "Checkmate - " + (whiteTurn ? "Black" : "White") + " wins";
         } else {
-            gameOverText = "Stalemate — draw";
+            gameOverText = "Stalemate - draw";
         }
     }
 
@@ -910,7 +910,7 @@ final class ChessBoardView extends View {
         if (movingCurrent) {
             restoreNode(parent);
         } else {
-            onChanged.run(); // tree changed under a still-valid `current` — just re-render the grid
+            onChanged.run(); // tree changed under a still-valid `current` - just re-render the grid
         }
     }
 

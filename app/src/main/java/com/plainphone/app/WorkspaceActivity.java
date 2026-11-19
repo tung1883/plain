@@ -165,6 +165,7 @@ public class WorkspaceActivity extends Activity implements DevService.StateListe
     protected void onStop() {
         super.onStop();
         DevService.removeStateListener(this);
+        if (service != null) service.clearActivities(this);
         panelHost.leaveAll();
         try { unbindService(conn); } catch (IllegalArgumentException ignored) {}
         saveNow();
@@ -187,6 +188,23 @@ public class WorkspaceActivity extends Activity implements DevService.StateListe
     private void syncConnections() {
         panelHost.rebind(hostId ->
                 (service != null && DevService.isConnected(hostId)) ? service.connection(hostId) : null);
+        reportActivity();
+    }
+
+    /** Tell the dev notification which screen/shell/perf windows are open (and that a tap returns here). */
+    private void reportActivity() {
+        if (service == null || panelHost == null) return;
+        List<String[]> items = new ArrayList<>();
+        for (Panel p : panelHost.panels()) {
+            String k = p.content.kind();
+            String h = p.content.hostId();
+            if (h == null || !DevService.isConnected(h)) continue;
+            if (k.equals("screen") || k.equals("perf") || k.equals("shell")) items.add(new String[]{h, k});
+        }
+        service.setActivities(this,
+                new Intent(this, WorkspaceActivity.class).putExtra(EXTRA_ID, workspaceId)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT),
+                items);
     }
 
     private List<String> neededHosts() {
@@ -323,6 +341,7 @@ public class WorkspaceActivity extends Activity implements DevService.StateListe
 
     private void onPanelsChanged() {
         refreshTaskbar();
+        reportActivity();
         if (restoring) return;
         saveDebounce.removeCallbacksAndMessages(null);
         saveDebounce.postDelayed(this::saveNow, 500);

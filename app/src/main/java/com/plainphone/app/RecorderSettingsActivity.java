@@ -23,7 +23,7 @@ public class RecorderSettingsActivity extends Activity {
 
     private static final String[] FORMATS = {"wav", "m4a", "3gp"};
     private static final String[] FORMAT_LABELS = {
-            "WAV — lossless, biggest", "M4A — AAC, small", "3GP — AMR, tiny (voice)"};
+            "WAV - lossless, biggest", "M4A - AAC, small", "3GP - AMR, tiny (voice)"};
     private static final int[] RATES = {8000, 16000, 22050, 44100, 48000};
 
     private LinearLayout root;

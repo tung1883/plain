@@ -252,7 +252,7 @@ final class ChessRules {
         return mates;
     }
 
-    private static final int[] VALUES = {0, 3, 3, 5, 9}; // N B R Q — pawn handled separately below
+    private static final int[] VALUES = {0, 3, 3, 5, 9}; // N B R Q - pawn handled separately below
 
     static int materialCount(Pos p, boolean white) {
         char[][] board = p.board;

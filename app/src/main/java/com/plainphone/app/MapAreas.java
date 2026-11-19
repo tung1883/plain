@@ -62,7 +62,7 @@ final class MapAreas {
                     "map/" + dir.getName(), meta.getDouble("centerLat"),
                     meta.getDouble("centerLon"), meta.getDouble("defaultZoom"), meta.optInt("order", 0));
         } catch (Exception e) {
-            return null; // corrupt/partial download — skip it rather than crash the merge
+            return null; // corrupt/partial download - skip it rather than crash the merge
         }
     }
 }

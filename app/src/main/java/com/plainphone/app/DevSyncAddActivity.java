@@ -38,7 +38,7 @@ public class DevSyncAddActivity extends Activity {
     private String direction = DevSyncPair.DIR_PUSH;
     private String deleteMode = DevSyncPair.DELETE_OFF;
     private int scheduleMinutes = DevSyncPair.SCHEDULE_MANUAL;
-    private int dailyMinuteOfDay = 120; // 2:00 AM — only meaningful when scheduleMinutes is daily
+    private int dailyMinuteOfDay = 120; // 2:00 AM - only meaningful when scheduleMinutes is daily
 
     private int step = 0; // 0 = pick local, 1 = remote path, 2 = direction+detect, 3 = delete (mirror only), 4 = schedule
 
@@ -358,7 +358,7 @@ public class DevSyncAddActivity extends Activity {
         wp.topMargin = UiKit.dp(this, 16);
         root.addView(warn, wp);
         TextView warnText = new TextView(this);
-        warnText.setText("Off (default): deletions never propagate — a file only ever gets added or updated on the other side. On: a deletion is permanent on both devices. You can change this later from the pair's settings.");
+        warnText.setText("Off (default): deletions never propagate - a file only ever gets added or updated on the other side. On: a deletion is permanent on both devices. You can change this later from the pair's settings.");
         warnText.setTextColor(0xFFC88F87);
         warnText.setTextSize(12.5f);
         warnText.setTypeface(font);

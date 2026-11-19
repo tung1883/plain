@@ -49,7 +49,7 @@ final class DevSyncJobs {
         String jobId;
         String pairId;
         String currentPath;
-        String currentDirection; // "up" / "down" / "same" — for the recent-activity list
+        String currentDirection; // "up" / "down" / "same" - for the recent-activity list
         int doneFiles, totalFiles;
         int synced, unchanged, conflicts, failed;
     }

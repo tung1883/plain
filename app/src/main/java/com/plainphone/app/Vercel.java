@@ -70,7 +70,7 @@ final class Vercel {
                 }
                 String name = p.optString("name", id);
                 String framework = p.optString("framework", "");
-                if (framework == null || framework.isEmpty() || "null".equals(framework)) framework = "—";
+                if (framework == null || framework.isEmpty() || "null".equals(framework)) framework = "-";
                 JSONObject prod = null;
                 JSONObject targets = p.optJSONObject("targets");
                 if (targets != null) prod = targets.optJSONObject("production");
