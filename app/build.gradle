@@ -79,6 +79,8 @@ dependencies {
     implementation("io.legere:pdfiumandroid:2.0.1")
     // Cuts the subject out of a sticker photo, background made transparent.
     implementation("com.google.android.gms:play-services-mlkit-subject-segmentation:16.0.0-beta1")
+    // Draws the sticker editor's vector items (bubbles, ribbons, shapes, marks) from SVG.
+    implementation("com.caverock:androidsvg-aar:1.4")
     testImplementation("junit:junit:4.13.2")
     // Real org.json for JVM tests (android.jar only has stubs that return null).
     testImplementation("org.json:json:20231013")
